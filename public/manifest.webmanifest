@@ -1,0 +1,11 @@
+{
+  "name": "Weide-Tagebuch",
+  "short_name": "Weide",
+  "description": "Weide- und Reisetagebuch mit Karte: Nadeln und Flächen für Herden setzen, Notizen, teilen.",
+  "lang": "de",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f5f7f2",
+  "theme_color": "#2e7d32",
+  "icons": [{ "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

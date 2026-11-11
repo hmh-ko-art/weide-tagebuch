@@ -139,3 +139,9 @@ interface Karte {          // geteilte Karte (Server)
 - **Sync-Backend**: Prototyp-Server reicht zum Testen; für den Dauerbetrieb Supabase (oder eigener Server mit Datenbank & Backups).
 - OSRM-Demoserver ist nur für Tests gedacht (Fair-Use) – im Betrieb Google Routes oder eigener Routing-Dienst.
 - Wer bekommt Zugriff (Mitarbeiter, Familie, Deichverband)? Welche Rollen?
+
+## 10. Hosting (Stand 11.11.2026)
+
+- Ziel: Render Free (Frankfurt) per `render.yaml`: Webservice `weide-tagebuch` + Free-Postgres `weide-tagebuch-db`. Der Server speichert bei gesetztem `DATABASE_URL` in Postgres (Tabelle `karten`, JSONB), sonst in JSON-Dateien. Lokal getestet: Daten und Notizen überstehen einen Neustart.
+- Render baut nur aus einem Git-Repo (GitHub/GitLab/Bitbucket). Voraussetzung: GitHub-Verbindung + leeres Repo des Nutzers; dann Push und Blueprint anlegen.
+- Free-Grenzen: Einschlafen nach 15 Min. Inaktivität (Aufwachen ~1 Min.), 750 Free-Stunden/Monat, kein dauerhaftes Dateisystem, **Free-Postgres läuft nach 30 Tagen ab** (14 Tage Frist, dann gelöscht). Dauerhaft kostenlos: externe DB wie Supabase/Neon Free über `DATABASE_URL`.

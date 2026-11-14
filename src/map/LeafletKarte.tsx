@@ -8,7 +8,7 @@ import { FARBE, FARBE_AKTIV, ROUTE_FARBE, type KartenProps } from './props'
 const pinIcon = (aktiv: boolean, text: string, farbe: string) =>
   L.divIcon({
     className: 'pin-icon',
-    html: `${nadelHtml(farbe, aktiv)}${text ? `<div class="pin-label">${text.replace(/[<>&]/g, '')}</div>` : ''}`,
+    html: `${nadelHtml(farbe, aktiv)}${text.trim() ? `<div class="pin-label">${text.replace(/[<>&]/g, '')}</div>` : ''}`,
     iconSize: [NADEL_BREITE, NADEL_HOEHE],
     iconAnchor: [NADEL_BREITE / 2, NADEL_HOEHE - 1],
   })
@@ -56,10 +56,10 @@ export default function LeafletKarte(p: KartenProps) {
       if (e.typ === 'pin') {
         L.marker([e.position.lat, e.position.lng], { icon: pinIcon(aktiv, e.titel, pinFarbe(e)), zIndexOffset: aktiv ? 1000 : 0 }).on('click', klick).addTo(g)
       } else {
-        L.polygon(e.punkte.map((q) => [q.lat, q.lng] as [number, number]), { color: aktiv ? FARBE_AKTIV : FARBE, weight: aktiv ? 4 : 2, fillOpacity: 0.25 })
-          .bindTooltip(e.titel, { permanent: true, direction: 'center', className: 'flaeche-label' })
-          .on('click', klick)
-          .addTo(g)
+        const poly = L.polygon(e.punkte.map((q) => [q.lat, q.lng] as [number, number]), { color: aktiv ? FARBE_AKTIV : FARBE, weight: aktiv ? 4 : 2, fillOpacity: 0.25 })
+        // Nur beschriften, wenn die Fläche einen Namen hat
+        if (e.titel.trim()) poly.bindTooltip(e.titel, { permanent: true, direction: 'center', className: 'flaeche-label' })
+        poly.on('click', klick).addTo(g)
       }
     }
   }, [p.eintraege, p.ausgewaehlt])

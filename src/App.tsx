@@ -107,7 +107,7 @@ export default function App() {
   }
 
   const speichern = (e: Eintrag) => {
-    const fertig = { ...e, titel: e.titel.trim() || (e.typ === 'pin' ? 'Nadel' : 'Fläche'), geaendert: new Date().toISOString() }
+    const fertig = { ...e, titel: e.titel.trim(), geaendert: new Date().toISOString() }
     if (fertig.typ === 'pin' && fertig.farbe) localStorage.setItem('wt-letzte-farbe', fertig.farbe)
     k.speichern(fertig)
     setFormular(null)
@@ -116,7 +116,7 @@ export default function App() {
   }
 
   const loeschen = (e: Eintrag) => {
-    if (!confirm(`„${e.titel}“ wirklich löschen?`)) return
+    if (!confirm(e.titel ? `„${e.titel}“ wirklich löschen?` : `Diese ${e.typ === 'pin' ? 'Nadel' : 'Fläche'} ohne Namen wirklich löschen?`)) return
     k.loeschen(e.id)
     abwaehlen()
     setFormular(null)
@@ -220,7 +220,7 @@ function Detail(p: { e: Eintrag; routeInfo: string; darfBearbeiten: boolean; onS
   return (
     <section className="sheet">
       <div className="sheet-kopf">
-        <h2>{e.typ === 'pin' ? <span className="farbpunkt" style={{ background: pinFarbe(e), width: 16, height: 16 }} /> : '⬠'} {e.titel}</h2>
+        <h2>{e.typ === 'pin' ? <span className="farbpunkt" style={{ background: pinFarbe(e), width: 16, height: 16 }} /> : '⬠'} {e.titel || <span className="ohne-name">ohne Namen</span>}</h2>
         <button className="x" onClick={p.onSchliessen} aria-label="Schließen">✕</button>
       </div>
       <div className="meta">
@@ -383,7 +383,7 @@ function Liste(p: { eintraege: Eintrag[]; onWahl: (e: Eintrag) => void; onSchlie
       <ul className="liste">
         {liste.map((e) => (
           <li key={e.id} onClick={() => p.onWahl(e)}>
-            <strong>{e.typ === 'pin' ? <span className="farbpunkt" style={{ background: pinFarbe(e) }} /> : '⬠'} {e.titel}</strong>
+            <strong>{e.typ === 'pin' ? <span className="farbpunkt" style={{ background: pinFarbe(e) }} /> : '⬠'} {e.titel || <span className="ohne-name">ohne Namen</span>}</strong>
             {e.notizen.length > 0 && <span className="notiz-kurz">{notizenSortiert(e)[0].text}</span>}
             <small>📝 {e.notizen.length} {e.notizen.length === 1 ? 'Notiz' : 'Notizen'} · {e.tiere != null ? `🐑 ${e.tiere} · ` : ''}{e.herde ? `${e.herde} · ` : ''}{datum(e.geaendert)}</small>
           </li>

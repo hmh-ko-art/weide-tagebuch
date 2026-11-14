@@ -78,3 +78,4 @@ input, textarea { border: 1px solid #c9d3c4; border-radius: 10px; padding: 10px;
 .notiz-aktionen { margin-left: auto; display: flex; gap: 4px; }
 .notiz-aktionen button { padding: 4px 8px; font-size: .85rem; border-color: transparent; background: transparent; }
 .notiz-edit { display: flex; flex-direction: column; gap: 6px; }
+.ohne-name { color: #889; font-style: italic; font-weight: 400; }

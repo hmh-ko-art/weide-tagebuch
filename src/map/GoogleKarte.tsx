@@ -64,7 +64,7 @@ export default function GoogleKarte(p: KartenProps) {
       >
         {p.eintraege.map((e) =>
           e.typ === 'pin' ? (
-            <AdvancedMarker key={e.id} position={e.position} title={e.titel} onClick={() => p.onAuswahl(e.id)}>
+            <AdvancedMarker key={e.id} position={e.position} title={e.titel || undefined} onClick={() => p.onAuswahl(e.id)}>
               <div dangerouslySetInnerHTML={{ __html: nadelHtml(pinFarbe(e), e.id === p.ausgewaehlt) }} />
             </AdvancedMarker>
           ) : null,

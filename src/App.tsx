@@ -2,7 +2,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import Karte, { HAT_GOOGLE_KEY } from './map/Karte'
 import { useKarte, zugangsLink, einladungsLink, NAME_MAX, type Ich, type Nutzer } from './daten'
 import { googleNaviLink, routeBerechnen, routeText } from './route'
-import { eintragDatum, tagText, monatText, istAusblendbar, TIERARTEN, tierText, tierSymbolHtml, tierSummen, type Einheit, type Tierart, FARBEN, FLAECHEN_FARBEN, FLAECHE_STANDARD, START, STANDARD_FARBE, datum, farbName, hektar, mitte, neueId, notizenSortiert, pinFarbe, type Eintrag, type Notiz, type Fokus, type LatLng, type Route } from './types'
+import { eintragDatum, tagText, monatText, istAusblendbar, TIERARTEN, tierText, tierSymbolHtml, tierSummen, type Einheit, type Tierart, FARBEN, FLAECHEN_FARBEN, FLAECHE_STANDARD, START, STANDARD_FARBE, datum, farbName, hektar, mitte, neueId, notizenSortiert, pinFarbe, gruppenVorschlag, type Gruppe, type Eintrag, type Notiz, type Fokus, type LatLng, type Route } from './types'
 
 type Modus = 'ansicht' | 'pin' | 'flaeche'
 type Panel = null | 'liste' | 'einstellungen' | 'nutzer' | 'profil'
@@ -62,6 +62,7 @@ export default function App() {
   aktuellerNutzer = k.karteId ? k.ich : null
   // Berechtigungen (der Server prüft zusätzlich): Admin alles, Nutzer nur eigene Einträge/Notizen
   const kannEintrag = (e: Eintrag) => !k.karteId || k.istAdmin || (!!k.ich && e.erstelltVon === k.ich.id)
+  const kannGruppe = (g: Gruppe) => !k.karteId || k.istAdmin || (!!k.ich && g.von === k.ich.id)
   const kannNotiz = (n: Notiz) => !k.karteId || k.istAdmin || (!!k.ich && n.autorId === k.ich.id)
   const [modus, setModus] = useState<Modus>('ansicht')
   const modusRef = useRef<Modus>('ansicht')
@@ -226,6 +227,51 @@ export default function App() {
     setFormular(null)
   }
 
+  // ---- Eigene Gruppen ----
+  // Neue Gruppe mit Namensfeld (Vorschlag „Gruppe N“); null = abgebrochen
+  const neueGruppe = (): Gruppe | null => {
+    const name = prompt('Name der neuen Gruppe:', gruppenVorschlag(k.gruppen))?.replace(/\s+/g, ' ').trim().slice(0, 40)
+    if (!name) return null
+    const g: Gruppe = { id: neueId(), name, ...(k.ich ? { von: k.ich.id } : {}), erstellt: new Date().toISOString() }
+    k.gruppeSpeichern(g)
+    return g
+  }
+  // Nadeln in eine Gruppe (oder ohne Gruppe): Nutzer nur eigene, Admin alle – fremde werden übersprungen und genannt
+  const inGruppe = (g: Gruppe | null, liste: Eintrag[]) => {
+    const pins = liste.filter((e) => e.typ === 'pin')
+    const ok = pins.filter(kannEintrag)
+    const fremd = pins.length - ok.length
+    if (ok.length) k.zuordnen(g?.id ?? null, ok.map((e) => e.id))
+    const n = (x: number) => `${x} ${x === 1 ? 'Nadel' : 'Nadeln'}`
+    setMeldung(`${ok.length ? (g ? `${n(ok.length)} in „${g.name}“` : `${n(ok.length)} ohne Gruppe`) : 'Keine Nadel verschoben'}${fremd ? ` · ${n(fremd)} anderer Nutzer übersprungen (nur eigene oder als Admin)` : ''}`)
+  }
+
+  // ---- Neue App-Version erkennen (z. B. Handy-App lange im Hintergrund) ----
+  const [neueVersion, setNeueVersion] = useState(false)
+  const formularRef = useRef(formular)
+  formularRef.current = formular
+  useEffect(() => {
+    const eigenes = document.querySelector<HTMLScriptElement>('script[type="module"][src*="/assets/index-"]')?.src.split('/assets/')[1]
+    if (!eigenes) return // Entwicklung
+    let aus = false
+    const pruefen = async (zurueck = false) => {
+      try {
+        navigator.serviceWorker?.getRegistration().then((r) => r?.update()).catch(() => {})
+        const html = await (await fetch('/', { cache: 'no-store' })).text()
+        const neu = /\/assets\/(index-[\w-]+\.js)/.exec(html)?.[1]
+        if (aus || !neu || neu === eigenes) return
+        // Beim Zurückkehren in die App ohne offenes Formular gleich neu laden, sonst Hinweis mit Knopf
+        if (zurueck && !formularRef.current) location.reload()
+        else setNeueVersion(true)
+      } catch { /* offline */ }
+    }
+    const sichtbar = () => { if (document.visibilityState === 'visible') pruefen(true) }
+    document.addEventListener('visibilitychange', sichtbar)
+    const t = setInterval(() => pruefen(), 10 * 60 * 1000)
+    const t0 = setTimeout(() => pruefen(), 20000)
+    return () => { aus = true; document.removeEventListener('visibilitychange', sichtbar); clearInterval(t); clearTimeout(t0) }
+  }, [])
+
   const statusText = { lokal: 'Nur auf diesem Gerät', verbunden: 'Live geteilt', offline: 'Offline – wird später synchronisiert', verbinde: 'Verbinde …' }[k.status]
 
   return (
@@ -336,19 +382,27 @@ export default function App() {
             onNotizLoeschen={(id) => k.notizLoeschen(auswahl.id, id)}
             tiereZu={tiereZu.includes(auswahl.id)}
             onTiereUmschalten={() => tiereUmschalten(auswahl.id)}
+            gruppen={k.gruppen}
+            kannGruppieren={k.darfBearbeiten && kannEintrag(auswahl)}
+            onGruppe={(v) => { const g = v === '__neu' ? neueGruppe() : v ? k.gruppen.find((x) => x.id === v) ?? null : null; if (v === '__neu' && !g) return; inGruppe(g, [auswahl]) }}
           />
         )}
 
         {formular && <Formular start={formular.e} neu={formular.neu} onSpeichern={speichern} onAbbrechen={() => setFormular(null)} onLoeschen={formular.neu || !kannEintrag(formular.e) ? undefined : () => loeschen(formular.e)} />}
 
         {panel === 'liste' && (
-          <Liste eintraege={k.eintraege} onSchliessen={() => setPanel(null)} onWahl={(e) => { fliege(mitte(e), e.typ === 'pin' ? 15 : undefined); waehle(e.id) }} />
+          <Liste eintraege={k.eintraege} gruppen={k.gruppen} onSchliessen={() => setPanel(null)} onWahl={(e) => { fliege(mitte(e), e.typ === 'pin' ? 15 : undefined); waehle(e.id) }}
+            darfBearbeiten={k.darfBearbeiten} kannEintrag={kannEintrag} kannGruppe={kannGruppe} ichId={k.ich?.id}
+            onGruppeSpeichern={k.gruppeSpeichern} onGruppeLoeschen={k.gruppeLoeschen} onInGruppe={inGruppe} neueGruppe={neueGruppe} />
         )}
         {panel === 'einstellungen' && <Einstellungen k={k} onSchliessen={() => setPanel(null)} meldung={setMeldung} onNutzer={() => setPanel('nutzer')} onProfil={() => setPanel('profil')} kopfFarbe={kopfFarbe} setKopfFarbe={setKopfFarbe} />}
         {k.einladung && !k.ich && k.status !== 'verbinde' && <Beitreten k={k} />}
         {panel === 'profil' && k.ich && <Profil k={k} onSchliessen={() => setPanel(null)} meldung={setMeldung} />}
         {panel === 'nutzer' && k.istAdmin && k.karteId && <NutzerVerwaltung k={k} onSchliessen={() => setPanel(null)} meldung={setMeldung} />}
 
+        {neueVersion && (
+          <div className="update-hinweis" role="status">Neue Version von FlockMap verfügbar<button className="primaer" onClick={() => location.reload()}>Jetzt neu laden</button><button className="x" aria-label="Später" onClick={() => setNeueVersion(false)}><Icon name="x" /></button></div>
+        )}
         {meldung && <div className="toast">{meldung}</div>}
         {!meldung && verschoben && (
           <div className="toast mit-knopf" role="status">Nadel verschoben<button onClick={verschiebenRueckgaengig}>Rückgängig</button></div>
@@ -367,8 +421,9 @@ function TierAnzeige(p: { summen: { art: Tierart; n: number }[] }) {
   return <>{p.summen.map((x, i) => <Fragment key={x.art}>{i > 0 && ' · '}<span className="tierzahl"><TierSymbol art={x.art} /> {tierText(x.n, x.art)}</span></Fragment>)}</>
 }
 
-function Detail(p: { e: Eintrag; routeInfo: string; darfBearbeiten: boolean; kannBearbeiten: boolean; kannNotiz: (n: Notiz) => boolean; onSchliessen: () => void; onBearbeiten: () => void; onLoeschen: () => void; onRoute: () => void; onRouteAus: () => void; onNotizSpeichern: (n: Notiz) => void; onNotizLoeschen: (id: string) => void; tiereZu: boolean; onTiereUmschalten: () => void }) {
+function Detail(p: { e: Eintrag; routeInfo: string; darfBearbeiten: boolean; kannBearbeiten: boolean; kannNotiz: (n: Notiz) => boolean; onSchliessen: () => void; onBearbeiten: () => void; onLoeschen: () => void; onRoute: () => void; onRouteAus: () => void; onNotizSpeichern: (n: Notiz) => void; onNotizLoeschen: (id: string) => void; tiereZu: boolean; onTiereUmschalten: () => void; gruppen: Gruppe[]; kannGruppieren: boolean; onGruppe: (v: string) => void }) {
   const { e } = p
+  const gruppe = e.gruppe ? p.gruppen.find((g) => g.id === e.gruppe) : undefined
   const ziel = mitte(e)
   return (
     <section className="sheet">
@@ -378,6 +433,13 @@ function Detail(p: { e: Eintrag; routeInfo: string; darfBearbeiten: boolean; kan
       </div>
       <div className="meta">
         <span>Farbe: {farbName(pinFarbe(e))}</span>
+        {e.typ === 'pin' && (p.kannGruppieren
+          ? <label className="gruppe-wahl">In Gruppe<select value={gruppe?.id ?? ''} onChange={(x) => p.onGruppe(x.target.value)}>
+              <option value="">– ohne Gruppe –</option>
+              {p.gruppen.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+              <option value="__neu">＋ Neue Gruppe …</option>
+            </select></label>
+          : gruppe && <span>Gruppe: {gruppe.name}</span>)}
         {tierSummen([e]).length > 0 && (istAusblendbar(e)
           ? <button type="button" className="tiere-umschalten" aria-expanded={!p.tiereZu} title={p.tiereZu ? 'Tiere einblenden' : 'Tiere ausblenden'} onClick={p.onTiereUmschalten}>
               {p.tiereZu ? '▸ Tiere' : <>▾ <span className="tier-gesamt"><TierAnzeige summen={tierSummen([e])} /></span></>}
@@ -525,7 +587,13 @@ function Formular(p: { start: Eintrag; neu: boolean; onSpeichern: (e: Eintrag, b
   )
 }
 
-function Liste(p: { eintraege: Eintrag[]; onWahl: (e: Eintrag) => void; onSchliessen: () => void }) {
+type ListeProps = {
+  eintraege: Eintrag[]; gruppen: Gruppe[]; onWahl: (e: Eintrag) => void; onSchliessen: () => void
+  darfBearbeiten: boolean; kannEintrag: (e: Eintrag) => boolean; kannGruppe: (g: Gruppe) => boolean
+  onGruppeSpeichern: (g: Gruppe) => void; onGruppeLoeschen: (id: string) => void
+  onInGruppe: (g: Gruppe | null, liste: Eintrag[]) => void; neueGruppe: () => Gruppe | null; ichId?: string
+}
+function Liste(p: ListeProps) {
   // Zwei strikt getrennte Listen: Nadeln | Flächen – jeweils vollständig; aktive Filter werden deutlich angezeigt
   const [reiter, setReiter] = useState<'pin' | 'flaeche'>(() => (localStorage.getItem('wt-liste-reiter') === 'flaeche' ? 'flaeche' : 'pin'))
   useEffect(() => { localStorage.setItem('wt-liste-reiter', reiter) }, [reiter])
@@ -547,29 +615,40 @@ function Liste(p: { eintraege: Eintrag[]; onWahl: (e: Eintrag) => void; onSchlie
   }
   const zeitraumAktiv = zr === 'frei' ? !!(von || bis) : zr !== 'alle'
   const zeitraumText = zr === 'frei' ? `${von ? tagText(von) : '…'} – ${bis ? tagText(bis) : '…'}` : zr.startsWith('j:') ? `Jahr ${zr.slice(2)}` : zr.startsWith('m:') ? monatText(zr.slice(2)) : ''
+  const neuesteZuerst = (a: Eintrag, b: Eintrag) => eintragDatum(b).localeCompare(eintragDatum(a)) || b.geaendert.localeCompare(a.geaendert)
   const alle = typListe.filter(imZeitraum) // Basis für Summen und Farbübersicht
   const anzahl = { pin: p.eintraege.filter((e) => e.typ === 'pin').length, flaeche: p.eintraege.filter((e) => e.typ === 'flaeche').length }
   const vorhandeneFarben = [...new Set(alle.map((e) => pinFarbe(e)))]
     .sort((a, b) => { const r = (f: string) => { const i = FLAECHEN_FARBEN.findIndex((x) => x.wert === f); return i < 0 ? 99 : i }; return r(a) - r(b) })
   // Übersicht „Nach Farbe“: je Farbe Anzahl Einträge, Tiere je Art (und bei Flächen Hektar) – nur aktiver Reiter
   const gruppen = vorhandeneFarben.map((f) => {
-    const l = alle.filter((e) => pinFarbe(e) === f)
-    return { farbe: f, n: l.length, summen: tierSummen(l), ha: l.reduce((s, e) => s + (e.typ === 'flaeche' ? hektar(e.punkte) : 0), 0) }
+    const l = alle.filter((e) => pinFarbe(e) === f).sort(neuesteZuerst)
+    return { farbe: f, n: l.length, eintraege: l, summen: tierSummen(l), ha: l.reduce((s, e) => s + (e.typ === 'flaeche' ? hektar(e.punkte) : 0), 0) }
   })
   const [farbenOffen, setFarbenOffen] = useState(() => localStorage.getItem('wt-liste-farben') !== 'zu')
   useEffect(() => { localStorage.setItem('wt-liste-farben', farbenOffen ? 'auf' : 'zu') }, [farbenOffen])
+  // Unter einer Farbe die einzelnen Einträge zeigen (gewählte Farbe immer, andere per ▸ aufklappbar)
+  const [farbAuf, setFarbAuf] = useState<string[]>([])
   // Eingeklappte Monatsgruppen pro Gerät, Schlüssel „reiter:YYYY-MM“ (Standard: aufgeklappt)
   const [monateZu, setMonateZu] = useState<string[]>(() => { try { const x = JSON.parse(localStorage.getItem('wt-monate-zu') || '[]'); return Array.isArray(x) ? x.filter((v) => typeof v === 'string') : [] } catch { return [] } })
   useEffect(() => { localStorage.setItem('wt-monate-zu', JSON.stringify(monateZu)) }, [monateZu])
   const monatUmschalten = (m: string) => { const key = `${reiter}:${m}`; setMonateZu((z) => (z.includes(key) ? z.filter((x) => x !== key) : [...z, key])) }
+  // Eingeklappte eigene Gruppen pro Gerät
+  const [gruppenZu, setGruppenZu] = useState<string[]>(() => { try { const x = JSON.parse(localStorage.getItem('wt-gruppen-zu') || '[]'); return Array.isArray(x) ? x.filter((v) => typeof v === 'string') : [] } catch { return [] } })
+  useEffect(() => { localStorage.setItem('wt-gruppen-zu', JSON.stringify(gruppenZu)) }, [gruppenZu])
   const farbe = farbFilter && vorhandeneFarben.includes(farbFilter) ? farbFilter : null // Filter nur, wenn die Farbe im Reiter vorkommt
   const liste = alle
     .filter((e) => !farbe || pinFarbe(e) === farbe)
     .filter((e) => `${e.titel} ${e.herde ?? ''} ${e.notizen.map((n) => `${n.text} ${n.autor ?? ''}`).join(' ')}`.toLowerCase().includes(suche.trim().toLowerCase()))
-    .sort((a, b) => eintragDatum(b).localeCompare(eintragDatum(a)) || b.geaendert.localeCompare(a.geaendert))
-  // Monatsgruppen, neueste zuerst
+    .sort(neuesteZuerst)
+  // Eigene Gruppen (nur Nadeln). Unbekannte Gruppen-IDs (z. B. inzwischen gelöscht) gelten als „ohne Gruppe“.
+  const gruppenIds = new Set(p.gruppen.map((g) => g.id))
+  const gid = (e: Eintrag) => (e.gruppe && gruppenIds.has(e.gruppe) ? e.gruppe : null)
+  const mitGruppen = reiter === 'pin' && p.gruppen.length > 0
+  const ungruppiert = mitGruppen ? liste.filter((e) => !gid(e)) : liste
+  // Monatsgruppen (der Einträge ohne Gruppe), neueste zuerst
   const monatsGruppen: { monat: string; eintraege: Eintrag[] }[] = []
-  for (const e of liste) {
+  for (const e of ungruppiert) {
     const m = eintragDatum(e).slice(0, 7)
     const g = monatsGruppen.find((x) => x.monat === m)
     if (g) g.eintraege.push(e); else monatsGruppen.push({ monat: m, eintraege: [e] })
@@ -577,17 +656,102 @@ function Liste(p: { eintraege: Eintrag[]; onWahl: (e: Eintrag) => void; onSchlie
   const filterAktiv = !!farbe || !!suche.trim() || zeitraumAktiv
   // Nadeln der gewählten Farbe, die nur der Zeitraum ausblendet (wird klar angezeigt statt still versteckt)
   const farbeAusserhalb = farbe && zeitraumAktiv ? typListe.filter((e) => pinFarbe(e) === farbe && !imZeitraum(e)).length : 0
-  // Bei Farbauswahl: Treffer sofort ins Bild holen (die Farbübersicht füllt auf dem Handy sonst den ganzen Schirm)
+  // Bei Farbauswahl die gewählte Farbe (mit ihren einzelnen Einträgen darunter) ins Bild holen
   useEffect(() => {
-    if (farbe) document.querySelector('.panel .filter-hinweis')?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+    if (farbe) document.querySelector('.panel .farb-gruppe.aktiv')?.scrollIntoView({ block: 'start', behavior: 'smooth' })
   }, [farbe])
   const allesZeigen = () => { setSuche(''); setFarbFilter(null); setZeitraum('alle'); setVon(''); setBis('') }
   const wort = reiter === 'pin' ? ['Nadel', 'Nadeln'] : ['Fläche', 'Flächen']
+  const anz = (n: number) => `${n} ${n === 1 ? wort[0] : wort[1]}`
   // Summen passend zum Reiter
   const summen = tierSummen(alle)
   const ha = reiter === 'flaeche' ? alle.reduce((s, e) => s + (e.typ === 'flaeche' ? hektar(e.punkte) : 0), 0) : 0
+
+  // ---- Gruppen anlegen / umbenennen ----
+  const [neuName, setNeuName] = useState<string | null>(null)
+  const [umbenennen, setUmbenennen] = useState<{ id: string; name: string } | null>(null)
+  const nameSauber = (s: string) => s.replace(/\s+/g, ' ').trim().slice(0, 40)
+  const gruppeAnlegen = () => {
+    const name = nameSauber(neuName ?? '')
+    if (!name) return
+    p.onGruppeSpeichern({ id: neueId(), name, ...(p.ichId ? { von: p.ichId } : {}), erstellt: new Date().toISOString() })
+    setNeuName(null)
+  }
+
+  // ---- Ziehen am Griff ≡ (Maus: sofort; Touch: langes Drücken) ----
+  const panelRef = useRef<HTMLElement>(null)
+  const zug = useRef<{ id: string; x0: number; y0: number; x: number; y: number; aktiv: boolean; timer?: number; scroll?: number } | null>(null)
+  const [zieh, setZieh] = useState<{ id: string; x: number; y: number; ziel: string | null | undefined } | null>(null)
+  const zielAn = (x: number, y: number): string | null | undefined => {
+    const el = document.elementFromPoint(x, y)?.closest('[data-drop]') as HTMLElement | null
+    return el ? el.dataset.drop || null : undefined
+  }
+  const zugEnde = () => { const z = zug.current; if (z) { clearTimeout(z.timer); clearInterval(z.scroll) } zug.current = null; setZieh(null) }
+  const zugStart = (z: NonNullable<typeof zug.current>) => {
+    z.aktiv = true
+    navigator.vibrate?.(15)
+    setZieh({ id: z.id, x: z.x, y: z.y, ziel: zielAn(z.x, z.y) })
+    // Liste automatisch weiterscrollen, wenn der Finger/Zeiger am oberen oder unteren Rand steht
+    z.scroll = window.setInterval(() => {
+      const pn = panelRef.current
+      if (!pn || !zug.current) return
+      const r = pn.getBoundingClientRect()
+      const d = z.y < r.top + 44 ? -Math.ceil((r.top + 44 - z.y) / 3) : z.y > r.bottom - 44 ? Math.ceil((z.y - r.bottom + 44) / 3) : 0 // je näher am Rand, desto schneller
+      if (d) { pn.scrollTop += d; setZieh((s) => (s ? { ...s, ziel: zielAn(z.x, z.y) } : s)) }
+    }, 30)
+  }
+  const griffRunter = (ev: React.PointerEvent, e: Eintrag) => {
+    ev.stopPropagation()
+    if (ev.pointerType === 'mouse' && ev.button !== 0) return
+    ev.preventDefault()
+    ;(ev.currentTarget as HTMLElement).setPointerCapture?.(ev.pointerId)
+    const z = { id: e.id, x0: ev.clientX, y0: ev.clientY, x: ev.clientX, y: ev.clientY, aktiv: false } as NonNullable<typeof zug.current>
+    zug.current = z
+    if (ev.pointerType !== 'mouse') z.timer = window.setTimeout(() => zug.current === z && zugStart(z), 300)
+  }
+  const griffBewegt = (ev: React.PointerEvent) => {
+    const z = zug.current
+    if (!z) return
+    z.x = ev.clientX; z.y = ev.clientY
+    const weg = Math.hypot(z.x - z.x0, z.y - z.y0)
+    if (!z.aktiv) {
+      if (ev.pointerType === 'mouse' && weg > 4) zugStart(z)
+      else if (ev.pointerType !== 'mouse' && weg > 12) zugEnde() // Finger bewegt, bevor das lange Drücken erkannt wurde
+      return
+    }
+    setZieh({ id: z.id, x: z.x, y: z.y, ziel: zielAn(z.x, z.y) })
+  }
+  const griffLos = () => {
+    const z = zug.current
+    if (z?.aktiv) {
+      const ziel = zielAn(z.x, z.y)
+      const e = p.eintraege.find((x) => x.id === z.id)
+      if (e && ziel !== undefined && ziel !== gid(e)) p.onInGruppe(ziel ? p.gruppen.find((g) => g.id === ziel) ?? null : null, [e])
+    }
+    zugEnde()
+  }
+  const gezogen = zieh ? p.eintraege.find((x) => x.id === zieh.id) : null
+
+  const zeile = (e: Eintrag) => {
+    const griff = reiter === 'pin' && p.darfBearbeiten && p.kannEintrag(e) && p.gruppen.length > 0
+    return (
+      <li key={e.id} data-id={e.id} className={zieh?.id === e.id ? 'wird-gezogen' : undefined} onClick={() => p.onWahl(e)}>
+        <div className="zeile-oben">
+          <strong>{e.typ === 'pin' ? <span className="farbpunkt" style={{ background: pinFarbe(e) }} /> : <span className="flaechen-symbol" style={{ color: pinFarbe(e) }}>⬠</span>} {e.titel || <span className="ohne-name">ohne Namen</span>}</strong>
+          {griff && (
+            <span className="zieh-griff" role="button" tabIndex={-1} title="Ziehen, um die Nadel in eine Gruppe zu verschieben (Handy: lange drücken)" aria-label="Ziehen, um in eine Gruppe zu verschieben"
+              onPointerDown={(ev) => griffRunter(ev, e)} onPointerMove={griffBewegt} onPointerUp={griffLos} onPointerCancel={zugEnde}
+              onClick={(ev) => ev.stopPropagation()} onContextMenu={(ev) => ev.preventDefault()}>≡</span>
+          )}
+        </div>
+        {e.notizen.length > 0 && <span className="notiz-kurz">{notizenSortiert(e)[0].text}</span>}
+        <small>📅 {tagText(eintragDatum(e))} · 📝 {e.notizen.length} {e.notizen.length === 1 ? 'Notiz' : 'Notizen'} · {e.typ === 'flaeche' && <>≈ {hektar(e.punkte).toLocaleString('de-DE', { maximumFractionDigits: 2 })} ha · </>}{tierSummen([e]).length > 0 && <><TierAnzeige summen={tierSummen([e])} /> · </>}{e.herde ? `${e.herde}` : ''}</small>
+      </li>
+    )
+  }
+
   return (
-    <section className="panel">
+    <section className={`panel liste-panel${zieh ? ' zieht' : ''}`} ref={panelRef}>
       <div className="sheet-kopf">
         <h2>Tagebuch</h2>
         <button className="x" onClick={p.onSchliessen} aria-label="Schließen"><Icon name="x" /></button>
@@ -626,14 +790,34 @@ function Liste(p: { eintraege: Eintrag[]; onWahl: (e: Eintrag) => void; onSchlie
           </button>
           {farbenOffen && (
             <ul>
-              {gruppen.map((g) => (
-                <li key={g.farbe}>
-                  <button className={`farb-gruppe${farbe === g.farbe ? ' aktiv' : ''}`} aria-pressed={farbe === g.farbe} onClick={() => setFarbFilter(farbe === g.farbe ? null : g.farbe)}>
-                    <span className="farb-gruppe-name"><span className="farbpunkt" style={{ background: g.farbe }} />{farbName(g.farbe)} <small>({g.n} {g.n === 1 ? wort[0] : wort[1]}{reiter === 'flaeche' ? ` · ≈ ${g.ha.toLocaleString('de-DE', { maximumFractionDigits: 2 })} ha` : ''})</small></span>
-                    <span className="farb-gruppe-tiere">{g.summen.length ? <TierAnzeige summen={g.summen} /> : <span className="ohne-tiere">keine Tiere</span>}</span>
-                  </button>
-                </li>
-              ))}
+              {gruppen.map((g) => {
+                const einzeln = farbe === g.farbe || farbAuf.includes(g.farbe)
+                return (
+                  <li key={g.farbe}>
+                    <div className="farb-zeile">
+                      <button className={`farb-gruppe${farbe === g.farbe ? ' aktiv' : ''}`} aria-pressed={farbe === g.farbe} onClick={() => setFarbFilter(farbe === g.farbe ? null : g.farbe)}>
+                        <span className="farb-gruppe-name"><span className="farbpunkt" style={{ background: g.farbe }} />{farbName(g.farbe)} <small>({anz(g.n)}{reiter === 'flaeche' ? ` · ≈ ${g.ha.toLocaleString('de-DE', { maximumFractionDigits: 2 })} ha` : ''})</small></span>
+                        <span className="farb-gruppe-tiere">{g.summen.length ? <TierAnzeige summen={g.summen} /> : <span className="ohne-tiere">keine Tiere</span>}</span>
+                      </button>
+                      <button className="farb-auf" aria-expanded={einzeln} disabled={farbe === g.farbe} title={einzeln ? 'Einzelne ausblenden' : 'Einzeln zeigen'} aria-label={`${farbName(g.farbe)}: ${wort[1]} ${einzeln ? 'ausblenden' : 'einzeln zeigen'}`}
+                        onClick={() => setFarbAuf((l) => (l.includes(g.farbe) ? l.filter((x) => x !== g.farbe) : [...l, g.farbe]))}>{einzeln ? '▾' : '▸'}</button>
+                    </div>
+                    {einzeln && (
+                      <ul className="farb-einzeln">
+                        {g.eintraege.map((e) => {
+                          const gr = gid(e) ? p.gruppen.find((x) => x.id === e.gruppe) : null
+                          return (
+                            <li key={e.id}><button onClick={() => p.onWahl(e)}>
+                              <span className="fe-name">{e.titel || <span className="ohne-name">ohne Namen</span>}</span>
+                              <small>{tagText(eintragDatum(e))}{gr ? ` · ${gr.name}` : ''}{tierSummen([e]).length > 0 && <> · <TierAnzeige summen={tierSummen([e])} /></>}</small>
+                            </button></li>
+                          )
+                        })}
+                      </ul>
+                    )}
+                  </li>
+                )
+              })}
             </ul>
           )}
         </div>
@@ -650,37 +834,104 @@ function Liste(p: { eintraege: Eintrag[]; onWahl: (e: Eintrag) => void; onSchlie
           <button onClick={() => { setZeitraum('alle'); setVon(''); setBis('') }}>Zeitraum aufheben</button>
         </div>
       )}
+      {farbe && reiter === 'pin' && p.darfBearbeiten && liste.some(p.kannEintrag) && (
+        <select className="sammel-gruppe" value="" aria-label={`Alle ${liste.length} ${farbName(farbe)}-Nadeln in eine Gruppe`} onChange={(x) => {
+          const v = x.target.value
+          if (!v) return
+          const g = v === '__neu' ? p.neueGruppe() : v === '__ohne' ? null : p.gruppen.find((y) => y.id === v) ?? null
+          if (v === '__neu' && !g) return
+          p.onInGruppe(g, liste)
+        }}>
+          <option value="">{`📂 Alle ${liste.length} ${farbName(farbe)}-${liste.length === 1 ? 'Nadel' : 'Nadeln'} in Gruppe …`}</option>
+          {p.gruppen.map((g) => <option key={g.id} value={g.id}>{`→ ${g.name}`}</option>)}
+          <option value="__neu">＋ Neue Gruppe …</option>
+          {liste.some((e) => gid(e)) && <option value="__ohne">Aus ihren Gruppen nehmen (ohne Gruppe)</option>}
+        </select>
+      )}
       {!typListe.length && <p className="hinweis">{reiter === 'pin' ? 'Noch keine Nadeln. Tippe auf „+ Nadel“ oder direkt auf die Karte.' : 'Noch keine Flächen. Tippe auf „Fläche“ und dann die Eckpunkte.'}</p>}
       {typListe.length > 0 && !liste.length && <p className="hinweis">Keine {wort[1]} für diese Auswahl.</p>}
-      {monatsGruppen.length > 1 && !farbe && (() => {
-        const keys = monatsGruppen.map((g) => `${reiter}:${g.monat}`)
-        const einerOffen = keys.some((x) => !monateZu.includes(x))
-        return (
-          <div className="monate-alle">
-            <button onClick={() => setMonateZu((z) => (einerOffen ? [...new Set([...z, ...keys])] : z.filter((x) => !keys.includes(x))))}>{einerOffen ? '▸ Alle Monate zuklappen' : '▾ Alle Monate aufklappen'}</button>
+
+      {reiter === 'pin' && (p.gruppen.length > 0 || p.darfBearbeiten) && typListe.length > 0 && (
+        <div className="gruppen">
+          <div className="gruppen-kopf">
+            <span>Gruppen{p.gruppen.length ? ` (${p.gruppen.length})` : ''}</span>
+            {p.darfBearbeiten && neuName === null && <button onClick={() => setNeuName(gruppenVorschlag(p.gruppen))}>＋ Neue Gruppe</button>}
           </div>
-        )
-      })()}
-      {monatsGruppen.map((g) => {
-        const ms = tierSummen(g.eintraege)
-        const mha = g.eintraege.reduce((s, e) => s + (e.typ === 'flaeche' ? hektar(e.punkte) : 0), 0)
-        // Bei Farbauswahl immer alle Treffer einzeln zeigen – eingeklappte Monate bleiben gespeichert, gelten aber erst wieder ohne Farbfilter
-        const offen = !!farbe || !monateZu.includes(`${reiter}:${g.monat}`)
-        return (
-          <div className="monat" key={g.monat}>
-            <h3 className="monat-kopf"><button aria-expanded={offen} disabled={!!farbe} onClick={() => monatUmschalten(g.monat)}>{!farbe && <span className="pfeil">{offen ? '▾' : '▸'}</span>} {monatText(g.monat)} <small>· {g.eintraege.length} {g.eintraege.length === 1 ? wort[0] : wort[1]}{reiter === 'flaeche' ? ` · ≈ ${mha.toLocaleString('de-DE', { maximumFractionDigits: 2 })} ha` : ''}{ms.length > 0 && <> · <TierAnzeige summen={ms} /></>}</small></button></h3>
-            {offen && <ul className="liste">
-              {g.eintraege.map((e) => (
-                <li key={e.id} onClick={() => p.onWahl(e)}>
-                  <strong>{e.typ === 'pin' ? <span className="farbpunkt" style={{ background: pinFarbe(e) }} /> : <span className="flaechen-symbol" style={{ color: pinFarbe(e) }}>⬠</span>} {e.titel || <span className="ohne-name">ohne Namen</span>}</strong>
-                  {e.notizen.length > 0 && <span className="notiz-kurz">{notizenSortiert(e)[0].text}</span>}
-                  <small>📅 {tagText(eintragDatum(e))} · 📝 {e.notizen.length} {e.notizen.length === 1 ? 'Notiz' : 'Notizen'} · {e.typ === 'flaeche' && <>≈ {hektar(e.punkte).toLocaleString('de-DE', { maximumFractionDigits: 2 })} ha · </>}{tierSummen([e]).length > 0 && <><TierAnzeige summen={tierSummen([e])} /> · </>}{e.herde ? `${e.herde}` : ''}</small>
-                </li>
-              ))}
-            </ul>}
-          </div>
-        )
-      })}
+          {neuName !== null && (
+            <form className="gruppe-name-form" onSubmit={(ev) => { ev.preventDefault(); gruppeAnlegen() }}>
+              <input autoFocus aria-label="Name der neuen Gruppe" maxLength={40} value={neuName} onFocus={(x) => x.target.select()} onChange={(x) => setNeuName(x.target.value)} />
+              <button type="submit" className="primaer" disabled={!nameSauber(neuName)}>Anlegen</button>
+              <button type="button" onClick={() => setNeuName(null)}>Abbrechen</button>
+            </form>
+          )}
+          {p.gruppen.map((g) => {
+            const alleG = typListe.filter((e) => gid(e) === g.id)
+            const treffer = liste.filter((e) => gid(e) === g.id)
+            const offen = !!farbe || !gruppenZu.includes(g.id)
+            const gs = tierSummen(treffer)
+            return (
+              <div key={g.id} className={`gruppe${zieh?.ziel === g.id ? ' drop-aktiv' : ''}`} data-drop={g.id}>
+                {umbenennen?.id === g.id ? (
+                  <form className="gruppe-name-form" onSubmit={(ev) => { ev.preventDefault(); const n = nameSauber(umbenennen.name); if (n) p.onGruppeSpeichern({ ...g, name: n }); setUmbenennen(null) }}>
+                    <input autoFocus aria-label="Neuer Name der Gruppe" maxLength={40} value={umbenennen.name} onFocus={(x) => x.target.select()} onChange={(x) => setUmbenennen({ id: g.id, name: x.target.value })} />
+                    <button type="submit" className="primaer" disabled={!nameSauber(umbenennen.name)}>OK</button>
+                    <button type="button" onClick={() => setUmbenennen(null)}>Abbrechen</button>
+                  </form>
+                ) : (
+                  <div className="gruppe-kopf">
+                    <button className="gruppe-auf" aria-expanded={offen} disabled={!!farbe} onClick={() => setGruppenZu((z) => (z.includes(g.id) ? z.filter((x) => x !== g.id) : [...z, g.id]))}>
+                      {!farbe && <span className="pfeil">{offen ? '▾' : '▸'}</span>}
+                      <span className="gruppe-name">{g.name}</span>
+                      <small> · {filterAktiv ? `${treffer.length} von ${alleG.length}` : alleG.length} {alleG.length === 1 ? wort[0] : wort[1]}{gs.length > 0 && <> · <TierAnzeige summen={gs} /></>}</small>
+                    </button>
+                    {p.darfBearbeiten && p.kannGruppe(g) && (
+                      <>
+                        <button className="mini" title="Umbenennen" aria-label={`Gruppe „${g.name}“ umbenennen`} onClick={() => setUmbenennen({ id: g.id, name: g.name })}><Icon name="stift" /></button>
+                        <button className="mini" title="Gruppe löschen" aria-label={`Gruppe „${g.name}“ löschen`} onClick={() => confirm(`Gruppe „${g.name}“ löschen?\n\nDie ${anz(alleG.length)} bleiben erhalten und sind danach ohne Gruppe.`) && p.onGruppeLoeschen(g.id)}><Icon name="x" /></button>
+                      </>
+                    )}
+                  </div>
+                )}
+                {offen && (treffer.length
+                  ? <ul className="liste">{treffer.map(zeile)}</ul>
+                  : <p className="gruppe-leer">{alleG.length ? `Keine ${wort[1]} für diese Auswahl.` : p.darfBearbeiten ? 'Noch leer – Nadeln am ≡ hierher ziehen oder in der Nadel „Gruppe“ wählen.' : 'Noch leer.'}</p>)}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      <div className={`ohne-gruppe${mitGruppen ? ' mit-rahmen' : ''}${zieh?.ziel === null ? ' drop-aktiv' : ''}`} {...(mitGruppen ? { 'data-drop': '' } : {})}>
+        {mitGruppen && <h3 className="ohne-gruppe-kopf">Ohne Gruppe <small>· {anz(ungruppiert.length)}</small></h3>}
+        {mitGruppen && !ungruppiert.length && liste.length > 0 && <p className="gruppe-leer">Alle {filterAktiv ? 'angezeigten ' : ''}{wort[1]} sind in Gruppen{zieh ? ' – hier ablegen, um eine Nadel aus ihrer Gruppe zu nehmen' : ''}.</p>}
+        {monatsGruppen.length > 1 && !farbe && (() => {
+          const keys = monatsGruppen.map((g) => `${reiter}:${g.monat}`)
+          const einerOffen = keys.some((x) => !monateZu.includes(x))
+          return (
+            <div className="monate-alle">
+              <button onClick={() => setMonateZu((z) => (einerOffen ? [...new Set([...z, ...keys])] : z.filter((x) => !keys.includes(x))))}>{einerOffen ? '▸ Alle Monate zuklappen' : '▾ Alle Monate aufklappen'}</button>
+            </div>
+          )
+        })()}
+        {monatsGruppen.map((g) => {
+          const ms = tierSummen(g.eintraege)
+          const mha = g.eintraege.reduce((s, e) => s + (e.typ === 'flaeche' ? hektar(e.punkte) : 0), 0)
+          // Bei Farbauswahl immer alle Treffer einzeln zeigen – eingeklappte Monate bleiben gespeichert, gelten aber erst wieder ohne Farbfilter
+          const offen = !!farbe || !monateZu.includes(`${reiter}:${g.monat}`)
+          return (
+            <div className="monat" key={g.monat}>
+              <h3 className="monat-kopf"><button aria-expanded={offen} disabled={!!farbe} onClick={() => monatUmschalten(g.monat)}>{!farbe && <span className="pfeil">{offen ? '▾' : '▸'}</span>} {monatText(g.monat)} <small>· {anz(g.eintraege.length)}{reiter === 'flaeche' ? ` · ≈ ${mha.toLocaleString('de-DE', { maximumFractionDigits: 2 })} ha` : ''}{ms.length > 0 && <> · <TierAnzeige summen={ms} /></>}</small></button></h3>
+              {offen && <ul className="liste">{g.eintraege.map(zeile)}</ul>}
+            </div>
+          )
+        })}
+      </div>
+      {zieh && gezogen && (
+        <div className="zieh-geist" style={{ left: zieh.x, top: zieh.y }} aria-hidden="true">
+          <span className="farbpunkt" style={{ background: pinFarbe(gezogen) }} /> {gezogen.titel || 'ohne Namen'}
+          <small>{zieh.ziel === undefined ? 'auf eine Gruppe ziehen' : zieh.ziel === null ? '→ ohne Gruppe' : `→ ${p.gruppen.find((g) => g.id === zieh.ziel)?.name ?? ''}`}</small>
+        </div>
+      )}
     </section>
   )
 }

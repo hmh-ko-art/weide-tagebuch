@@ -101,8 +101,20 @@ function migrieren(e) {
   if (typeof neu.datum !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(neu.datum) || isNaN(Date.parse(neu.datum))) delete neu.datum
   // Tierliste: 'fest' (Standard) oder 'ausblendbar'; ungültige Werte entfallen (= fest)
   if (!['fest', 'ausblendbar'].includes(neu.tierlisteModus)) delete neu.tierlisteModus
+  // Gruppe (eigene Gruppen der Nadel-Liste): nur gültige ID, sonst ungruppiert
+  if (!gruppenIdOk(neu.gruppe)) delete neu.gruppe
   return neu
 }
+// ---- Eigene Gruppen (geteilt für alle Nutzer der Karte) ----
+const gruppenIdOk = (id) => typeof id === 'string' && /^[\w-]{4,40}$/.test(id)
+const GRUPPEN_MAX = 100
+function gruppenPruefen(liste) {
+  if (!Array.isArray(liste)) return []
+  const ids = new Set()
+  return liste.filter((g) => g && gruppenIdOk(g.id) && typeof g.name === 'string' && !ids.has(g.id) && ids.add(g.id)).slice(0, GRUPPEN_MAX)
+}
+// Gruppe einer Nadel nur behalten, wenn es die Gruppe auf der Karte gibt
+const gruppeGueltig = (k, e) => { if (e.gruppe && !(k.gruppen ?? []).some((g) => g.id === e.gruppe)) delete e.gruppe; return e }
 // Karte migrieren: alter Bearbeiten-Schlüssel -> erster Admin-Zugang (der alte Link funktioniert weiter)
 function karteMigrieren(k) {
   k.eintraege = (k.eintraege ?? []).map(migrieren)
@@ -111,6 +123,7 @@ function karteMigrieren(k) {
   }
   delete k.schluessel
   k.nutzerVersion ??= 1
+  k.gruppen = gruppenPruefen(k.gruppen)
   return k
 }
 const notizOk = (n) => n && typeof n.id === 'string' && typeof n.text === 'string' && typeof n.zeitpunkt === 'string'
@@ -142,7 +155,7 @@ function autorNamen(k) {
   for (const e of k.eintraege) for (const n of e.notizen ?? []) if (n.autorId) ids.add(n.autorId)
   return Object.fromEntries(k.nutzer.filter((n) => ids.has(n.id)).map((n) => [n.id, n.name]))
 }
-const oeffentlich = (k) => ({ id: k.id, name: k.name, version: k.version, nutzerVersion: k.nutzerVersion, namen: autorNamen(k), eintraege: k.eintraege, geaendert: k.geaendert })
+const oeffentlich = (k) => ({ id: k.id, name: k.name, version: k.version, nutzerVersion: k.nutzerVersion, namen: autorNamen(k), eintraege: k.eintraege, gruppen: (k.gruppen ?? []).map((g) => ({ id: g.id, name: g.name, von: g.von, erstellt: g.erstellt })), geaendert: k.geaendert })
 function senden(k) {
   const set = clients.get(k.id)
   if (!set) return
@@ -189,8 +202,11 @@ app.post('/api/karten', (req, res) => {
     nutzerVersion: 1,
     nutzer: [admin],
     eintraege: Array.isArray(req.body?.eintraege) ? req.body.eintraege.map((e) => ({ ...migrieren(e), erstelltVon: admin.id })) : [],
+    // Gruppen einer bisher lokalen Karte mitnehmen
+    gruppen: gruppenPruefen(req.body?.gruppen).map((g) => ({ id: g.id, name: gruppenNamePruefen(g.name).name ?? 'Gruppe', von: admin.id, erstellt: jetzt })),
     erstellt: jetzt,
   }
+  k.eintraege.forEach((e) => gruppeGueltig(k, e))
   cache.set(id, k)
   speichern(k)
   res.status(201).json({ ...oeffentlich(k), zugang: admin.zugang, ich: ichInfo(admin) })
@@ -218,11 +234,13 @@ app.put('/api/karten/:id/eintraege/:eid', mitKarte('nutzer'), (req, res) => {
     // ältere App-Versionen kennen tierlisteModus nicht -> bisherigen Wert behalten
     const modus = body.tierlisteModus === undefined && alt.tierlisteModus ? { tierlisteModus: alt.tierlisteModus } : {}
     if (body.datum === undefined && alt.datum) modus.datum = alt.datum
+    // Gruppe wird nur über /gruppe-zuordnen geändert (Merge-sicher: Bearbeiten überschreibt keine gleichzeitige Gruppierung)
     k.eintraege[i] = { ...e, ...modus, einheiten, erstelltVon: alt.erstelltVon, notizen: alt.notizen ?? [] }
+    if (alt.gruppe) k.eintraege[i].gruppe = alt.gruppe; else delete k.eintraege[i].gruppe
   } else {
     // neue Notizen beim Anlegen bekommen den Nutzer als Autor
     const notizen = e.notizen.filter(notizOk).map((n) => ({ id: n.id, text: n.text.slice(0, 5000), zeitpunkt: n.zeitpunkt, autor: ich.name, autorId: ich.id }))
-    k.eintraege.push({ ...e, erstelltVon: ich.id, notizen })
+    k.eintraege.push(gruppeGueltig(k, { ...e, erstelltVon: ich.id, notizen }))
   }
   speichern(k)
   res.json({ ok: true, version: k.version })
@@ -242,7 +260,7 @@ app.delete('/api/karten/:id/eintraege/:eid', mitKarte('nutzer'), (req, res) => {
 app.put('/api/karten/:id/eintraege', mitKarte('admin'), (req, res) => {
   const k = req.karte
   if (!Array.isArray(req.body)) return res.status(400).json({ fehler: 'Liste erwartet' })
-  k.eintraege = req.body.map((e) => ({ erstelltVon: req.nutzer.id, ...migrieren(e) }))
+  k.eintraege = req.body.map((e) => gruppeGueltig(k, { erstelltVon: req.nutzer.id, ...migrieren(e) }))
   speichern(k)
   res.json({ ok: true, version: k.version })
 })
@@ -275,6 +293,67 @@ app.delete('/api/karten/:id/eintraege/:eid/notizen/:nid', mitKarte('nutzer'), (r
   e.notizen = (e.notizen ?? []).filter((x) => x.id !== req.params.nid)
   speichern(k)
   res.json({ ok: true, version: k.version })
+})
+
+// ---- Eigene Gruppen ----
+// Anlegen: jeder mit Zugang; umbenennen/löschen: wer die Gruppe angelegt hat oder Admin
+const darfGruppe = (n, g) => istAdmin(n) || (!!n && g.von === n.id)
+function gruppenNamePruefen(roh) {
+  if (typeof roh !== 'string') return { fehler: 'Name fehlt' }
+  const name = roh.replace(/[\u0000-\u001f\u007f]/g, '').replace(/\s+/g, ' ').trim()
+  if (!name) return { fehler: 'Name darf nicht leer sein' }
+  if ([...name].length > 40) return { fehler: 'Name ist zu lang (höchstens 40 Zeichen)' }
+  return { name }
+}
+// Anlegen (neue ID) bzw. umbenennen (bestehende ID) – idempotent, damit Offline-Warteschlangen gefahrlos wiederholen
+app.put('/api/karten/:id/gruppen/:gid', mitKarte('nutzer'), (req, res) => {
+  const k = req.karte, ich = req.nutzer
+  if (!gruppenIdOk(req.params.gid)) return res.status(400).json({ fehler: 'Ungültige Gruppen-ID' })
+  const { name, fehler } = gruppenNamePruefen(req.body?.name)
+  if (fehler) return res.status(400).json({ fehler })
+  k.gruppen ??= []
+  const g = k.gruppen.find((x) => x.id === req.params.gid)
+  if (g) {
+    if (!darfGruppe(ich, g)) return res.status(403).json({ fehler: 'Nur eigene Gruppen umbenennen (oder Admin)' })
+    if (g.name !== name) { g.name = name; speichern(k) }
+  } else {
+    if (k.gruppen.length >= GRUPPEN_MAX) return res.status(409).json({ fehler: 'Zu viele Gruppen' })
+    k.gruppen.push({ id: req.params.gid, name, von: ich.id, erstellt: new Date().toISOString() })
+    speichern(k)
+  }
+  res.json({ ok: true, version: k.version })
+})
+// Löschen: Nadeln bleiben erhalten und sind danach ungruppiert
+app.delete('/api/karten/:id/gruppen/:gid', mitKarte('nutzer'), (req, res) => {
+  const k = req.karte
+  const g = (k.gruppen ?? []).find((x) => x.id === req.params.gid)
+  if (!g) return res.json({ ok: true, version: k.version })
+  if (!darfGruppe(req.nutzer, g)) return res.status(403).json({ fehler: 'Nur eigene Gruppen löschen (oder Admin)' })
+  k.gruppen = k.gruppen.filter((x) => x.id !== g.id)
+  for (const e of k.eintraege) if (e.gruppe === g.id) delete e.gruppe
+  speichern(k)
+  res.json({ ok: true, version: k.version })
+})
+// Nadeln einer Gruppe zuordnen (gruppe: ID oder null = ohne Gruppe). Ändert nur das Feld „gruppe“.
+// Rechte wie beim Bearbeiten: Nutzer nur eigene Nadeln, Admin alle. Nicht erlaubte werden übersprungen.
+app.post('/api/karten/:id/gruppe-zuordnen', mitKarte('nutzer'), (req, res) => {
+  const k = req.karte, ich = req.nutzer
+  const gid = req.body?.gruppe ?? null
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids.filter((x) => typeof x === 'string').slice(0, 2000) : null
+  if (!ids) return res.status(400).json({ fehler: 'ids fehlen' })
+  if (gid !== null && !(k.gruppen ?? []).some((g) => g.id === gid)) return res.status(404).json({ fehler: 'Gruppe gibt es nicht (mehr)' })
+  let geaendert = 0, abgelehnt = 0
+  for (const id of ids) {
+    const e = k.eintraege.find((x) => x.id === id)
+    if (!e) continue
+    if (!darfEintrag(ich, e)) { abgelehnt++; continue }
+    if ((e.gruppe ?? null) === gid) continue
+    if (gid) e.gruppe = gid; else delete e.gruppe
+    geaendert++
+  }
+  if (geaendert) speichern(k)
+  if (!geaendert && abgelehnt) return res.status(403).json({ fehler: 'Nur eigene Nadeln gruppieren (oder Admin)', abgelehnt })
+  res.json({ ok: true, geaendert, abgelehnt, version: k.version })
 })
 
 // ---- Nutzerverwaltung (nur Admins) ----
@@ -423,8 +502,10 @@ app.get('/api/karten/:id/live', (req, res) => {
 
 // Gebaute App ausliefern (Produktion)
 if (fs.existsSync(DIST_DIR)) {
-  app.use(express.static(DIST_DIR))
-  app.get(/^\/(?!api\/|healthz).*/, (_req, res) => res.sendFile(path.join(DIST_DIR, 'index.html')))
+  // index.html und sw.js nie aus dem Browser-Cache ohne Rückfrage (neue Versionen sofort); Assets haben Hash im Namen
+  const ohneCache = (res) => res.set('Cache-Control', 'no-cache')
+  app.use(express.static(DIST_DIR, { setHeaders: (res, p) => { if (/\.(html)$|[\\/]sw\.js$|manifest/.test(p)) ohneCache(res); else if (/[\\/]assets[\\/]/.test(p)) res.set('Cache-Control', 'public, max-age=31536000, immutable') } }))
+  app.get(/^\/(?!api\/|healthz).*/, (_req, res) => { ohneCache(res); res.sendFile(path.join(DIST_DIR, 'index.html')) })
 }
 
 app.get('/healthz', (_req, res) => res.json({ ok: true, ablage: pg ? 'postgres' : 'datei' }))

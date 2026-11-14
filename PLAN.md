@@ -208,3 +208,14 @@ interface Karte {          // geteilte Karte (Server)
 
 - **Name**: sichtbar überall „FlockMap“ (Titel, Manifest name/short_name, apple-mobile-web-app-title, application-name, Desktop-Wortmarke „FLOCKMAP“, Teilen-/Einladungstexte, Export-Dateiname `flockmap-JJJJ-MM-TT.json`, Info-Zeile). Unverändert: Repo, Render-Service/URL, Datenbank, API-Pfade, localStorage-Schlüssel `wt-…`, Kartennamen, Listen-Überschrift „Tagebuch“ (Funktionsname). Service-Worker-Cache heißt `flockmap-v1`, alte Caches werden beim Aktivieren gelöscht.
 - **Schrift**: Barlow 400/500/600/700 selbst gehostet (`public/fonts/`, SIL OFL) für die ganze UI inkl. Leaflet-Labels/Popups; Kopf-Titel weiter Barlow Condensed Bold. Vorher griff `system-ui` (je nach Gerät Roboto/SF/Noto oder eine vom Nutzer gewählte Gerätschrift, z. B. Samsung-Schriftstile) bzw. in Karten-Labels Leaflets „Helvetica Neue/Arial“-Kette. Schließen-Kreuze sind jetzt SVG-Icons statt Zeichen ✕.
+
+## 20. Farbfilter einzeln, eigene Gruppen, kompaktere Liste, Update-Erkennung
+- „Nach Farbe“: unter jeder Farbe die einzelnen Nadeln (gewählte Farbe immer offen, andere per ▸).
+- Eigene Gruppen (Nadeln): `karte.gruppen = [{ id, name, von, erstellt }]`, Nadel `gruppe: id`.
+  API: `PUT/DELETE /api/karten/:id/gruppen/:gid` (anlegen alle, umbenennen/löschen Ersteller oder Admin),
+  `POST /api/karten/:id/gruppe-zuordnen { gruppe|null, ids }` (nur eigene Nadeln, Admin alle; ändert nur `gruppe`).
+  Bearbeiten einer Nadel ändert die Gruppe nie (Merge-sicher). Löschen einer Gruppe: Nadeln bleiben, ungruppiert.
+- Ziehen am Griff ≡ (Maus sofort, Touch langes Drücken 0,3 s, Auto-Scroll am Rand), „In Gruppe“ in der Detailansicht,
+  „Alle [Farbe]-Nadeln in Gruppe …“ bei Farbfilter.
+- index.html/sw.js mit `Cache-Control: no-cache`, SW holt Seiten mit `no-store`; App prüft neue Version (Rückkehr in die App,
+  alle 10 min) → lädt neu bzw. zeigt „Neue Version – Jetzt neu laden“.

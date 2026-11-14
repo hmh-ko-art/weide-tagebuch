@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { migrieren, type Einheit, type Eintrag, type Notiz } from './types'
+import { migrieren, type Einheit, type Eintrag, type Gruppe, type Notiz } from './types'
 
 // Geteilte Karte: ?karte=ID (ansehen) bzw. ?karte=ID&zugang=KEY (persönlicher Zugang; alt: &schluessel=KEY).
 // Der Zugang wird am Gerät gespeichert und aus der Adresszeile entfernt.
@@ -31,6 +31,9 @@ type Ausstehend =
   | { art: 'delete'; id: string }
   | { art: 'notiz-put'; eintragId: string; notiz: Notiz }
   | { art: 'notiz-delete'; eintragId: string; notizId: string }
+  | { art: 'gruppe-put'; gruppe: Gruppe }
+  | { art: 'gruppe-delete'; id: string }
+  | { art: 'zuordnen'; gruppe: string | null; ids: string[] }
 
 // Eine Änderung auf eine Liste anwenden (lokal sofort und als Overlay über Serverdaten)
 function anwenden(liste: Eintrag[], a: Ausstehend): Eintrag[] {
@@ -39,7 +42,8 @@ function anwenden(liste: Eintrag[], a: Ausstehend): Eintrag[] {
       const alt = liste.find((x) => x.id === a.eintrag.id)
       const neu = migrieren(a.eintrag)
       // Notizen nie über das Eintragsformular überschreiben – nur über Notiz-Aktionen
-      const e = alt ? { ...neu, notizen: alt.notizen } : neu
+      // Gruppe ebenso nur über „zuordnen“ ändern (der Server macht es genauso)
+      const e = alt ? { ...neu, notizen: alt.notizen, gruppe: alt.gruppe } : neu
       return alt ? liste.map((x) => (x.id === e.id ? e : x)) : [...liste, e]
     }
     case 'delete':
@@ -48,7 +52,21 @@ function anwenden(liste: Eintrag[], a: Ausstehend): Eintrag[] {
       return liste.map((x) => (x.id === a.eintragId ? { ...x, notizen: [...x.notizen.filter((n) => n.id !== a.notiz.id), a.notiz] } : x))
     case 'notiz-delete':
       return liste.map((x) => (x.id === a.eintragId ? { ...x, notizen: x.notizen.filter((n) => n.id !== a.notizId) } : x))
+    case 'gruppe-put':
+      return liste
+    case 'gruppe-delete':
+      return liste.map((x) => (x.gruppe === a.id ? { ...x, gruppe: undefined } : x))
+    case 'zuordnen':
+      return liste.map((x) => (a.ids.includes(x.id) ? { ...x, gruppe: a.gruppe ?? undefined } : x))
   }
+}
+function gruppenAnwenden(gruppen: Gruppe[], a: Ausstehend): Gruppe[] {
+  if (a.art === 'gruppe-put') {
+    const alt = gruppen.find((g) => g.id === a.gruppe.id)
+    return alt ? gruppen.map((g) => (g.id === a.gruppe.id ? { ...g, name: a.gruppe.name } : g)) : [...gruppen, a.gruppe]
+  }
+  if (a.art === 'gruppe-delete') return gruppen.filter((g) => g.id !== a.id)
+  return gruppen
 }
 // Autor-Anzeige aktuell halten: Notizen mit Nutzer-ID bekommen den aktuellen Namen vom Server.
 // Ist die ID nicht (mehr) auflösbar (z. B. Nutzer entfernt, alte Notiz ohne ID), bleibt der gespeicherte Name.
@@ -63,6 +81,7 @@ export type SyncStatus = 'lokal' | 'verbunden' | 'offline' | 'verbinde'
 
 const cacheKey = (id: string | null) => (id ? `wt-karte-${id}` : 'wt-lokal')
 const queueKey = (id: string) => `wt-queue-${id}`
+const gruppenKey = (id: string | null) => (id ? `wt-gruppen-${id}` : 'wt-lokal-gruppen')
 
 function lesen<T>(key: string, fallback: T): T {
   try {
@@ -76,6 +95,7 @@ function lesen<T>(key: string, fallback: T): T {
 export function useKarte() {
   const { karteId, zugang, einladung } = PARAMS
   const [eintraege, setEintraege] = useState<Eintrag[]>(() => lesen<Eintrag[]>(cacheKey(karteId), []).map(migrieren))
+  const [gruppen, setGruppen] = useState<Gruppe[]>(() => lesen<Gruppe[]>(gruppenKey(karteId), []))
   const [status, setStatus] = useState<SyncStatus>(karteId ? 'verbinde' : 'lokal')
   const [ich, setIch] = useState<Ich | null>(null)
   const [hinweis, setHinweis] = useState('')
@@ -103,8 +123,10 @@ export function useKarte() {
       })
       if (mitEintraegen) {
         let liste: Eintrag[] = namenAnwenden(k.eintraege.map(migrieren), k.namen)
-        for (const a of queue.current) liste = anwenden(liste, a)
+        let gl: Gruppe[] = k.gruppen ?? []
+        for (const a of queue.current) { liste = anwenden(liste, a); gl = gruppenAnwenden(gl, a) }
         setEintraege(liste)
+        setGruppen(gl)
       }
     } catch { /* offline */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -114,6 +136,7 @@ export function useKarte() {
   useEffect(() => {
     localStorage.setItem(cacheKey(karteId), JSON.stringify(eintraege))
   }, [eintraege, karteId])
+  useEffect(() => { localStorage.setItem(gruppenKey(karteId), JSON.stringify(gruppen)) }, [gruppen, karteId])
 
   const queueSpeichern = () => karteId && localStorage.setItem(queueKey(karteId), JSON.stringify(queue.current))
 
@@ -123,7 +146,10 @@ export function useKarte() {
       a.art === 'put' ? [basis + a.eintrag.id, 'PUT', a.basis ? { ...a.eintrag, einheitenBasis: a.basis } : a.eintrag]
       : a.art === 'delete' ? [basis + a.id, 'DELETE', undefined]
       : a.art === 'notiz-put' ? [`${basis}${a.eintragId}/notizen/${a.notiz.id}`, 'PUT', a.notiz]
-      : [`${basis}${a.eintragId}/notizen/${a.notizId}`, 'DELETE', undefined]
+      : a.art === 'notiz-delete' ? [`${basis}${a.eintragId}/notizen/${a.notizId}`, 'DELETE', undefined]
+      : a.art === 'gruppe-put' ? [`/api/karten/${karteId}/gruppen/${a.gruppe.id}`, 'PUT', { name: a.gruppe.name }]
+      : a.art === 'gruppe-delete' ? [`/api/karten/${karteId}/gruppen/${a.id}`, 'DELETE', undefined]
+      : [`/api/karten/${karteId}/gruppe-zuordnen`, 'POST', { gruppe: a.gruppe, ids: a.ids }]
     const r = await fetch(url, { method, headers, body: body ? JSON.stringify(body) : undefined })
     if (r.status === 403 || r.status === 404) throw Object.assign(new Error('Nur Lesezugriff'), { endgueltig: true })
     if (!r.ok) throw new Error('Serverfehler ' + r.status)
@@ -166,8 +192,10 @@ export function useKarte() {
       if (nutzerVersion.current !== null && k.nutzerVersion !== nutzerVersion.current) { ichLaden(); setNutzerStand(k.nutzerVersion) }
       // Lokale, noch nicht gesendete Änderungen obenauf legen
       let liste: Eintrag[] = namenAnwenden(k.eintraege.map(migrieren), k.namen)
-      for (const a of queue.current) liste = anwenden(liste, a)
+      let gl: Gruppe[] = k.gruppen ?? []
+      for (const a of queue.current) { liste = anwenden(liste, a); gl = gruppenAnwenden(gl, a) }
       setEintraege(liste)
+      setGruppen(gl)
       if (queue.current.length) queueAbarbeiten()
     })
     es.onerror = () => setStatus('offline')
@@ -179,6 +207,7 @@ export function useKarte() {
 
   const ausfuehren = useCallback((a: Ausstehend) => {
     setEintraege((l) => anwenden(l, a))
+    setGruppen((g) => gruppenAnwenden(g, a))
     if (karteId) { queue.current.push(a); queueSpeichern(); queueAbarbeiten() }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [karteId, queueAbarbeiten])
@@ -194,6 +223,11 @@ export function useKarte() {
   const notizSpeichern = useCallback((eintragId: string, notiz: Notiz) => ausfuehren({ art: 'notiz-put', eintragId, notiz }), [ausfuehren])
   const notizLoeschen = useCallback((eintragId: string, notizId: string) => ausfuehren({ art: 'notiz-delete', eintragId, notizId }), [ausfuehren])
 
+  // Eigene Gruppen: anlegen/umbenennen, löschen (Nadeln bleiben, werden ungruppiert), Nadeln zuordnen
+  const gruppeSpeichern = useCallback((g: Gruppe) => ausfuehren({ art: 'gruppe-put', gruppe: g }), [ausfuehren])
+  const gruppeLoeschen = useCallback((id: string) => ausfuehren({ art: 'gruppe-delete', id }), [ausfuehren])
+  const zuordnen = useCallback((gruppe: string | null, ids: string[]) => { if (ids.length) ausfuehren({ art: 'zuordnen', gruppe, ids }) }, [ausfuehren])
+
   const alleErsetzen = useCallback(async (roh: Eintrag[]) => {
     const liste = roh.map(migrieren)
     setEintraege(liste)
@@ -203,13 +237,13 @@ export function useKarte() {
 
   // Lokale Karte in eine geteilte Server-Karte umwandeln
   const teilen = useCallback(async (name: string) => {
-    const r = await fetch('/api/karten', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, eintraege }) })
+    const r = await fetch('/api/karten', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, eintraege, gruppen }) })
     if (!r.ok) throw new Error('Server nicht erreichbar')
     const k = await r.json()
     localStorage.setItem(cacheKey(k.id), JSON.stringify(eintraege))
     localStorage.setItem(zugangKey(k.id), k.zugang)
     location.href = `${location.pathname}?karte=${k.id}`
-  }, [eintraege])
+  }, [eintraege, gruppen])
 
   const abmelden = useCallback(() => {
     if (karteId) localStorage.removeItem(zugangKey(karteId))
@@ -270,5 +304,5 @@ export function useKarte() {
   }
   const einladungVerwalten = { laden: () => einladungApi('GET'), erzeugen: () => einladungApi('POST'), deaktivieren: () => einladungApi('DELETE') }
 
-  return { eintraege, speichern, loeschen, notizSpeichern, notizLoeschen, alleErsetzen, teilen, abmelden, nameAendern, einladung, einladungPruefen, beitreten, kartenNameAendern, einladungVerwalten, nutzerStand, status, darfBearbeiten, istAdmin, ich, ichLaden, hinweis, setHinweis, nutzer, karteId, zugang, kartenName }
+  return { eintraege, gruppen, gruppeSpeichern, gruppeLoeschen, zuordnen, speichern, loeschen, notizSpeichern, notizLoeschen, alleErsetzen, teilen, abmelden, nameAendern, einladung, einladungPruefen, beitreten, kartenNameAendern, einladungVerwalten, nutzerStand, status, darfBearbeiten, istAdmin, ich, ichLaden, hinweis, setHinweis, nutzer, karteId, zugang, kartenName }
 }

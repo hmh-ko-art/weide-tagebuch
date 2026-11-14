@@ -24,6 +24,7 @@ interface Basis {
   einheiten?: Einheit[] // beliebig viele Tiereinheiten (je Anzahl + Tierart)
   datum?: string // Datum des Eintrags (YYYY-MM-DD, im Formular wählbar); fehlt = Erstelldatum
   tierlisteModus?: 'fest' | 'ausblendbar' // fehlt = 'fest' (bisheriges Verhalten)
+  gruppe?: string // ID einer eigenen Gruppe (Nadel-Liste); fehlt = ohne Gruppe
   farbe?: string // Hex-Farbe (Nadel bzw. Fläche); fehlt bei alten Einträgen -> STANDARD_FARBE / FLAECHE_STANDARD
   erstellt: string
   geaendert: string
@@ -56,6 +57,15 @@ export interface Flaeche extends Basis {
   punkte: LatLng[]
 }
 export type Eintrag = Pin | Flaeche
+
+// Eigene Gruppe der Nadel-Liste (geteilt, auf dem Server in der Karte gespeichert)
+export interface Gruppe { id: string; name: string; von?: string; erstellt?: string }
+// Vorschlag für den Namen einer neuen Gruppe: „Gruppe 1“, „Gruppe 2“ … (erste freie Nummer)
+export function gruppenVorschlag(gruppen: { name: string }[]) {
+  let n = gruppen.length + 1
+  while (gruppen.some((g) => g.name.trim().toLowerCase() === `gruppe ${n}`)) n++
+  return `Gruppe ${n}`
+}
 
 export interface Route {
   punkte: LatLng[]

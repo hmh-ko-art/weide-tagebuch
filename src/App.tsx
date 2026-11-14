@@ -82,10 +82,11 @@ export default function App() {
     if (modus === 'flaeche') return
     setAusgewaehlt(id)
     setPanel(null)
-    const e = k.eintraege.find((x) => x.id === id)
-    if (e?.typ === 'pin') routeZu(e) // Beim Antippen einer Nadel: Route vom Standort berechnen
-    else { routeNr.current++; setRoute(null); setRouteInfo('') }
+    // Antippen zeigt nur die Details – eine Route gibt es nur über den Knopf „Route anzeigen“
+    routeAus()
   }
+
+  const routeAus = () => { routeNr.current++; setRoute(null); setRouteInfo('') }
 
   const abwaehlen = () => { setAusgewaehlt(null); setRoute(null); setRouteInfo(''); routeNr.current++ }
 
@@ -194,6 +195,7 @@ export default function App() {
             onBearbeiten={() => setFormular({ e: auswahl, neu: false })}
             onLoeschen={() => loeschen(auswahl)}
             onRoute={() => routeZu(auswahl)}
+            onRouteAus={routeAus}
             onNotizSpeichern={(n) => k.notizSpeichern(auswahl.id, n)}
             onNotizLoeschen={(id) => k.notizLoeschen(auswahl.id, id)}
           />
@@ -212,7 +214,7 @@ export default function App() {
   )
 }
 
-function Detail(p: { e: Eintrag; routeInfo: string; darfBearbeiten: boolean; onSchliessen: () => void; onBearbeiten: () => void; onLoeschen: () => void; onRoute: () => void; onNotizSpeichern: (n: Notiz) => void; onNotizLoeschen: (id: string) => void }) {
+function Detail(p: { e: Eintrag; routeInfo: string; darfBearbeiten: boolean; onSchliessen: () => void; onBearbeiten: () => void; onLoeschen: () => void; onRoute: () => void; onRouteAus: () => void; onNotizSpeichern: (n: Notiz) => void; onNotizLoeschen: (id: string) => void }) {
   const { e } = p
   const ziel = mitte(e)
   return (
@@ -230,7 +232,7 @@ function Detail(p: { e: Eintrag; routeInfo: string; darfBearbeiten: boolean; onS
       </div>
       {p.routeInfo && <p className="route-info">🚗 {p.routeInfo}</p>}
       <div className="knoepfe">
-        <button onClick={p.onRoute}>Route anzeigen</button>
+        {p.routeInfo ? <button onClick={p.onRouteAus}>Route ausblenden</button> : <button onClick={p.onRoute}>Route anzeigen</button>}
         <a className="btn primaer" href={googleNaviLink(ziel)} target="_blank" rel="noreferrer">In Google Maps navigieren</a>
         {p.darfBearbeiten && <button onClick={p.onBearbeiten}>Bearbeiten</button>}
         {p.darfBearbeiten && <button className="gefahr" onClick={p.onLoeschen}>Löschen</button>}

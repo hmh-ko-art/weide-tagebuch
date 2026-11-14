@@ -9,7 +9,7 @@ Digitales Weide- und Reisetagebuch für die Deichschäferei: Auf einer Karte (Go
 - Zu jedem Eintrag: Name, Notiz, Tierzahl, Herde, Datum (erstellt/geändert).
 - Tagebuch/Verlauf: Liste aller Einträge, Suche, Filter.
 - **Gemeinsame Karte**: mehrere Personen sehen und bearbeiten dieselben Nadeln live; Rollen *ansehen* / *bearbeiten*.
-- **Route**: Antippen einer Nadel → Route vom aktuellen Standort wird auf der Karte gezeigt; Knopf **„In Google Maps navigieren“** für echte Turn-by-Turn-Navigation.
+- **Route**: Antippen einer Nadel oder Fläche öffnet nur die Details (Name, Farbe, Tierzahl, Herde, Notizen). Die Route vom aktuellen Standort gibt es nur per Knopf **„Route anzeigen“** (wieder ausblendbar mit **„Route ausblenden“**); Knopf **„In Google Maps navigieren“** für echte Turn-by-Turn-Navigation.
 - Funktioniert auch bei schlechtem Netz am Deich (Offline-Cache, spätere Synchronisierung).
 - Export/Import (JSON), später auch CSV/PDF für Dokumentation (z. B. Weidetagebuch für Förderprogramme/Deichverband).
 
@@ -116,7 +116,7 @@ interface Karte {          // geteilte Karte (Server)
 3. ✅ Nadeln setzen (Knopf „+ Nadel“, Tippen auf Karte, Kartenmitte, eigener Standort), Flächen zeichnen, Formular mit Name/Notiz/Tierzahl/Herde, Bearbeiten, Löschen.
 4. ✅ Liste/Tagebuch mit Suche und Filter; Export/Import JSON.
 5. ✅ Kleiner Sync-Server (Express + JSON-Dateien + SSE), geteilte Karten per Link, Rollen ansehen/bearbeiten, localStorage als Offline-Cache mit Warteschlange.
-6. ✅ Route beim Antippen einer Nadel (Google Directions bzw. OSRM) + „In Google Maps navigieren“.
+6. ✅ Route per Knopf „Route anzeigen“ / „Route ausblenden“ im Detail-Panel (Google Directions bzw. OSRM) + „In Google Maps navigieren“; Antippen löst keine Route mehr aus.
 7. ⏭ Google-Cloud-Projekt anlegen, API-Key erstellen, auf Domain beschränken, eintragen und testen.
 8. ⏭ Hosting einrichten (HTTPS ist für Standort & PWA-Installation auf dem Handy Pflicht).
 9. ⏭ Umstieg Backend auf Supabase (Auth, Rollen, Realtime, EU-Region).

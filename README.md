@@ -1,4 +1,6 @@
-# Weide-Tagebuch (Prototyp)
+# FlockMap (Prototyp, ehemals „Weide-Tagebuch“)
+
+Repo, Render-Service (`weide-tagebuch`), Datenbank, API-Pfade und localStorage-Schlüssel (`wt-…`) behalten bewusst den alten Namen.
 
 Siehe **PLAN.md** für Ziel, Tech-Stack, Screens und Ausbau.
 

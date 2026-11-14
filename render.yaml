@@ -1,4 +1,4 @@
-# Render Blueprint – Weide-Tagebuch (nur Free-Pläne)
+# Render Blueprint – FlockMap, ehemals Weide-Tagebuch (nur Free-Pläne; Service-/DB-Namen bleiben)
 services:
   - type: web
     name: weide-tagebuch

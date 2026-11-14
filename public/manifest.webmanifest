@@ -1,7 +1,7 @@
 {
-  "name": "Weide-Tagebuch",
-  "short_name": "Weide",
-  "description": "Weide- und Reisetagebuch mit Karte: Nadeln und Flächen für Herden setzen, Notizen, teilen.",
+  "name": "FlockMap",
+  "short_name": "FlockMap",
+  "description": "FlockMap – Weidekarte und Herdentagebuch: Nadeln und Flächen für Herden setzen, Notizen, teilen.",
   "lang": "de",
   "start_url": "/",
   "display": "standalone",

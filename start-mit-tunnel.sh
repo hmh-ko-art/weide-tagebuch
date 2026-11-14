@@ -1,5 +1,5 @@
 #!/bin/bash
-# Weide-Tagebuch auf dem Mac starten und per Cloudflare Quick Tunnel (HTTPS) fürs Handy freigeben.
+# FlockMap (ehemals Weide-Tagebuch) auf dem Mac starten und per Cloudflare Quick Tunnel (HTTPS) fürs Handy freigeben.
 # Benötigt Node.js (https://nodejs.org). Beenden mit Ctrl+C.
 set -e
 cd "$(dirname "$0")"

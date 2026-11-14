@@ -1,4 +1,4 @@
-// Weide-Tagebuch – kleiner Sync-Server (Express + JSON-Dateien + Server-Sent Events)
+// FlockMap (ehemals Weide-Tagebuch) – kleiner Sync-Server (Express + JSON-Dateien + Server-Sent Events)
 // Start: node server/server.js   (Port über PORT, Standard 8787)
 import express from 'express'
 import fs from 'node:fs'
@@ -430,5 +430,5 @@ if (fs.existsSync(DIST_DIR)) {
 app.get('/healthz', (_req, res) => res.json({ ok: true, ablage: pg ? 'postgres' : 'datei' }))
 
 ablageStarten()
-  .then(() => app.listen(PORT, () => console.log(`Weide-Tagebuch-Server läuft auf http://localhost:${PORT}`)))
+  .then(() => app.listen(PORT, () => console.log(`FlockMap-Server läuft auf http://localhost:${PORT}`)))
   .catch((e) => { console.error('Ablage konnte nicht gestartet werden:', e); process.exit(1) })

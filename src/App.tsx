@@ -35,6 +35,7 @@ const ICONS: Record<string, string> = {
   nutzer: 'M16 19v-1.5a3.5 3.5 0 0 0-3.5-3.5h-5A3.5 3.5 0 0 0 4 17.5V19M10 10.5a3.25 3.25 0 1 0 0-6.5 3.25 3.25 0 0 0 0 6.5ZM20 19v-1.5a3.5 3.5 0 0 0-2.5-3.35M15.5 4.15a3.25 3.25 0 0 1 0 6.2',
   zahnrad: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z',
   stift: 'M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z',
+  x: 'M18 6 6 18M6 6l12 12',
   etikett: 'M20.59 13.41 13.42 20.58a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82ZM7 7h.01',
 }
 function Icon({ name }: { name: string }) {
@@ -233,8 +234,8 @@ export default function App() {
         <img className="marke" src="/icon.svg" alt="" width="36" height="36" />
         <div className="kopf-text">
           <div className="kopf-zeile">
-            {k.kartenName && <span className="marke-wort" aria-hidden="true">Weide-Tagebuch</span>}
-            <h1 className="kopf-titel" title={k.kartenName || 'Weide-Tagebuch'}>{k.kartenName || 'Weide-Tagebuch'}</h1>
+            {k.kartenName && <span className="marke-wort" aria-hidden="true">FlockMap</span>}
+            <h1 className="kopf-titel" title={k.kartenName || 'FlockMap'}>{k.kartenName || 'FlockMap'}</h1>
           </div>
           <small className={`status ${k.status}`}><span className="status-punkt" aria-hidden="true" />{statusText}{k.karteId && k.ich && <> · <button className="name-knopf" title="Meinen Namen ändern" onClick={() => setPanel(panel === 'profil' ? null : 'profil')}>{k.ich.name}{k.ich.rolle === 'admin' ? ' (Admin)' : ''} <Icon name="stift" /></button></>}{!k.darfBearbeiten && ' · nur ansehen'}</small>
         </div>
@@ -373,7 +374,7 @@ function Detail(p: { e: Eintrag; routeInfo: string; darfBearbeiten: boolean; kan
     <section className="sheet">
       <div className="sheet-kopf">
         <h2>{e.typ === 'pin' ? <span className="farbpunkt" style={{ background: pinFarbe(e), width: 16, height: 16 }} /> : <span className="flaechen-symbol" style={{ color: pinFarbe(e) }}>⬠</span>} {e.titel || <span className="ohne-name">ohne Namen</span>}</h2>
-        <button className="x" onClick={p.onSchliessen} aria-label="Schließen">✕</button>
+        <button className="x" onClick={p.onSchliessen} aria-label="Schließen"><Icon name="x" /></button>
       </div>
       <div className="meta">
         <span>Farbe: {farbName(pinFarbe(e))}</span>
@@ -473,7 +474,7 @@ function Formular(p: { start: Eintrag; neu: boolean; onSpeichern: (e: Eintrag, b
       }}>
         <div className="sheet-kopf">
           <h2>{p.neu ? `Neue ${art}` : `${art} bearbeiten`}</h2>
-          <button type="button" className="x" onClick={p.onAbbrechen} aria-label="Abbrechen">✕</button>
+          <button type="button" className="x" onClick={p.onAbbrechen} aria-label="Abbrechen"><Icon name="x" /></button>
         </div>
         <label>Name<input autoFocus value={e.titel} placeholder={e.typ === 'pin' ? 'z. B. Mutterschafe Deich Nord' : 'z. B. Koog-Weide 3'} onChange={(x) => setE({ ...e, titel: x.target.value })} /></label>
         {p.neu ? (
@@ -501,7 +502,7 @@ function Formular(p: { start: Eintrag; neu: boolean; onSpeichern: (e: Eintrag, b
               <select aria-label={`Tierart (Zeile ${i + 1})`} value={z.art} onChange={(x) => zeileAendern(z.id, { art: x.target.value as Tierart })}>
                 {TIERARTEN.map((t) => <option key={t.wert} value={t.wert}>{t.emoji ? `${t.emoji} ` : ''}{t.name}</option>)}
               </select>
-              <button type="button" className="x" aria-label={`Zeile ${i + 1} entfernen`} title="Zeile entfernen" onClick={() => setZeilen((l) => l.filter((x) => x.id !== z.id))}>✕</button>
+              <button type="button" className="x" aria-label={`Zeile ${i + 1} entfernen`} title="Zeile entfernen" onClick={() => setZeilen((l) => l.filter((x) => x.id !== z.id))}><Icon name="x" /></button>
             </div>
           ))}
           <label className="tierliste-modus">Tierliste<select value={e.tierlisteModus ?? 'fest'} onChange={(x) => setE({ ...e, tierlisteModus: x.target.value as 'fest' | 'ausblendbar' })}>
@@ -583,7 +584,7 @@ function Liste(p: { eintraege: Eintrag[]; onWahl: (e: Eintrag) => void; onSchlie
     <section className="panel">
       <div className="sheet-kopf">
         <h2>Tagebuch</h2>
-        <button className="x" onClick={p.onSchliessen} aria-label="Schließen">✕</button>
+        <button className="x" onClick={p.onSchliessen} aria-label="Schließen"><Icon name="x" /></button>
       </div>
       <div className="tabs reiter" role="tablist">
         {(['pin', 'flaeche'] as const).map((f) => (
@@ -682,10 +683,10 @@ function Einstellungen(p: { k: ReturnType<typeof useKarte>; onSchliessen: () => 
     try { await navigator.clipboard.writeText(t); p.meldung('Link kopiert') } catch { prompt('Link kopieren:', t) }
   }
   const exportieren = () => {
-    const blob = new Blob([JSON.stringify({ app: 'weide-tagebuch', version: 1, exportiert: new Date().toISOString(), eintraege: k.eintraege }, null, 2)], { type: 'application/json' })
+    const blob = new Blob([JSON.stringify({ app: 'flockmap', version: 1, exportiert: new Date().toISOString(), eintraege: k.eintraege }, null, 2)], { type: 'application/json' })
     const a = document.createElement('a')
     a.href = URL.createObjectURL(blob)
-    a.download = `weide-tagebuch-${new Date().toISOString().slice(0, 10)}.json`
+    a.download = `flockmap-${new Date().toISOString().slice(0, 10)}.json`
     a.click()
   }
   const importieren = async (f: File) => {
@@ -703,7 +704,7 @@ function Einstellungen(p: { k: ReturnType<typeof useKarte>; onSchliessen: () => 
     <section className="panel">
       <div className="sheet-kopf">
         <h2>Einstellungen</h2>
-        <button className="x" onClick={p.onSchliessen} aria-label="Schließen">✕</button>
+        <button className="x" onClick={p.onSchliessen} aria-label="Schließen"><Icon name="x" /></button>
       </div>
 
       <h3>Karte teilen</h3>
@@ -769,7 +770,7 @@ function Einstellungen(p: { k: ReturnType<typeof useKarte>; onSchliessen: () => 
 
       <h3>Karte</h3>
       <p className="hinweis">Kartendienst: {HAT_GOOGLE_KEY ? 'Google Maps (Satellit)' : 'Esri-Satellit / OpenStreetMap (kostenlos) – für Google Maps einen API-Key in VITE_GOOGLE_MAPS_API_KEY eintragen'}.<br />Routen: {HAT_GOOGLE_KEY ? 'Google Directions' : 'OSRM (kostenloser Demo-Server)'}.</p>
-      <p className="hinweis klein">Weide-Tagebuch · Prototyp v0.1</p>
+      <p className="hinweis klein">FlockMap · Prototyp v0.1</p>
     </section>
   )
 }
@@ -827,7 +828,7 @@ function Profil(p: { k: ReturnType<typeof useKarte>; onSchliessen: () => void; m
   }
   return (
     <section className="panel profil">
-      <div className="sheet-kopf"><h2>Mein Name</h2><button className="x" onClick={p.onSchliessen} aria-label="Schließen">✕</button></div>
+      <div className="sheet-kopf"><h2>Mein Name</h2><button className="x" onClick={p.onSchliessen} aria-label="Schließen"><Icon name="x" /></button></div>
       <form onSubmit={speichern}>
         <label>Anzeigename<input autoFocus value={name} maxLength={NAME_MAX} onChange={(e) => setName(e.target.value)} placeholder="z. B. Henning" /></label>
         <p className="hinweis klein">Erscheint als Autor bei deinen Notizen – auch bei den bisherigen – und bei allen anderen sofort. {[...sauber].length}/{NAME_MAX}</p>
@@ -858,13 +859,13 @@ function NutzerVerwaltung(p: { k: ReturnType<typeof useKarte>; onSchliessen: () 
   useEffect(() => { k.einladungVerwalten.laden().then((x) => setEinl(x.code)).catch(fehler) }, [])
   const einlLink = einl ? einladungsLink(k.karteId!, einl) : ''
   const einlTeilen = async () => {
-    const text = `Einladung zur Weidekarte „${k.kartenName}“ – Link öffnen und Namen eingeben: ${einlLink}`
-    if (navigator.share) { try { await navigator.share({ title: 'Weide-Tagebuch', text, url: einlLink }); return } catch { /* abgebrochen */ } }
+    const text = `Einladung zur Weidekarte „${k.kartenName}“ in FlockMap – Link öffnen und Namen eingeben: ${einlLink}`
+    if (navigator.share) { try { await navigator.share({ title: 'FlockMap', text, url: einlLink }); return } catch { /* abgebrochen */ } }
     try { await navigator.clipboard.writeText(einlLink); p.meldung('Einladungslink kopiert') } catch { prompt('Einladungslink kopieren:', einlLink) }
   }
   const teilen = async (n: Nutzer) => {
-    const text = `Hallo ${n.name}, hier ist dein persönlicher Zugang zur Weidekarte „${k.kartenName}“: ${link(n)}`
-    if (navigator.share) { try { await navigator.share({ title: 'Weide-Tagebuch', text, url: link(n) }); return } catch { /* abgebrochen */ } }
+    const text = `Hallo ${n.name}, hier ist dein persönlicher Zugang zur Weidekarte „${k.kartenName}“ in FlockMap: ${link(n)}`
+    if (navigator.share) { try { await navigator.share({ title: 'FlockMap', text, url: link(n) }); return } catch { /* abgebrochen */ } }
     try { await navigator.clipboard.writeText(link(n)); p.meldung(`Link für ${n.name} kopiert`) } catch { prompt(`Link für ${n.name} kopieren:`, link(n)) }
   }
   const admins = liste?.filter((n) => n.rolle === 'admin').length ?? 0
@@ -872,7 +873,7 @@ function NutzerVerwaltung(p: { k: ReturnType<typeof useKarte>; onSchliessen: () 
     <section className="panel nutzer-panel">
       <div className="sheet-kopf">
         <h2>Nutzer</h2>
-        <button className="x" onClick={p.onSchliessen} aria-label="Schließen">✕</button>
+        <button className="x" onClick={p.onSchliessen} aria-label="Schließen"><Icon name="x" /></button>
       </div>
       <p className="hinweis">Jede Person bekommt einen eigenen Link. <strong>Nutzer</strong> dürfen Nadeln, Flächen und Notizen anlegen und ihre eigenen ändern/löschen. <strong>Admins</strong> dürfen alles und Nutzer verwalten.</p>
 

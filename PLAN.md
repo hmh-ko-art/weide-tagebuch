@@ -1,4 +1,4 @@
-# Weide-Tagebuch – Plan
+# FlockMap (ehemals Weide-Tagebuch) – Plan
 
 Digitales Weide- und Reisetagebuch für die Deichschäferei: Auf einer Karte (Google Maps bzw. OpenStreetMap) markiert man, **wo gerade Tiere stehen** – als **Nadel (Pin)** oder als **eingezeichnete Fläche (Weide/Koog/Deichabschnitt)** – jeweils mit **Notiz**, optional **Tierzahl** und **Herde**. Die Karte lässt sich **mit anderen teilen** (Mitarbeiter, Familie, Deichverband, Tierarzt), und zu jeder Nadel kann man sich **die Route anzeigen bzw. direkt hinnavigieren** lassen. Komplett auf Deutsch, für das Handy draußen am Deich gemacht.
 
@@ -203,3 +203,8 @@ interface Karte {          // geteilte Karte (Server)
 
 - **Icons** (`public/`): `icon.svg` (Quelle), `icon-192.png`/`icon-512.png` (any), `icon-maskable-192.png`/`-512.png` (Motiv auf 78 % verkleinert, sichere Zone), `apple-touch-icon.png` (180), `favicon.svg` (abgerundet), `favicon.ico` (16/32/48), `favicon-32.png`. Manifest: theme `#1e4d2b`, background `#16324a`. Entwürfe liegen nur lokal in `logos/` (nicht im Repo).
 - **Kopfzeile**: flach, Standard Tiefgrün `#1e4d2b`, Schrift Creme `#f4ecd8`, Akzent Orange `#e8682a`. Links Geo-Schaf-Logo (36 px), daneben Kartenname in Barlow Condensed Bold (selbst gehostet, `public/fonts/`, SIL OFL), darunter Status mit Punkt (grün = live, orange = offline) und Name. Desktop zusätzlich Wortmarke „WEIDE-TAGEBUCH“. Buttons als flache Linien-Icons (Liste/Nutzer/Einstellungen, aktiver Zustand Creme), unter 480 px nur Icon. Lange Kartennamen umbrechen auf max. 2 Zeilen statt abgeschnitten zu werden. Eigene Kopfzeilenfarbe pro Gerät funktioniert weiter (Schrift automatisch dunkel/Creme). Beschriftungs-Knopf auf der Karte ebenfalls flach mit Etikett-Icon.
+
+## 19. Umbenennung in „FlockMap“ und neue UI-Schrift (Stand 14.11.2026)
+
+- **Name**: sichtbar überall „FlockMap“ (Titel, Manifest name/short_name, apple-mobile-web-app-title, application-name, Desktop-Wortmarke „FLOCKMAP“, Teilen-/Einladungstexte, Export-Dateiname `flockmap-JJJJ-MM-TT.json`, Info-Zeile). Unverändert: Repo, Render-Service/URL, Datenbank, API-Pfade, localStorage-Schlüssel `wt-…`, Kartennamen, Listen-Überschrift „Tagebuch“ (Funktionsname). Service-Worker-Cache heißt `flockmap-v1`, alte Caches werden beim Aktivieren gelöscht.
+- **Schrift**: Barlow 400/500/600/700 selbst gehostet (`public/fonts/`, SIL OFL) für die ganze UI inkl. Leaflet-Labels/Popups; Kopf-Titel weiter Barlow Condensed Bold. Vorher griff `system-ui` (je nach Gerät Roboto/SF/Noto oder eine vom Nutzer gewählte Gerätschrift, z. B. Samsung-Schriftstile) bzw. in Karten-Labels Leaflets „Helvetica Neue/Arial“-Kette. Schließen-Kreuze sind jetzt SVG-Icons statt Zeichen ✕.

@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Karte, { HAT_GOOGLE_KEY } from './map/Karte'
-import { useKarte, zugangsLink, type Ich, type Nutzer } from './daten'
+import { useKarte, zugangsLink, NAME_MAX, type Ich, type Nutzer } from './daten'
 import { googleNaviLink, routeBerechnen, routeText } from './route'
 import { FARBEN, START, STANDARD_FARBE, datum, farbName, hektar, mitte, neueId, notizenSortiert, pinFarbe, type Eintrag, type Notiz, type Fokus, type LatLng, type Route } from './types'
 
 type Modus = 'ansicht' | 'pin' | 'flaeche'
-type Panel = null | 'liste' | 'einstellungen' | 'nutzer'
+type Panel = null | 'liste' | 'einstellungen' | 'nutzer' | 'profil'
 
 // Aktuell angemeldeter Nutzer (geteilte Karte) – für Autor neuer Notizen
 let aktuellerNutzer: Ich | null = null
@@ -142,7 +142,7 @@ export default function App() {
       <header className="kopf">
         <div>
           <h1>🐑 Weide-Tagebuch</h1>
-          <small className={`status ${k.status}`}>{k.kartenName ? `${k.kartenName} · ` : ''}{statusText}{k.karteId && k.ich ? ` · ${k.ich.name}${k.ich.rolle === 'admin' ? ' (Admin)' : ''}` : ''}{!k.darfBearbeiten && ' · nur ansehen'}</small>
+          <small className={`status ${k.status}`}>{k.kartenName ? `${k.kartenName} · ` : ''}{statusText}{k.karteId && k.ich && <> · <button className="name-knopf" title="Meinen Namen ändern" onClick={() => setPanel(panel === 'profil' ? null : 'profil')}>{k.ich.name}{k.ich.rolle === 'admin' ? ' (Admin)' : ''} ✏️</button></>}{!k.darfBearbeiten && ' · nur ansehen'}</small>
         </div>
         <nav>
           <button onClick={() => setPanel(panel === 'liste' ? null : 'liste')}>📋 Liste</button>
@@ -222,7 +222,8 @@ export default function App() {
         {panel === 'liste' && (
           <Liste eintraege={k.eintraege} onSchliessen={() => setPanel(null)} onWahl={(e) => { fliege(mitte(e), e.typ === 'pin' ? 15 : undefined); waehle(e.id) }} />
         )}
-        {panel === 'einstellungen' && <Einstellungen k={k} onSchliessen={() => setPanel(null)} meldung={setMeldung} onNutzer={() => setPanel('nutzer')} />}
+        {panel === 'einstellungen' && <Einstellungen k={k} onSchliessen={() => setPanel(null)} meldung={setMeldung} onNutzer={() => setPanel('nutzer')} onProfil={() => setPanel('profil')} />}
+        {panel === 'profil' && k.ich && <Profil k={k} onSchliessen={() => setPanel(null)} meldung={setMeldung} />}
         {panel === 'nutzer' && k.istAdmin && k.karteId && <NutzerVerwaltung k={k} onSchliessen={() => setPanel(null)} meldung={setMeldung} />}
 
         {meldung && <div className="toast">{meldung}</div>}
@@ -410,7 +411,7 @@ function Liste(p: { eintraege: Eintrag[]; onWahl: (e: Eintrag) => void; onSchlie
   )
 }
 
-function Einstellungen(p: { k: ReturnType<typeof useKarte>; onSchliessen: () => void; meldung: (s: string) => void; onNutzer: () => void }) {
+function Einstellungen(p: { k: ReturnType<typeof useKarte>; onSchliessen: () => void; meldung: (s: string) => void; onNutzer: () => void; onProfil: () => void }) {
   const { k } = p
   const [name, setName] = useState('Weidekarte Deichschäferei')
   const basis = `${location.origin}${location.pathname}?karte=${k.karteId}`
@@ -464,6 +465,7 @@ function Einstellungen(p: { k: ReturnType<typeof useKarte>; onSchliessen: () => 
           {k.ich ? (
             <>
               <p className="hinweis">Angemeldet als <strong>{k.ich.name}</strong> ({k.ich.rolle === 'admin' ? 'Admin' : 'Nutzer'}). Dein persönlicher Link ist auf diesem Gerät gespeichert.</p>
+              <button onClick={p.onProfil}>✏️ Meinen Namen ändern</button>
               <button onClick={() => k.zugang && kopieren(zugangsLink(k.karteId!, k.zugang))}>🔑 Meinen persönlichen Link kopieren (für ein weiteres Gerät)</button>
               <button onClick={() => confirm('Auf diesem Gerät abmelden? Du brauchst danach deinen persönlichen Link wieder.') && k.abmelden()}>Abmelden</button>
             </>
@@ -487,6 +489,41 @@ function Einstellungen(p: { k: ReturnType<typeof useKarte>; onSchliessen: () => 
       <h3>Karte</h3>
       <p className="hinweis">Kartendienst: {HAT_GOOGLE_KEY ? 'Google Maps (Satellit)' : 'Esri-Satellit / OpenStreetMap (kostenlos) – für Google Maps einen API-Key in VITE_GOOGLE_MAPS_API_KEY eintragen'}.<br />Routen: {HAT_GOOGLE_KEY ? 'Google Directions' : 'OSRM (kostenloser Demo-Server)'}.</p>
       <p className="hinweis klein">Weide-Tagebuch · Prototyp v0.1</p>
+    </section>
+  )
+}
+
+// Kleines Profil-Fenster: eigenen Anzeigenamen ändern
+function Profil(p: { k: ReturnType<typeof useKarte>; onSchliessen: () => void; meldung: (s: string) => void }) {
+  const { k } = p
+  const [name, setName] = useState(k.ich?.name ?? '')
+  const [fehler, setFehler] = useState('')
+  const [laeuft, setLaeuft] = useState(false)
+  const sauber = name.replace(/\s+/g, ' ').trim()
+  const speichern = async (ev: React.FormEvent) => {
+    ev.preventDefault()
+    if (!sauber) return setFehler('Der Name darf nicht leer sein.')
+    setLaeuft(true); setFehler('')
+    try {
+      await k.nameAendern(sauber)
+      p.meldung('Name gespeichert')
+      p.onSchliessen()
+    } catch (e) {
+      setFehler((e as Error).message)
+    } finally { setLaeuft(false) }
+  }
+  return (
+    <section className="panel profil">
+      <div className="sheet-kopf"><h2>Mein Name</h2><button className="x" onClick={p.onSchliessen} aria-label="Schließen">✕</button></div>
+      <form onSubmit={speichern}>
+        <label>Anzeigename<input autoFocus value={name} maxLength={NAME_MAX} onChange={(e) => setName(e.target.value)} placeholder="z. B. Henning" /></label>
+        <p className="hinweis klein">Erscheint als Autor bei deinen Notizen – auch bei den bisherigen – und bei allen anderen sofort. {[...sauber].length}/{NAME_MAX}</p>
+        {fehler && <p className="fehler gefahr">{fehler}</p>}
+        <div className="knoepfe">
+          <button type="button" onClick={p.onSchliessen}>Abbrechen</button>
+          <button type="submit" className="primaer" disabled={laeuft || !sauber || sauber === k.ich?.name}>Speichern</button>
+        </div>
+      </form>
     </section>
   )
 }

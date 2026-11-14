@@ -45,6 +45,15 @@ function anwenden(liste: Eintrag[], a: Ausstehend): Eintrag[] {
       return liste.map((x) => (x.id === a.eintragId ? { ...x, notizen: x.notizen.filter((n) => n.id !== a.notizId) } : x))
   }
 }
+// Autor-Anzeige aktuell halten: Notizen mit Nutzer-ID bekommen den aktuellen Namen vom Server.
+// Ist die ID nicht (mehr) auflösbar (z. B. Nutzer entfernt, alte Notiz ohne ID), bleibt der gespeicherte Name.
+function namenAnwenden(liste: Eintrag[], namen?: Record<string, string>): Eintrag[] {
+  if (!namen) return liste
+  return liste.map((e) => (e.notizen.some((n) => n.autorId && namen[n.autorId] && namen[n.autorId] !== n.autor)
+    ? { ...e, notizen: e.notizen.map((n) => (n.autorId && namen[n.autorId] ? { ...n, autor: namen[n.autorId] } : n)) }
+    : e))
+}
+export const NAME_MAX = 40
 export type SyncStatus = 'lokal' | 'verbunden' | 'offline' | 'verbinde'
 
 const cacheKey = (id: string | null) => (id ? `wt-karte-${id}` : 'wt-lokal')
@@ -87,7 +96,7 @@ export function useKarte() {
         return k.ich
       })
       if (mitEintraegen) {
-        let liste: Eintrag[] = k.eintraege.map(migrieren)
+        let liste: Eintrag[] = namenAnwenden(k.eintraege.map(migrieren), k.namen)
         for (const a of queue.current) liste = anwenden(liste, a)
         setEintraege(liste)
       }
@@ -150,7 +159,7 @@ export function useKarte() {
       // Nutzerliste geändert (z. B. Rolle geändert oder Zugang entfernt) -> eigene Rechte neu holen
       if (nutzerVersion.current !== null && k.nutzerVersion !== nutzerVersion.current) ichLaden()
       // Lokale, noch nicht gesendete Änderungen obenauf legen
-      let liste: Eintrag[] = k.eintraege.map(migrieren)
+      let liste: Eintrag[] = namenAnwenden(k.eintraege.map(migrieren), k.namen)
       for (const a of queue.current) liste = anwenden(liste, a)
       setEintraege(liste)
       if (queue.current.length) queueAbarbeiten()
@@ -195,6 +204,15 @@ export function useKarte() {
     location.reload()
   }, [karteId])
 
+  // Eigenen Anzeigenamen ändern (jeder angemeldete Nutzer)
+  const nameAendern = useCallback(async (name: string) => {
+    const r = await fetch(`/api/karten/${karteId}/ich`, { method: 'PATCH', headers, body: JSON.stringify({ name }) })
+    const j = await r.json().catch(() => ({}))
+    if (!r.ok) throw new Error(j.fehler || `Fehler ${r.status}`)
+    setIch(j as Ich)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [karteId, zugang])
+
   // ---- Nutzerverwaltung (Admin) ----
   const api = useCallback(async <T,>(pfad: string, method = 'GET', body?: unknown): Promise<T> => {
     const r = await fetch(`/api/karten/${karteId}/nutzer${pfad}`, { method, headers, body: body ? JSON.stringify(body) : undefined })
@@ -210,5 +228,5 @@ export function useKarte() {
     entfernen: (id: string) => api<{ ok: boolean }>(`/${id}`, 'DELETE'),
   }
 
-  return { eintraege, speichern, loeschen, notizSpeichern, notizLoeschen, alleErsetzen, teilen, abmelden, status, darfBearbeiten, istAdmin, ich, ichLaden, hinweis, setHinweis, nutzer, karteId, zugang, kartenName }
+  return { eintraege, speichern, loeschen, notizSpeichern, notizLoeschen, alleErsetzen, teilen, abmelden, nameAendern, status, darfBearbeiten, istAdmin, ich, ichLaden, hinweis, setHinweis, nutzer, karteId, zugang, kartenName }
 }

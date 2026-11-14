@@ -89,7 +89,13 @@ function speichern(k) {
   senden(k)
 }
 // Öffentliche Sicht (auch für den Ansehen-Link): ohne Nutzerliste/Zugänge
-const oeffentlich = (k) => ({ id: k.id, name: k.name, version: k.version, nutzerVersion: k.nutzerVersion, eintraege: k.eintraege, geaendert: k.geaendert })
+// namen: aktuelle Anzeigenamen nur der Nutzer, die als Notiz-Autor vorkommen (keine Zugänge, keine Rollen)
+function autorNamen(k) {
+  const ids = new Set()
+  for (const e of k.eintraege) for (const n of e.notizen ?? []) if (n.autorId) ids.add(n.autorId)
+  return Object.fromEntries(k.nutzer.filter((n) => ids.has(n.id)).map((n) => [n.id, n.name]))
+}
+const oeffentlich = (k) => ({ id: k.id, name: k.name, version: k.version, nutzerVersion: k.nutzerVersion, namen: autorNamen(k), eintraege: k.eintraege, geaendert: k.geaendert })
 function senden(k) {
   const set = clients.get(k.id)
   if (!set) return
@@ -128,7 +134,7 @@ function mitKarte(rolle) {
 app.post('/api/karten', (req, res) => {
   const id = zufall(10)
   const jetzt = new Date().toISOString()
-  const admin = { id: 'u' + zufall(8), name: String(req.body?.adminName || 'Admin').slice(0, 60), rolle: 'admin', zugang: zufall(20), erstellt: jetzt }
+  const admin = { id: 'u' + zufall(8), name: (namePruefen(req.body?.adminName).name ?? 'Admin'), rolle: 'admin', zugang: zufall(20), erstellt: jetzt }
   const k = {
     id,
     name: String(req.body?.name || 'Meine Weidekarte').slice(0, 100),
@@ -221,15 +227,24 @@ app.delete('/api/karten/:id/eintraege/:eid/notizen/:nid', mitKarte('nutzer'), (r
 // ---- Nutzerverwaltung (nur Admins) ----
 const nutzerListe = (k) => k.nutzer.map((n) => ({ id: n.id, name: n.name, rolle: n.rolle, zugang: n.zugang, erstellt: n.erstellt }))
 const rolleOk = (r) => r === 'admin' || r === 'nutzer'
+// Anzeigename prüfen: Text, ohne Steuerzeichen, Leerzeichen zusammengefasst, 1–40 Zeichen
+const NAME_MAX = 40
+function namePruefen(roh) {
+  if (typeof roh !== 'string') return { fehler: 'Name fehlt' }
+  const name = roh.replace(/[\u0000-\u001f\u007f]/g, '').replace(/\s+/g, ' ').trim()
+  if (!name) return { fehler: 'Name darf nicht leer sein' }
+  if ([...name].length > NAME_MAX) return { fehler: `Name ist zu lang (höchstens ${NAME_MAX} Zeichen)` }
+  return { name }
+}
 const adminAnzahl = (k) => k.nutzer.filter((n) => n.rolle === 'admin').length
 
 app.get('/api/karten/:id/nutzer', mitKarte('admin'), (req, res) => res.json(nutzerListe(req.karte)))
 
 app.post('/api/karten/:id/nutzer', mitKarte('admin'), (req, res) => {
   const k = req.karte
-  const name = String(req.body?.name ?? '').trim().slice(0, 60)
+  const { name, fehler } = namePruefen(req.body?.name)
   const rolle = req.body?.rolle ?? 'nutzer'
-  if (!name) return res.status(400).json({ fehler: 'Name fehlt' })
+  if (fehler) return res.status(400).json({ fehler })
   if (!rolleOk(rolle)) return res.status(400).json({ fehler: 'Ungültige Rolle' })
   const n = { id: 'u' + zufall(8), name, rolle, zugang: zufall(20), erstellt: new Date().toISOString() }
   k.nutzer.push(n)
@@ -247,8 +262,8 @@ app.patch('/api/karten/:id/nutzer/:nid', mitKarte('admin'), (req, res) => {
     n.rolle = req.body.rolle
   }
   if (req.body?.name !== undefined) {
-    const name = String(req.body.name).trim().slice(0, 60)
-    if (!name) return res.status(400).json({ fehler: 'Name fehlt' })
+    const { name, fehler } = namePruefen(req.body.name)
+    if (fehler) return res.status(400).json({ fehler })
     n.name = name
   }
   if (req.body?.neuerZugang) n.zugang = zufall(20) // alter Link wird sofort ungültig
@@ -264,6 +279,18 @@ app.delete('/api/karten/:id/nutzer/:nid', mitKarte('admin'), (req, res) => {
   k.nutzer = k.nutzer.filter((x) => x.id !== n.id) // Zugang ab sofort ungültig
   nutzerGeaendert(k)
   res.json({ ok: true })
+})
+
+// Eigenes Profil: jeder angemeldete Nutzer darf nur seinen eigenen Anzeigenamen ändern
+app.patch('/api/karten/:id/ich', mitKarte('nutzer'), (req, res) => {
+  const k = req.karte, ich = req.nutzer
+  const { name, fehler } = namePruefen(req.body?.name)
+  if (fehler) return res.status(400).json({ fehler })
+  if (name !== ich.name) {
+    ich.name = name
+    nutzerGeaendert(k) // -> SSE an alle Clients (namen + nutzerVersion)
+  }
+  res.json(ichInfo(ich))
 })
 
 // Live-Updates per Server-Sent Events

@@ -89,3 +89,10 @@ select { font: inherit; border: 1px solid #c9d3c4; border-radius: 10px; padding:
 .nutzer-kopf { display: flex; align-items: center; gap: 8px; }
 .nutzer-kopf select { margin-left: auto; }
 .nutzer-liste .knoepfe button { padding: 6px 10px; font-size: .85rem; }
+
+/* Eigener Name im Kopf (antippbar) + kleines Profil-Fenster */
+.name-knopf { background: none; border: none; padding: 0; margin: 0; color: inherit; font: inherit; text-decoration: underline dotted; cursor: pointer; min-height: 0; }
+.panel.profil { bottom: auto; top: 64px; right: 8px; width: min(340px, calc(100% - 16px)); border-radius: 12px; }
+.panel.profil form { display: flex; flex-direction: column; gap: 6px; }
+.panel.profil .knoepfe { justify-content: flex-end; }
+.fehler { margin: 0; font-size: .9rem; }

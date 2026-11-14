@@ -22,12 +22,21 @@ function hell(hex: string) {
   return L > 0.4
 }
 
+// Handy/Touch: Standort als erste Option; Desktop (Maus): freies Antippen + Kartenmitte zuerst
+function istHandy() {
+  return window.matchMedia?.('(pointer: coarse)').matches || window.innerWidth <= 560
+}
+
 function standortHolen(): Promise<LatLng> {
   return new Promise((ok, fehler) => {
-    if (!navigator.geolocation) return fehler(new Error('Standort wird vom Gerät nicht unterstützt'))
+    if (!navigator.geolocation) return fehler(new Error('Dieses Gerät bzw. dieser Browser kann den Standort nicht bestimmen.'))
+    if (!window.isSecureContext) return fehler(new Error('Der Standort ist nur über eine sichere Verbindung (https) verfügbar.'))
     navigator.geolocation.getCurrentPosition(
       (p) => ok({ lat: p.coords.latitude, lng: p.coords.longitude }),
-      () => fehler(new Error('Standort nicht verfügbar – bitte Standortfreigabe erlauben')),
+      (err) => fehler(new Error(
+        err.code === 1 ? 'Kein Zugriff auf deinen Standort. Bitte die Standortfreigabe für diese Seite in den Browser- bzw. Handy-Einstellungen erlauben.'
+          : err.code === 3 ? 'Der Standort konnte nicht rechtzeitig bestimmt werden. Bitte noch einmal versuchen (im Freien klappt es besser).'
+            : 'Der Standort ist gerade nicht verfügbar (kein GPS-/Ortungssignal). Bitte später erneut versuchen.')),
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 },
     )
   })
@@ -40,6 +49,8 @@ export default function App() {
   const kannEintrag = (e: Eintrag) => !k.karteId || k.istAdmin || (!!k.ich && e.erstelltVon === k.ich.id)
   const kannNotiz = (n: Notiz) => !k.karteId || k.istAdmin || (!!k.ich && n.autorId === k.ich.id)
   const [modus, setModus] = useState<Modus>('ansicht')
+  const modusRef = useRef<Modus>('ansicht')
+  modusRef.current = modus
   const [zeichenPunkte, setZeichenPunkte] = useState<LatLng[]>([])
   const [ausgewaehlt, setAusgewaehlt] = useState<string | null>(null)
   const [formular, setFormular] = useState<{ e: Eintrag; neu: boolean } | null>(null)
@@ -109,6 +120,14 @@ export default function App() {
     }
   }, [])
 
+  const [standortSucht, setStandortSucht] = useState(false)
+  const nadelAmStandort = async () => {
+    setStandortSucht(true)
+    const p = await meinStandort(false)
+    setStandortSucht(false)
+    // Nur setzen, wenn der Setz-Modus noch aktiv ist (nicht inzwischen abgebrochen oder auf die Karte getippt)
+    if (p && modusRef.current === 'pin') { fliege(p, 16); neuerPin(p) }
+  }
   const neuerPin = (p: LatLng) => {
     const jetzt = new Date().toISOString()
     setFormular({ neu: true, e: { id: neueId(), typ: 'pin', position: p, farbe: localStorage.getItem('wt-letzte-farbe') || STANDARD_FARBE, titel: '', notizen: [], ...(k.ich ? { erstelltVon: k.ich.id } : {}), erstellt: jetzt, geaendert: jetzt } })
@@ -256,16 +275,20 @@ export default function App() {
           </div>
         )}
 
-        {modus === 'pin' && (
-          <div className="leiste">
-            <p>Tippe auf die Karte, um die Nadel zu setzen – oder:</p>
-            <div className="knoepfe">
-              <button className="primaer" onClick={() => neuerPin(mitteRef.current)}>In Kartenmitte</button>
-              <button onClick={async () => { const p = await meinStandort(false); if (p) neuerPin(p) }}>An meinem Standort</button>
-              <button onClick={() => setModus('ansicht')}>Abbrechen</button>
+        {modus === 'pin' && (() => {
+          const handy = istHandy()
+          const standortKnopf = <button key="s" className={handy ? 'primaer' : ''} disabled={standortSucht} onClick={nadelAmStandort}>{standortSucht ? 'Standort wird bestimmt …' : '📍 An meinem Standort'}</button>
+          const mitteKnopf = <button key="m" className={handy ? '' : 'primaer'} onClick={() => neuerPin(mitteRef.current)}>⊕ Kartenmitte</button>
+          return (
+            <div className={`leiste setz-leiste${handy ? ' handy' : ' desktop'}`} role="dialog" aria-label="Nadel setzen">
+              <p className="setz-hinweis">👆 <strong>Tippe auf die Karte, wo die Nadel hin soll</strong>{handy ? '' : ' (Karte lässt sich weiter verschieben)'} – oder:</p>
+              <div className="knoepfe">
+                {handy ? [standortKnopf, mitteKnopf] : [mitteKnopf, standortKnopf]}
+                <button onClick={() => setModus('ansicht')}>Abbrechen</button>
+              </div>
             </div>
-          </div>
-        )}
+          )
+        })()}
 
         {modus === 'flaeche' && (
           <div className="leiste">
@@ -516,6 +539,10 @@ function Liste(p: { eintraege: Eintrag[]; onWahl: (e: Eintrag) => void; onSchlie
   })
   const [farbenOffen, setFarbenOffen] = useState(() => localStorage.getItem('wt-liste-farben') !== 'zu')
   useEffect(() => { localStorage.setItem('wt-liste-farben', farbenOffen ? 'auf' : 'zu') }, [farbenOffen])
+  // Eingeklappte Monatsgruppen pro Gerät, Schlüssel „reiter:YYYY-MM“ (Standard: aufgeklappt)
+  const [monateZu, setMonateZu] = useState<string[]>(() => { try { const x = JSON.parse(localStorage.getItem('wt-monate-zu') || '[]'); return Array.isArray(x) ? x.filter((v) => typeof v === 'string') : [] } catch { return [] } })
+  useEffect(() => { localStorage.setItem('wt-monate-zu', JSON.stringify(monateZu)) }, [monateZu])
+  const monatUmschalten = (m: string) => { const key = `${reiter}:${m}`; setMonateZu((z) => (z.includes(key) ? z.filter((x) => x !== key) : [...z, key])) }
   const farbe = farbFilter && vorhandeneFarben.includes(farbFilter) ? farbFilter : null // Filter nur, wenn die Farbe im Reiter vorkommt
   const liste = alle
     .filter((e) => !farbe || pinFarbe(e) === farbe)
@@ -594,13 +621,23 @@ function Liste(p: { eintraege: Eintrag[]; onWahl: (e: Eintrag) => void; onSchlie
       )}
       {!typListe.length && <p className="hinweis">{reiter === 'pin' ? 'Noch keine Nadeln. Tippe auf „+ Nadel“ oder direkt auf die Karte.' : 'Noch keine Flächen. Tippe auf „Fläche“ und dann die Eckpunkte.'}</p>}
       {typListe.length > 0 && !liste.length && <p className="hinweis">Keine {wort[1]} für diese Auswahl.</p>}
+      {monatsGruppen.length > 1 && (() => {
+        const keys = monatsGruppen.map((g) => `${reiter}:${g.monat}`)
+        const einerOffen = keys.some((x) => !monateZu.includes(x))
+        return (
+          <div className="monate-alle">
+            <button onClick={() => setMonateZu((z) => (einerOffen ? [...new Set([...z, ...keys])] : z.filter((x) => !keys.includes(x))))}>{einerOffen ? '▸ Alle Monate zuklappen' : '▾ Alle Monate aufklappen'}</button>
+          </div>
+        )
+      })()}
       {monatsGruppen.map((g) => {
         const ms = tierSummen(g.eintraege)
         const mha = g.eintraege.reduce((s, e) => s + (e.typ === 'flaeche' ? hektar(e.punkte) : 0), 0)
+        const offen = !monateZu.includes(`${reiter}:${g.monat}`)
         return (
           <div className="monat" key={g.monat}>
-            <h3 className="monat-kopf">{monatText(g.monat)} <small>· {g.eintraege.length} {g.eintraege.length === 1 ? wort[0] : wort[1]}{reiter === 'flaeche' ? ` · ≈ ${mha.toLocaleString('de-DE', { maximumFractionDigits: 2 })} ha` : ''}{ms.length > 0 && <> · <TierAnzeige summen={ms} /></>}</small></h3>
-            <ul className="liste">
+            <h3 className="monat-kopf"><button aria-expanded={offen} onClick={() => monatUmschalten(g.monat)}><span className="pfeil">{offen ? '▾' : '▸'}</span> {monatText(g.monat)} <small>· {g.eintraege.length} {g.eintraege.length === 1 ? wort[0] : wort[1]}{reiter === 'flaeche' ? ` · ≈ ${mha.toLocaleString('de-DE', { maximumFractionDigits: 2 })} ha` : ''}{ms.length > 0 && <> · <TierAnzeige summen={ms} /></>}</small></button></h3>
+            {offen && <ul className="liste">
               {g.eintraege.map((e) => (
                 <li key={e.id} onClick={() => p.onWahl(e)}>
                   <strong>{e.typ === 'pin' ? <span className="farbpunkt" style={{ background: pinFarbe(e) }} /> : <span className="flaechen-symbol" style={{ color: pinFarbe(e) }}>⬠</span>} {e.titel || <span className="ohne-name">ohne Namen</span>}</strong>
@@ -608,7 +645,7 @@ function Liste(p: { eintraege: Eintrag[]; onWahl: (e: Eintrag) => void; onSchlie
                   <small>📅 {tagText(eintragDatum(e))} · 📝 {e.notizen.length} {e.notizen.length === 1 ? 'Notiz' : 'Notizen'} · {e.typ === 'flaeche' && <>≈ {hektar(e.punkte).toLocaleString('de-DE', { maximumFractionDigits: 2 })} ha · </>}{tierSummen([e]).length > 0 && <><TierAnzeige summen={tierSummen([e])} /> · </>}{e.herde ? `${e.herde}` : ''}</small>
                 </li>
               ))}
-            </ul>
+            </ul>}
           </div>
         )
       })}

@@ -190,3 +190,11 @@ interface Karte {          // geteilte Karte (Server)
 - **Name der Karte** (⚙️, nur Admins): `PATCH /api/karten/:id` (1–60 Zeichen), live für alle.
 - **Einladungslink** (👥, nur Admins): erzeugen / teilen / neu erzeugen / deaktivieren. `?karte=ID&einladung=CODE` → Dialog „Dein Name“ → `POST /beitreten` legt immer Rolle „nutzer“ an, Zugang wird am Gerät gespeichert. Rate-Limit je IP: 5 Beitritte/h, 20 Fehlversuche/h; max. 200 Nutzer je Karte. Rollenwechsel wirkt live ohne neuen Link.
 - Rückgängig-/Hinweis-Toast erscheint bei offener Liste unten statt über der Listenüberschrift.
+
+## 17. Monatsgruppen einklappbar, Nadel setzen je Gerät (Stand 14.11.2026)
+
+- **Monatsgruppen**: Tipp auf die (sticky) Monatsüberschrift klappt die Einträge darunter auf/zu (▾/▸); Monatssumme bleibt in der Überschrift. Zustand pro Gerät (`wt-monate-zu`, Schlüssel `reiter:YYYY-MM`), Standard aufgeklappt. Knopf „Alle Monate zu-/aufklappen“ (ab 2 Monaten, wirkt auf die angezeigten Monate). Filter und Summen unverändert.
+- **Nadel setzen** (gab es schon seit dem Prototyp als Setz-Modus mit „In Kartenmitte“ als Primärknopf): Hinweis „Tippe auf die Karte, wo die Nadel hin soll“; Karte bleibt schwenkbar, Kartentipp setzt dort und öffnet das Formular.
+  - Handy (`pointer: coarse` oder ≤ 560 px): „📍 An meinem Standort“ als erster, hervorgehobener Knopf, dann „⊕ Kartenmitte“, „Abbrechen“.
+  - Desktop: Hinweis (freie Platzierung) zuerst, dann „⊕ Kartenmitte“ (primär), „📍 An meinem Standort“, „Abbrechen“.
+  - Nichts wird ohne Tipp gesetzt; jede Option öffnet nur das Formular (Speichern nötig). Standort: Ladeanzeige, verständliche Fehlermeldungen (verweigert / Zeitüberschreitung / nicht verfügbar / kein https); bei Fehler bleibt der Setz-Modus aktiv.

@@ -195,3 +195,15 @@ select { font: inherit; border: 1px solid #c9d3c4; border-radius: 10px; padding:
 .von-bis label { min-width: 0; }
 .von-bis input { width: 100%; font-size: 15px; padding: 8px 6px; }
 .farb-gruppe { min-width: 0; overflow-wrap: anywhere; }
+
+/* Monatsgruppen einklappbar */
+.monat-kopf button { all: unset; box-sizing: border-box; display: block; width: 100%; cursor: pointer; color: var(--gruen-dunkel); font-weight: 700; padding: 2px 0; -webkit-tap-highlight-color: transparent; }
+.monat-kopf button:focus-visible { outline: 2px solid var(--gruen); outline-offset: 2px; }
+.monat-kopf .pfeil { display: inline-block; width: 1em; }
+.monate-alle { display: flex; justify-content: flex-end; margin-top: 4px; }
+.monate-alle button { border: 0; background: none; color: var(--gruen-dunkel); font-size: .8rem; padding: 4px 2px; text-decoration: underline; }
+
+/* Nadel setzen: Hinweis + Optionen (Reihenfolge je nach Gerät) */
+.setz-hinweis { line-height: 1.35; }
+.setz-leiste.desktop .setz-hinweis strong { color: var(--gruen-dunkel); }
+.setz-leiste.handy .knoepfe .primaer { flex-basis: 100%; }

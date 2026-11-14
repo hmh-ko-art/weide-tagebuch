@@ -174,3 +174,8 @@ interface Karte {          // geteilte Karte (Server)
 - Anzeige überall zusammengefasst je Art (gleiche Arten addiert): „🐑 25 Schafe · 🐏 2 Böcke · [Lamm] 10 Lämmer“ – Detail, Liste, Listensumme, Kartenlabel (nur bei Beschriftung an).
 - Gleichzeitiges Bearbeiten: Der Client schickt `einheitenBasis` (Stand beim Öffnen des Formulars) mit; der Server führt 3-Wege zusammen (unverändert gelassene Einheiten → aktueller Serverstand, geänderte/neue/gelöschte → vom Client, von anderen inzwischen hinzugefügte bleiben). Alte App-Versionen ohne `einheiten` verändern die Einheiten nicht.
 - Server-Validierung: max. 50 Einheiten, Art aus der Liste (sonst Schaf), Anzahl ganze Zahl 0–100 000, ungültige Zeilen werden verworfen, IDs eindeutig.
+
+## 15. Tierliste fest/ausblendbar & getrennte Listen (Stand 14.11.2026)
+
+- Pro Eintrag `tierlisteModus: 'fest' | 'ausblendbar'` (fehlt = fest = bisheriges Verhalten). Auswahl „Tierliste“ im Formular (Abschnitt Tiere). Bei „ausblendbar“ kann jeder Betrachter die Tierliste in der Detailansicht (▾/▸-Knopf) und im Kartenschild (Knopf im Schild, öffnet nicht die Details) ein-/ausklappen; der Zustand wird pro Gerät gemerkt (`wt-tiere-zu`). Bei „fest“ immer sichtbar ohne Knopf. Server lässt nur die zwei Werte zu; ältere App-Versionen ohne das Feld behalten den gespeicherten Wert.
+- Liste mit zwei strikt getrennten Reitern **📍 Nadeln (n) | ⬠ Flächen (m)** statt „Alle/Nadeln/Flächen“; jeder Reiter zeigt alle seine Einträge. Summen je Reiter (Anzahl, bei Flächen Hektar, Tiere). Farbfilter nur mit Farben des Reiters; ist Suche oder Farbfilter aktiv, erscheint ein deutlicher Hinweis „Filter aktiv … X von Y angezeigt“ mit „Alle zeigen“. Gewählter Reiter wird pro Gerät gemerkt.

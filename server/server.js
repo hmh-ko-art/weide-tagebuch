@@ -96,6 +96,8 @@ function migrieren(e) {
   delete neu.tiere
   delete neu.tierart
   delete neu.einheitenBasis
+  // Tierliste: 'fest' (Standard) oder 'ausblendbar'; ungültige Werte entfallen (= fest)
+  if (!['fest', 'ausblendbar'].includes(neu.tierlisteModus)) delete neu.tierlisteModus
   return neu
 }
 // Karte migrieren: alter Bearbeiten-Schlüssel -> erster Admin-Zugang (der alte Link funktioniert weiter)
@@ -210,7 +212,9 @@ app.put('/api/karten/:id/eintraege/:eid', mitKarte('nutzer'), (req, res) => {
     const alt = k.eintraege[i]
     if (!darfEintrag(ich, alt)) return res.status(403).json({ fehler: 'Nur eigene Einträge bearbeiten (oder Admin)' })
     const einheiten = ohneEinheiten ? alt.einheiten ?? [] : einheitenMergen(alt.einheiten ?? [], e.einheiten, body.einheitenBasis)
-    k.eintraege[i] = { ...e, einheiten, erstelltVon: alt.erstelltVon, notizen: alt.notizen ?? [] }
+    // ältere App-Versionen kennen tierlisteModus nicht -> bisherigen Wert behalten
+    const modus = body.tierlisteModus === undefined && alt.tierlisteModus ? { tierlisteModus: alt.tierlisteModus } : {}
+    k.eintraege[i] = { ...e, ...modus, einheiten, erstelltVon: alt.erstelltVon, notizen: alt.notizen ?? [] }
   } else {
     // neue Notizen beim Anlegen bekommen den Nutzer als Autor
     const notizen = e.notizen.filter(notizOk).map((n) => ({ id: n.id, text: n.text.slice(0, 5000), zeitpunkt: n.zeitpunkt, autor: ich.name, autorId: ich.id }))

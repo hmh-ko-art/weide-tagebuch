@@ -22,6 +22,7 @@ interface Basis {
   /** @deprecated altes Einzel-Symbol – wird per migrieren() zu einheiten[0].art */
   tierart?: Tierart
   einheiten?: Einheit[] // beliebig viele Tiereinheiten (je Anzahl + Tierart)
+  tierlisteModus?: 'fest' | 'ausblendbar' // fehlt = 'fest' (bisheriges Verhalten)
   farbe?: string // Hex-Farbe (Nadel bzw. Fläche); fehlt bei alten Einträgen -> STANDARD_FARBE / FLAECHE_STANDARD
   erstellt: string
   geaendert: string
@@ -147,3 +148,4 @@ export function tierSummen(liste: { einheiten?: Einheit[] }[]): { art: Tierart; 
     n: liste.reduce((s, e) => s + (e.einheiten ?? []).reduce((a, x) => a + (x.art === t.wert ? x.anzahl : 0), 0), 0),
   })).filter((x) => x.n > 0)
 }
+export const istAusblendbar = (e: { tierlisteModus?: string }) => e.tierlisteModus === 'ausblendbar'

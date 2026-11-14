@@ -143,3 +143,15 @@ select { font: inherit; border: 1px solid #c9d3c4; border-radius: 10px; padding:
 .einheit-zeile input, .einheit-zeile select { min-width: 0; width: 100%; height: 44px; }
 .tiere-plus { align-self: flex-start; padding: 8px 12px; }
 .label-tiere + .label-tiere { margin-left: 4px; }
+
+/* Ausblendbare Tierliste */
+.tiere-umschalten { padding: 2px 8px; border-radius: 8px; font-size: inherit; color: inherit; background: #f1f5ee; }
+.tierliste-modus { margin-top: 2px; }
+.pin-label .tiere-knopf { pointer-events: auto; cursor: pointer; display: inline-flex; align-items: center; gap: 1px; margin-left: 5px; padding: 0 4px; border-radius: 5px; background: #eef3ea; color: #33502f; font-weight: 600; font-size: 11px; }
+.pin-label .tiere-knopf:first-child { margin-left: 0; }
+.pin-label .tiere-knopf .label-tiere:first-child { margin-left: 2px; }
+
+/* Liste: getrennte Reiter + deutlicher Filterhinweis */
+.reiter button { font-weight: 600; padding: 8px 6px; }
+.filter-hinweis { display: flex; align-items: center; justify-content: space-between; gap: 8px; background: #fff3e0; border: 1px solid #ffcc80; border-radius: 10px; padding: 6px 8px; font-size: .85rem; }
+.filter-hinweis button { padding: 6px 10px; flex: none; }

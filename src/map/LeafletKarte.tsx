@@ -1,14 +1,19 @@
 import { useEffect, useRef } from 'react'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
-import { START, START_ZOOM, pinFarbe, tierSummen, tierSymbolHtml, type Eintrag } from '../types'
+import { START, START_ZOOM, istAusblendbar, pinFarbe, tierSummen, tierSymbolHtml, type Eintrag } from '../types'
 import { NADEL_BREITE, NADEL_HOEHE, nadelHtml } from './nadel'
 import { FARBE_AKTIV, ROUTE_FARBE, type KartenProps } from './props'
 
 // Beschriftung: Name und – falls gesetzt – dezent Symbol + Tierzahl
-const labelHtml = (e: Eintrag) => {
+// Tierliste 'ausblendbar': kleiner Knopf ▾/▸ im Schild klappt sie ein/aus (Zustand pro Gerät)
+const labelHtml = (e: Eintrag, zu: boolean) => {
   const name = e.titel.trim().replace(/[<>&"]/g, '')
-  const tiere = tierSummen([e]).map((x) => `<span class="label-tiere">${tierSymbolHtml(x.art)}${x.n}</span>`).join('')
+  const summen = tierSummen([e])
+  const liste = summen.map((x) => `<span class="label-tiere">${tierSymbolHtml(x.art)}${x.n}</span>`).join('')
+  const tiere = summen.length && istAusblendbar(e)
+    ? `<span class="tiere-knopf" role="button" aria-expanded="${!zu}" title="Tiere ${zu ? 'einblenden' : 'ausblenden'}">${zu ? '▸ Tiere' : `▾${liste}`}</span>`
+    : liste
   return name || tiere ? `<div class="pin-label">${name}${tiere}</div>` : ''
 }
 const pinIcon = (aktiv: boolean, label: string, farbe: string, hervor: boolean) =>
@@ -60,12 +65,18 @@ export default function LeafletKarte(p: KartenProps) {
     g.clearLayers()
     const hervor = new Set(p.hervor)
     const verschiebbar = new Set(p.verschiebbar)
+    const tiereZu = new Set(p.tiereZu)
     for (const e of p.eintraege) {
       const aktiv = e.id === p.ausgewaehlt
-      const klick = (ev: L.LeafletMouseEvent) => { L.DomEvent.stopPropagation(ev); cb.current.onAuswahl(e.id) }
+      const klick = (ev: L.LeafletMouseEvent) => {
+        L.DomEvent.stopPropagation(ev)
+        // Tipp auf den ▾/▸-Knopf im Schild: nur Tierliste ein-/ausklappen
+        if ((ev.originalEvent?.target as Element | null)?.closest?.('.tiere-knopf')) cb.current.onTiereUmschalten(e.id)
+        else cb.current.onAuswahl(e.id)
+      }
       if (e.typ === 'pin') {
         const ziehbar = verschiebbar.has(e.id)
-        const m = L.marker([e.position.lat, e.position.lng], { icon: pinIcon(aktiv, p.beschriftung ? labelHtml(e) : '', pinFarbe(e), hervor.has(pinFarbe(e))), zIndexOffset: aktiv ? 1000 : hervor.has(pinFarbe(e)) ? 500 : 0, draggable: ziehbar, autoPan: true })
+        const m = L.marker([e.position.lat, e.position.lng], { icon: pinIcon(aktiv, p.beschriftung ? labelHtml(e, tiereZu.has(e.id)) : '', pinFarbe(e), hervor.has(pinFarbe(e))), zIndexOffset: aktiv ? 1000 : hervor.has(pinFarbe(e)) ? 500 : 0, draggable: ziehbar, autoPan: true })
         m.on('click', klick)
         if (ziehbar) {
           // Finger runter, ziehen, loslassen -> neue Position (kurzes Antippen bleibt ein Klick)
@@ -88,7 +99,7 @@ export default function LeafletKarte(p: KartenProps) {
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [p.eintraege, p.ausgewaehlt, p.beschriftung, p.hervor.join(), p.verschiebbar.join()])
+  }, [p.eintraege, p.ausgewaehlt, p.beschriftung, p.hervor.join(), p.verschiebbar.join(), p.tiereZu.join()])
 
   // Zeichnen einer Fläche
   useEffect(() => {

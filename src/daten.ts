@@ -34,6 +34,7 @@ type Ausstehend =
   | { art: 'gruppe-put'; gruppe: Gruppe }
   | { art: 'gruppe-delete'; id: string }
   | { art: 'zuordnen'; gruppe: string | null; ids: string[] }
+  | { art: 'reihenfolge'; gruppe: string; ids: string[] }
 
 // Eine Änderung auf eine Liste anwenden (lokal sofort und als Overlay über Serverdaten)
 function anwenden(liste: Eintrag[], a: Ausstehend): Eintrag[] {
@@ -53,6 +54,7 @@ function anwenden(liste: Eintrag[], a: Ausstehend): Eintrag[] {
     case 'notiz-delete':
       return liste.map((x) => (x.id === a.eintragId ? { ...x, notizen: x.notizen.filter((n) => n.id !== a.notizId) } : x))
     case 'gruppe-put':
+    case 'reihenfolge':
       return liste
     case 'gruppe-delete':
       return liste.map((x) => (x.gruppe === a.id ? { ...x, gruppe: undefined } : x))
@@ -63,9 +65,15 @@ function anwenden(liste: Eintrag[], a: Ausstehend): Eintrag[] {
 function gruppenAnwenden(gruppen: Gruppe[], a: Ausstehend): Gruppe[] {
   if (a.art === 'gruppe-put') {
     const alt = gruppen.find((g) => g.id === a.gruppe.id)
-    return alt ? gruppen.map((g) => (g.id === a.gruppe.id ? { ...g, name: a.gruppe.name } : g)) : [...gruppen, a.gruppe]
+    return alt ? gruppen.map((g) => (g.id === a.gruppe.id ? { ...g, name: a.gruppe.name, farbe: a.gruppe.farbe ?? g.farbe } : g)) : [...gruppen, a.gruppe]
   }
   if (a.art === 'gruppe-delete') return gruppen.filter((g) => g.id !== a.id)
+  // wie der Server: aus alten Gruppen entfernen, in der neuen hinten anhängen
+  if (a.art === 'zuordnen') return gruppen.map((g) => {
+    const ohne = (g.reihenfolge ?? []).filter((id) => !a.ids.includes(id))
+    return g.id === a.gruppe ? { ...g, reihenfolge: [...ohne, ...a.ids] } : { ...g, reihenfolge: ohne }
+  })
+  if (a.art === 'reihenfolge') return gruppen.map((g) => (g.id === a.gruppe ? { ...g, reihenfolge: a.ids } : g))
   return gruppen
 }
 // Autor-Anzeige aktuell halten: Notizen mit Nutzer-ID bekommen den aktuellen Namen vom Server.
@@ -147,7 +155,8 @@ export function useKarte() {
       : a.art === 'delete' ? [basis + a.id, 'DELETE', undefined]
       : a.art === 'notiz-put' ? [`${basis}${a.eintragId}/notizen/${a.notiz.id}`, 'PUT', a.notiz]
       : a.art === 'notiz-delete' ? [`${basis}${a.eintragId}/notizen/${a.notizId}`, 'DELETE', undefined]
-      : a.art === 'gruppe-put' ? [`/api/karten/${karteId}/gruppen/${a.gruppe.id}`, 'PUT', { name: a.gruppe.name }]
+      : a.art === 'gruppe-put' ? [`/api/karten/${karteId}/gruppen/${a.gruppe.id}`, 'PUT', { name: a.gruppe.name, ...(a.gruppe.farbe ? { farbe: a.gruppe.farbe } : {}) }]
+      : a.art === 'reihenfolge' ? [`/api/karten/${karteId}/gruppen/${a.gruppe}/reihenfolge`, 'PUT', { ids: a.ids }]
       : a.art === 'gruppe-delete' ? [`/api/karten/${karteId}/gruppen/${a.id}`, 'DELETE', undefined]
       : [`/api/karten/${karteId}/gruppe-zuordnen`, 'POST', { gruppe: a.gruppe, ids: a.ids }]
     const r = await fetch(url, { method, headers, body: body ? JSON.stringify(body) : undefined })
@@ -226,6 +235,7 @@ export function useKarte() {
   // Eigene Gruppen: anlegen/umbenennen, löschen (Nadeln bleiben, werden ungruppiert), Nadeln zuordnen
   const gruppeSpeichern = useCallback((g: Gruppe) => ausfuehren({ art: 'gruppe-put', gruppe: g }), [ausfuehren])
   const gruppeLoeschen = useCallback((id: string) => ausfuehren({ art: 'gruppe-delete', id }), [ausfuehren])
+  const reihenfolge = useCallback((gruppe: string, ids: string[]) => ausfuehren({ art: 'reihenfolge', gruppe, ids }), [ausfuehren])
   const zuordnen = useCallback((gruppe: string | null, ids: string[]) => { if (ids.length) ausfuehren({ art: 'zuordnen', gruppe, ids }) }, [ausfuehren])
 
   const alleErsetzen = useCallback(async (roh: Eintrag[]) => {
@@ -304,5 +314,5 @@ export function useKarte() {
   }
   const einladungVerwalten = { laden: () => einladungApi('GET'), erzeugen: () => einladungApi('POST'), deaktivieren: () => einladungApi('DELETE') }
 
-  return { eintraege, gruppen, gruppeSpeichern, gruppeLoeschen, zuordnen, speichern, loeschen, notizSpeichern, notizLoeschen, alleErsetzen, teilen, abmelden, nameAendern, einladung, einladungPruefen, beitreten, kartenNameAendern, einladungVerwalten, nutzerStand, status, darfBearbeiten, istAdmin, ich, ichLaden, hinweis, setHinweis, nutzer, karteId, zugang, kartenName }
+  return { eintraege, gruppen, gruppeSpeichern, gruppeLoeschen, zuordnen, reihenfolge, speichern, loeschen, notizSpeichern, notizLoeschen, alleErsetzen, teilen, abmelden, nameAendern, einladung, einladungPruefen, beitreten, kartenNameAendern, einladungVerwalten, nutzerStand, status, darfBearbeiten, istAdmin, ich, ichLaden, hinweis, setHinweis, nutzer, karteId, zugang, kartenName }
 }

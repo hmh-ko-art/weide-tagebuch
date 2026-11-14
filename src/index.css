@@ -318,3 +318,37 @@ select { font: inherit; border: 1px solid #c9d3c4; border-radius: 10px; padding:
 .update-hinweis .x { flex: none; background: #455a64; color: #fff; }
 .liste-panel .sheet-kopf .x { width: 40px; height: 40px; }
 .gruppe-auf:disabled, .monat-kopf button:disabled { opacity: 1; }
+
+/* ---- Gruppen wie in Google My Maps: Farbe, Häkchen, Zahlenfolge, kompakte Zeilen ---- */
+.gruppe { border-left: 4px solid #ccc; padding: 0 4px 2px 6px; }
+.gruppe.ausgeblendet .gruppen-liste, .gruppe.ausgeblendet .gruppe-name { opacity: .55; }
+.gruppe-haken { flex: none; width: 36px; height: 40px; margin: 0; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+.gruppe-haken input { width: 20px; height: 20px; margin: 0; accent-color: var(--gruen); cursor: pointer; }
+.gruppe-auf .pfeil { width: auto; color: #667; }
+.gruppe-auf small { font-size: .78rem; }
+.zahlenfolge { font-size: .68rem; color: #778; letter-spacing: .02em; margin: -4px 0 0 36px; }
+.gruppen-liste { border-top: 0 !important; }
+.liste-panel .liste li.gz { flex-direction: row; align-items: center; gap: 8px; min-height: 40px; padding: 0 0 0 4px; border-bottom: 1px solid #edf1ea; position: relative; }
+.nr-kreis { flex: none; display: inline-flex; align-items: center; justify-content: center; min-width: 24px; height: 24px; padding: 0 4px; border-radius: 12px; font-weight: 700; font-size: .78rem; line-height: 1; border: 1px solid rgba(0,0,0,.35); font-variant-numeric: tabular-nums; }
+.sheet-kopf h2 .nr-kreis { vertical-align: 2px; margin-right: 2px; }
+.gz-tiere { flex: none; font-weight: 600; font-size: .9rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.gz-name { flex: 1; min-width: 0; font-size: .78rem; color: #667; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gz .zieh-griff { margin: 0; }
+.gz.einf-vor::before, .gz.einf-nach::after { content: ''; position: absolute; left: 0; right: 0; height: 3px; background: var(--gruen); border-radius: 2px; }
+.gz.einf-vor::before { top: -2px; }
+.gz.einf-nach::after { bottom: -2px; }
+.gruppe-form { display: flex; flex-direction: column; gap: 4px; padding: 6px 0; }
+.gruppe-farben { margin-top: 0; gap: 6px; }
+.gruppe-farben button { width: 32px; height: 32px; }
+.gruppe-farben .frei { flex-direction: row; align-items: center; gap: 4px; margin: 0; font-weight: 400; font-size: .8rem; }
+.gruppe-farben .frei input { width: 40px; height: 32px; padding: 2px; }
+/* Nummerierte Nadeln auf der Karte: Schild etwas tiefer unter dem größeren Kopf */
+.pin-icon.mit-nummer .pin-label { top: 46px; }
+
+/* Desktop: Liste als Seitenleiste links (wie My Maps) */
+@media (min-width: 900px) {
+  .liste-offen .liste-panel { left: 0; right: auto; width: 380px; box-shadow: 2px 0 14px rgba(0,0,0,.25); }
+  .liste-offen .karten-werkzeug { left: 392px; }
+  .liste-offen .fab-leiste { right: 12px; left: auto; }
+  .liste-offen .toast { left: calc(380px + (100% - 380px) / 2); }
+}

@@ -8,6 +8,7 @@ export interface KartenProps {
   standort: LatLng | null
   fokus: Fokus | null
   beschriftung: boolean // Namen unter Nadeln / auf Flächen anzeigen
+  nummern: Record<string, number> // laufende Nummer der Nadel in ihrer Gruppe (1..n)
   hervor: string[] // hervorgehobene Nadelfarben (Kleinbuchstaben-Hex)
   tiereZu: string[] // IDs ausblendbarer Einträge, deren Tierliste auf diesem Gerät eingeklappt ist
   onTiereUmschalten: (id: string) => void

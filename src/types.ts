@@ -59,7 +59,31 @@ export interface Flaeche extends Basis {
 export type Eintrag = Pin | Flaeche
 
 // Eigene Gruppe der Nadel-Liste (geteilt, auf dem Server in der Karte gespeichert)
-export interface Gruppe { id: string; name: string; von?: string; erstellt?: string }
+export interface Gruppe { id: string; name: string; farbe?: string; reihenfolge?: string[]; von?: string; erstellt?: string }
+// Gruppenfarben in der Reihenfolge der Vorschläge (wie in Google My Maps: Blau, Lila, Gelb, Rot …)
+export const GRUPPEN_FARBEN = ['#1e88e5', '#8e24aa', '#ffeb3b', '#e53935', '#ff9800', '#ff4081', '#00e5ff', '#ffffff']
+// Farbe einer Gruppe; alte Gruppen ohne Farbe bekommen eine feste Palettenfarbe nach ihrer Position
+export const gruppenFarbe = (g: Gruppe, alle: Gruppe[]) => (g.farbe && /^#[0-9a-f]{6}$/i.test(g.farbe) ? g.farbe.toLowerCase() : GRUPPEN_FARBEN[Math.max(0, alle.findIndex((x) => x.id === g.id)) % GRUPPEN_FARBEN.length])
+// Nächste noch nicht benutzte Palettenfarbe für eine neue Gruppe
+export function naechsteGruppenFarbe(alle: Gruppe[]) {
+  const benutzt = new Set(alle.map((g) => gruppenFarbe(g, alle)))
+  return GRUPPEN_FARBEN.find((f) => !benutzt.has(f)) ?? GRUPPEN_FARBEN[alle.length % GRUPPEN_FARBEN.length]
+}
+// Reihenfolge der Nadeln einer Gruppe: gespeicherte Reihenfolge, neue/unbekannte hinten (älteste zuerst)
+export function gruppenOrdnung(g: Gruppe, eintraege: Eintrag[]): Eintrag[] {
+  const mitglieder = eintraege.filter((e) => e.typ === 'pin' && e.gruppe === g.id)
+  const pos = new Map((g.reihenfolge ?? []).map((id, i) => [id, i]))
+  return mitglieder.sort((a, b) => (pos.get(a.id) ?? 1e9) - (pos.get(b.id) ?? 1e9) || a.erstellt.localeCompare(b.erstellt))
+}
+// Kurze Tierzahl wie in My Maps: „50 + 1“ (Schafe + Böcke), Lämmer „+12 L“
+export function tierKurz(e: { einheiten?: Einheit[] }) {
+  const n = (a: Tierart) => (e.einheiten ?? []).reduce((s, x) => s + (x.art === a ? x.anzahl : 0), 0)
+  const schaf = n('schaf'), bock = n('bock'), lamm = n('lamm')
+  const teile = []
+  if (schaf || bock) teile.push(bock ? `${schaf} + ${bock}` : `${schaf}`)
+  if (lamm) teile.push(`+${lamm} L`)
+  return teile.join(' ')
+}
 // Vorschlag für den Namen einer neuen Gruppe: „Gruppe 1“, „Gruppe 2“ … (erste freie Nummer)
 export function gruppenVorschlag(gruppen: { name: string }[]) {
   let n = gruppen.length + 1

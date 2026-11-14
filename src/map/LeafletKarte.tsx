@@ -16,10 +16,10 @@ const labelHtml = (e: Eintrag, zu: boolean) => {
     : liste
   return name || tiere ? `<div class="pin-label">${name}${tiere}</div>` : ''
 }
-const pinIcon = (aktiv: boolean, label: string, farbe: string, hervor: boolean) =>
+const pinIcon = (aktiv: boolean, label: string, farbe: string, hervor: boolean, nr?: number) =>
   L.divIcon({
-    className: 'pin-icon',
-    html: `${nadelHtml(farbe, aktiv, hervor)}${label}`,
+    className: `pin-icon${nr ? ' mit-nummer' : ''}`,
+    html: `${nadelHtml(farbe, aktiv, hervor, nr)}${label}`,
     iconSize: [NADEL_BREITE, NADEL_HOEHE],
     iconAnchor: [NADEL_BREITE / 2, NADEL_HOEHE - 1],
   })
@@ -76,7 +76,7 @@ export default function LeafletKarte(p: KartenProps) {
       }
       if (e.typ === 'pin') {
         const ziehbar = verschiebbar.has(e.id)
-        const m = L.marker([e.position.lat, e.position.lng], { icon: pinIcon(aktiv, p.beschriftung ? labelHtml(e, tiereZu.has(e.id)) : '', pinFarbe(e), hervor.has(pinFarbe(e))), zIndexOffset: aktiv ? 1000 : hervor.has(pinFarbe(e)) ? 500 : 0, draggable: ziehbar, autoPan: true })
+        const m = L.marker([e.position.lat, e.position.lng], { icon: pinIcon(aktiv, p.beschriftung ? labelHtml(e, tiereZu.has(e.id)) : '', pinFarbe(e), hervor.has(pinFarbe(e)), p.nummern[e.id]), zIndexOffset: aktiv ? 1000 : hervor.has(pinFarbe(e)) ? 500 : 0, draggable: ziehbar, autoPan: true })
         m.on('click', klick)
         if (ziehbar) {
           // Finger runter, ziehen, loslassen -> neue Position (kurzes Antippen bleibt ein Klick)
@@ -99,7 +99,7 @@ export default function LeafletKarte(p: KartenProps) {
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [p.eintraege, p.ausgewaehlt, p.beschriftung, p.hervor.join(), p.verschiebbar.join(), p.tiereZu.join()])
+  }, [p.eintraege, p.ausgewaehlt, p.beschriftung, p.hervor.join(), p.verschiebbar.join(), p.tiereZu.join(), p.nummern])
 
   // Zeichnen einer Fläche
   useEffect(() => {

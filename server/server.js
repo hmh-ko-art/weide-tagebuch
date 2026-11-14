@@ -111,8 +111,15 @@ const GRUPPEN_MAX = 100
 function gruppenPruefen(liste) {
   if (!Array.isArray(liste)) return []
   const ids = new Set()
-  return liste.filter((g) => g && gruppenIdOk(g.id) && typeof g.name === 'string' && !ids.has(g.id) && ids.add(g.id)).slice(0, GRUPPEN_MAX)
+  return liste.filter((g) => g && gruppenIdOk(g.id) && typeof g.name === 'string' && !ids.has(g.id) && ids.add(g.id)).slice(0, GRUPPEN_MAX).map((g) => {
+    const neu = { ...g }
+    if (!farbeOk(neu.farbe)) delete neu.farbe; else neu.farbe = neu.farbe.toLowerCase()
+    neu.reihenfolge = reihenfolgePruefen(neu.reihenfolge)
+    return neu
+  })
 }
+const farbeOk = (f) => typeof f === 'string' && /^#[0-9a-f]{6}$/i.test(f)
+const reihenfolgePruefen = (l) => (Array.isArray(l) ? [...new Set(l.filter((x) => typeof x === 'string' && x.length <= 64))].slice(0, 2000) : [])
 // Gruppe einer Nadel nur behalten, wenn es die Gruppe auf der Karte gibt
 const gruppeGueltig = (k, e) => { if (e.gruppe && !(k.gruppen ?? []).some((g) => g.id === e.gruppe)) delete e.gruppe; return e }
 // Karte migrieren: alter Bearbeiten-Schlüssel -> erster Admin-Zugang (der alte Link funktioniert weiter)
@@ -155,7 +162,7 @@ function autorNamen(k) {
   for (const e of k.eintraege) for (const n of e.notizen ?? []) if (n.autorId) ids.add(n.autorId)
   return Object.fromEntries(k.nutzer.filter((n) => ids.has(n.id)).map((n) => [n.id, n.name]))
 }
-const oeffentlich = (k) => ({ id: k.id, name: k.name, version: k.version, nutzerVersion: k.nutzerVersion, namen: autorNamen(k), eintraege: k.eintraege, gruppen: (k.gruppen ?? []).map((g) => ({ id: g.id, name: g.name, von: g.von, erstellt: g.erstellt })), geaendert: k.geaendert })
+const oeffentlich = (k) => ({ id: k.id, name: k.name, version: k.version, nutzerVersion: k.nutzerVersion, namen: autorNamen(k), eintraege: k.eintraege, gruppen: (k.gruppen ?? []).map((g) => ({ id: g.id, name: g.name, farbe: g.farbe, reihenfolge: g.reihenfolge ?? [], von: g.von, erstellt: g.erstellt })), geaendert: k.geaendert })
 function senden(k) {
   const set = clients.get(k.id)
   if (!set) return
@@ -203,7 +210,7 @@ app.post('/api/karten', (req, res) => {
     nutzer: [admin],
     eintraege: Array.isArray(req.body?.eintraege) ? req.body.eintraege.map((e) => ({ ...migrieren(e), erstelltVon: admin.id })) : [],
     // Gruppen einer bisher lokalen Karte mitnehmen
-    gruppen: gruppenPruefen(req.body?.gruppen).map((g) => ({ id: g.id, name: gruppenNamePruefen(g.name).name ?? 'Gruppe', von: admin.id, erstellt: jetzt })),
+    gruppen: gruppenPruefen(req.body?.gruppen).map((g) => ({ id: g.id, name: gruppenNamePruefen(g.name).name ?? 'Gruppe', ...(g.farbe ? { farbe: g.farbe } : {}), reihenfolge: g.reihenfolge, von: admin.id, erstellt: jetzt })),
     erstellt: jetzt,
   }
   k.eintraege.forEach((e) => gruppeGueltig(k, e))
@@ -311,14 +318,18 @@ app.put('/api/karten/:id/gruppen/:gid', mitKarte('nutzer'), (req, res) => {
   if (!gruppenIdOk(req.params.gid)) return res.status(400).json({ fehler: 'Ungültige Gruppen-ID' })
   const { name, fehler } = gruppenNamePruefen(req.body?.name)
   if (fehler) return res.status(400).json({ fehler })
+  // Farbe optional (ältere App-Versionen schicken keine -> bisherige bleibt)
+  const farbe = req.body?.farbe
+  if (farbe !== undefined && !farbeOk(farbe)) return res.status(400).json({ fehler: 'Ungültige Farbe' })
   k.gruppen ??= []
   const g = k.gruppen.find((x) => x.id === req.params.gid)
   if (g) {
-    if (!darfGruppe(ich, g)) return res.status(403).json({ fehler: 'Nur eigene Gruppen umbenennen (oder Admin)' })
-    if (g.name !== name) { g.name = name; speichern(k) }
+    if (!darfGruppe(ich, g)) return res.status(403).json({ fehler: 'Nur eigene Gruppen bearbeiten (oder Admin)' })
+    const f = farbe ? farbe.toLowerCase() : g.farbe
+    if (g.name !== name || g.farbe !== f) { g.name = name; if (f) g.farbe = f; speichern(k) }
   } else {
     if (k.gruppen.length >= GRUPPEN_MAX) return res.status(409).json({ fehler: 'Zu viele Gruppen' })
-    k.gruppen.push({ id: req.params.gid, name, von: ich.id, erstellt: new Date().toISOString() })
+    k.gruppen.push({ id: req.params.gid, name, ...(farbe ? { farbe: farbe.toLowerCase() } : {}), reihenfolge: [], von: ich.id, erstellt: new Date().toISOString() })
     speichern(k)
   }
   res.json({ ok: true, version: k.version })
@@ -348,12 +359,34 @@ app.post('/api/karten/:id/gruppe-zuordnen', mitKarte('nutzer'), (req, res) => {
     if (!e) continue
     if (!darfEintrag(ich, e)) { abgelehnt++; continue }
     if ((e.gruppe ?? null) === gid) continue
-    if (gid) e.gruppe = gid; else delete e.gruppe
+    // Nummernfolge: aus der alten Gruppe entfernen, in der neuen hinten anhängen
+    const alt = (k.gruppen ?? []).find((g) => g.id === e.gruppe)
+    if (alt) alt.reihenfolge = (alt.reihenfolge ?? []).filter((x) => x !== e.id)
+    if (gid) {
+      e.gruppe = gid
+      const neu = k.gruppen.find((g) => g.id === gid)
+      neu.reihenfolge = [...(neu.reihenfolge ?? []).filter((x) => x !== e.id), e.id]
+    } else delete e.gruppe
     geaendert++
   }
   if (geaendert) speichern(k)
   if (!geaendert && abgelehnt) return res.status(403).json({ fehler: 'Nur eigene Nadeln gruppieren (oder Admin)', abgelehnt })
   res.json({ ok: true, geaendert, abgelehnt, version: k.version })
+})
+
+// Reihenfolge (Nummern 1..n) innerhalb einer Gruppe: jeder mit Zugang darf sortieren (ändert keine Nadel).
+// Unbekannte IDs fallen weg, nicht genannte Mitglieder behalten ihre bisherige Reihenfolge und kommen ans Ende.
+app.put('/api/karten/:id/gruppen/:gid/reihenfolge', mitKarte('nutzer'), (req, res) => {
+  const k = req.karte
+  const g = (k.gruppen ?? []).find((x) => x.id === req.params.gid)
+  if (!g) return res.status(404).json({ fehler: 'Gruppe gibt es nicht (mehr)' })
+  if (!Array.isArray(req.body?.ids)) return res.status(400).json({ fehler: 'ids fehlen' })
+  const mitglieder = new Set(k.eintraege.filter((e) => e.gruppe === g.id).map((e) => e.id))
+  const neu = reihenfolgePruefen(req.body.ids).filter((id) => mitglieder.has(id))
+  const rest = (g.reihenfolge ?? []).filter((id) => mitglieder.has(id) && !neu.includes(id))
+  const ergebnis = [...neu, ...rest]
+  if (JSON.stringify(ergebnis) !== JSON.stringify(g.reihenfolge ?? [])) { g.reihenfolge = ergebnis; speichern(k) }
+  res.json({ ok: true, version: k.version })
 })
 
 // ---- Nutzerverwaltung (nur Admins) ----

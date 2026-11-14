@@ -219,3 +219,11 @@ interface Karte {          // geteilte Karte (Server)
   „Alle [Farbe]-Nadeln in Gruppe …“ bei Farbfilter.
 - index.html/sw.js mit `Cache-Control: no-cache`, SW holt Seiten mit `no-store`; App prüft neue Version (Rückkehr in die App,
   alle 10 min) → lädt neu bzw. zeigt „Neue Version – Jetzt neu laden“.
+
+## 21. Gruppen wie Google My Maps (Farbe, Nummern, Häkchen)
+- Gruppe: `farbe` (Standard nächste freie Palettenfarbe Blau/Lila/Gelb/Rot/…), `reihenfolge: [nadelIds]`.
+  Nadeln einer Gruppe erscheinen in Gruppenfarbe mit Nummer 1..n (Liste und Karte); eigene Farbe bleibt gespeichert.
+- `PUT /api/karten/:id/gruppen/:gid { name, farbe }`, `PUT …/gruppen/:gid/reihenfolge { ids }` (alle mit Zugang),
+  zuordnen hängt neu zugeordnete Nadeln hinten an. Häkchen = Gruppe auf der Karte aus/ein (pro Gerät, `wt-gruppen-aus`).
+- Zeile: Nummernkreis + Tierzahl kurz („50 + 1“, „+12 L“) + Name klein; ≡ ziehen sortiert um bzw. verschiebt.
+- Desktop ≥ 900 px: Liste als Seitenleiste links.

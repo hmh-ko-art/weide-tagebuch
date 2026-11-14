@@ -2,7 +2,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import Karte, { HAT_GOOGLE_KEY } from './map/Karte'
 import { useKarte, zugangsLink, einladungsLink, NAME_MAX, type Ich, type Nutzer } from './daten'
 import { googleNaviLink, routeBerechnen, routeText } from './route'
-import { eintragDatum, tagText, monatText, istAusblendbar, TIERARTEN, tierText, tierSymbolHtml, tierSummen, type Einheit, type Tierart, FARBEN, FLAECHEN_FARBEN, FLAECHE_STANDARD, START, STANDARD_FARBE, datum, farbName, hektar, mitte, neueId, notizenSortiert, pinFarbe, gruppenVorschlag, type Gruppe, type Eintrag, type Notiz, type Fokus, type LatLng, type Route } from './types'
+import { eintragDatum, tagText, monatText, istAusblendbar, TIERARTEN, tierText, tierSymbolHtml, tierSummen, type Einheit, type Tierart, FARBEN, FLAECHEN_FARBEN, FLAECHE_STANDARD, START, STANDARD_FARBE, datum, farbName, hektar, mitte, neueId, notizenSortiert, pinFarbe, gruppenVorschlag, gruppenFarbe, gruppenOrdnung, naechsteGruppenFarbe, tierKurz, GRUPPEN_FARBEN, type Gruppe, type Eintrag, type Notiz, type Fokus, type LatLng, type Route } from './types'
 
 type Modus = 'ansicht' | 'pin' | 'flaeche'
 type Panel = null | 'liste' | 'einstellungen' | 'nutzer' | 'profil'
@@ -89,13 +89,27 @@ export default function App() {
   const tiereUmschalten = (id: string) => setTiereZu((l) => (l.includes(id) ? l.filter((x) => x !== id) : [...l, id]))
   // Schnellauswahl: hervorgehobene Nadelfarben (Mehrfachauswahl)
   const [hervorWahl, setHervorWahl] = useState<string[]>([])
+  // Gruppen: Nadeln einer Gruppe in Gruppenfarbe (eigene Farbe bleibt gespeichert) mit laufender Nummer 1..n
+  const anzeige = useMemo(() => {
+    const nummern: Record<string, number> = {}
+    const farbeVon = new Map<string, string>()
+    for (const g of k.gruppen) {
+      const f = gruppenFarbe(g, k.gruppen)
+      gruppenOrdnung(g, k.eintraege).forEach((e, i) => { nummern[e.id] = i + 1; farbeVon.set(e.id, f) })
+    }
+    return { nummern, eintraege: k.eintraege.map((e) => (farbeVon.has(e.id) ? { ...e, farbe: farbeVon.get(e.id) } : e)) }
+  }, [k.eintraege, k.gruppen])
+  // Häkchen je Gruppe: auf der Karte ein-/ausblenden (pro Gerät)
+  const [gruppenAus, setGruppenAus] = useState<string[]>(() => { try { const x = JSON.parse(localStorage.getItem('wt-gruppen-aus') || '[]'); return Array.isArray(x) ? x.filter((v) => typeof v === 'string') : [] } catch { return [] } })
+  useEffect(() => { localStorage.setItem('wt-gruppen-aus', JSON.stringify(gruppenAus)) }, [gruppenAus])
+  const aufKarte = useMemo(() => anzeige.eintraege.filter((e) => !(e.gruppe && anzeige.nummern[e.id] && gruppenAus.includes(e.gruppe))), [anzeige, gruppenAus])
   const verwendeteFarben = useMemo(() => {
     const anzahl = new Map<string, number>()
-    for (const e of k.eintraege) { const f = pinFarbe(e); anzahl.set(f, (anzahl.get(f) ?? 0) + 1) }
+    for (const e of anzeige.eintraege) { const f = pinFarbe(e); anzahl.set(f, (anzahl.get(f) ?? 0) + 1) }
     // in der Reihenfolge der Vorschlagsfarben, eigene Farben danach
     const rang = (f: string) => { const i = FLAECHEN_FARBEN.findIndex((x) => x.wert === f); return i < 0 ? 99 : i }
     return [...anzahl.entries()].sort((a, b) => rang(a[0]) - rang(b[0])).map(([farbe, n]) => ({ farbe, n }))
-  }, [k.eintraege])
+  }, [anzeige])
   const hervor = hervorWahl.filter((f) => verwendeteFarben.some((x) => x.farbe === f))
   const hervorUmschalten = (f: string) => setHervorWahl((l) => (l.includes(f) ? l.filter((x) => x !== f) : [...l, f]))
   const [fokus, setFokus] = useState<Fokus | null>(null)
@@ -232,7 +246,7 @@ export default function App() {
   const neueGruppe = (): Gruppe | null => {
     const name = prompt('Name der neuen Gruppe:', gruppenVorschlag(k.gruppen))?.replace(/\s+/g, ' ').trim().slice(0, 40)
     if (!name) return null
-    const g: Gruppe = { id: neueId(), name, ...(k.ich ? { von: k.ich.id } : {}), erstellt: new Date().toISOString() }
+    const g: Gruppe = { id: neueId(), name, farbe: naechsteGruppenFarbe(k.gruppen), reihenfolge: [], ...(k.ich ? { von: k.ich.id } : {}), erstellt: new Date().toISOString() }
     k.gruppeSpeichern(g)
     return g
   }
@@ -294,7 +308,8 @@ export default function App() {
 
       <main className="haupt">
         <Karte
-          eintraege={k.eintraege}
+          eintraege={aufKarte}
+          nummern={anzeige.nummern}
           ausgewaehlt={ausgewaehlt}
           zeichenPunkte={zeichenPunkte}
           route={route}
@@ -383,15 +398,17 @@ export default function App() {
             tiereZu={tiereZu.includes(auswahl.id)}
             onTiereUmschalten={() => tiereUmschalten(auswahl.id)}
             gruppen={k.gruppen}
+            nummer={anzeige.nummern[auswahl.id]}
             kannGruppieren={k.darfBearbeiten && kannEintrag(auswahl)}
             onGruppe={(v) => { const g = v === '__neu' ? neueGruppe() : v ? k.gruppen.find((x) => x.id === v) ?? null : null; if (v === '__neu' && !g) return; inGruppe(g, [auswahl]) }}
           />
         )}
 
-        {formular && <Formular start={formular.e} neu={formular.neu} onSpeichern={speichern} onAbbrechen={() => setFormular(null)} onLoeschen={formular.neu || !kannEintrag(formular.e) ? undefined : () => loeschen(formular.e)} />}
+        {formular && <Formular gruppeName={k.gruppen.find((g) => g.id === formular.e.gruppe)?.name} start={formular.e} neu={formular.neu} onSpeichern={speichern} onAbbrechen={() => setFormular(null)} onLoeschen={formular.neu || !kannEintrag(formular.e) ? undefined : () => loeschen(formular.e)} />}
 
         {panel === 'liste' && (
-          <Liste eintraege={k.eintraege} gruppen={k.gruppen} onSchliessen={() => setPanel(null)} onWahl={(e) => { fliege(mitte(e), e.typ === 'pin' ? 15 : undefined); waehle(e.id) }}
+          <Liste eintraege={anzeige.eintraege} gruppen={k.gruppen} nummern={anzeige.nummern} gruppenAus={gruppenAus}
+            onSichtbar={(gid) => setGruppenAus((l) => (l.includes(gid) ? l.filter((x) => x !== gid) : [...l, gid]))} onReihenfolge={k.reihenfolge} onSchliessen={() => setPanel(null)} onWahl={(e) => { fliege(mitte(e), e.typ === 'pin' ? 15 : undefined); waehle(e.id) }}
             darfBearbeiten={k.darfBearbeiten} kannEintrag={kannEintrag} kannGruppe={kannGruppe} ichId={k.ich?.id}
             onGruppeSpeichern={k.gruppeSpeichern} onGruppeLoeschen={k.gruppeLoeschen} onInGruppe={inGruppe} neueGruppe={neueGruppe} />
         )}
@@ -421,18 +438,19 @@ function TierAnzeige(p: { summen: { art: Tierart; n: number }[] }) {
   return <>{p.summen.map((x, i) => <Fragment key={x.art}>{i > 0 && ' · '}<span className="tierzahl"><TierSymbol art={x.art} /> {tierText(x.n, x.art)}</span></Fragment>)}</>
 }
 
-function Detail(p: { e: Eintrag; routeInfo: string; darfBearbeiten: boolean; kannBearbeiten: boolean; kannNotiz: (n: Notiz) => boolean; onSchliessen: () => void; onBearbeiten: () => void; onLoeschen: () => void; onRoute: () => void; onRouteAus: () => void; onNotizSpeichern: (n: Notiz) => void; onNotizLoeschen: (id: string) => void; tiereZu: boolean; onTiereUmschalten: () => void; gruppen: Gruppe[]; kannGruppieren: boolean; onGruppe: (v: string) => void }) {
+function Detail(p: { e: Eintrag; routeInfo: string; darfBearbeiten: boolean; kannBearbeiten: boolean; kannNotiz: (n: Notiz) => boolean; onSchliessen: () => void; onBearbeiten: () => void; onLoeschen: () => void; onRoute: () => void; onRouteAus: () => void; onNotizSpeichern: (n: Notiz) => void; onNotizLoeschen: (id: string) => void; tiereZu: boolean; onTiereUmschalten: () => void; gruppen: Gruppe[]; nummer?: number; kannGruppieren: boolean; onGruppe: (v: string) => void }) {
   const { e } = p
   const gruppe = e.gruppe ? p.gruppen.find((g) => g.id === e.gruppe) : undefined
+  const gf = gruppe ? gruppenFarbe(gruppe, p.gruppen) : null
   const ziel = mitte(e)
   return (
     <section className="sheet">
       <div className="sheet-kopf">
-        <h2>{e.typ === 'pin' ? <span className="farbpunkt" style={{ background: pinFarbe(e), width: 16, height: 16 }} /> : <span className="flaechen-symbol" style={{ color: pinFarbe(e) }}>⬠</span>} {e.titel || <span className="ohne-name">ohne Namen</span>}</h2>
+        <h2>{e.typ === 'pin' ? (gf && p.nummer ? <span className="nr-kreis" style={{ background: gf, color: hell(gf) ? '#1d2a1d' : '#fff' }}>{p.nummer}</span> : <span className="farbpunkt" style={{ background: pinFarbe(e), width: 16, height: 16 }} />) : <span className="flaechen-symbol" style={{ color: pinFarbe(e) }}>⬠</span>} {e.titel || <span className="ohne-name">ohne Namen</span>}</h2>
         <button className="x" onClick={p.onSchliessen} aria-label="Schließen"><Icon name="x" /></button>
       </div>
       <div className="meta">
-        <span>Farbe: {farbName(pinFarbe(e))}</span>
+        <span>Farbe: {gf ? <>{farbName(gf)} (Gruppe) · eigene {farbName(pinFarbe(e))}</> : farbName(pinFarbe(e))}</span>
         {e.typ === 'pin' && (p.kannGruppieren
           ? <label className="gruppe-wahl">In Gruppe<select value={gruppe?.id ?? ''} onChange={(x) => p.onGruppe(x.target.value)}>
               <option value="">– ohne Gruppe –</option>
@@ -518,7 +536,7 @@ function Notizen(p: { e: Eintrag; darfBearbeiten: boolean; kannNotiz: (n: Notiz)
   )
 }
 
-function Formular(p: { start: Eintrag; neu: boolean; onSpeichern: (e: Eintrag, basis?: Einheit[]) => void; onAbbrechen: () => void; onLoeschen?: () => void }) {
+function Formular(p: { gruppeName?: string; start: Eintrag; neu: boolean; onSpeichern: (e: Eintrag, basis?: Einheit[]) => void; onAbbrechen: () => void; onLoeschen?: () => void }) {
   const [e, setE] = useState<Eintrag>(p.start)
   // Tiereinheiten als Zeilen (Anzahl als Text, damit das Feld beim Tippen leer sein darf)
   const [zeilen, setZeilen] = useState(() => (p.start.einheiten ?? []).map((x) => ({ ...x, anzahl: String(x.anzahl) })))
@@ -547,6 +565,7 @@ function Formular(p: { start: Eintrag; neu: boolean; onSpeichern: (e: Eintrag, b
         {(
           <div className="farbwahl">
             <span className="feldname">{e.typ === 'pin' ? 'Farbe der Nadel' : 'Farbe der Fläche'}</span>
+            {p.gruppeName && <p className="hinweis klein">Solange die Nadel in der Gruppe „{p.gruppeName}“ ist, zeigt die Karte sie in der Gruppenfarbe. Diese Farbe gilt wieder ohne Gruppe.</p>}
             <div className="farben" role="radiogroup" aria-label={e.typ === 'pin' ? 'Farbe der Nadel' : 'Farbe der Fläche'}>
               {(e.typ === 'pin' ? FARBEN : FLAECHEN_FARBEN).map((f) => (
                 <button type="button" key={f.wert} title={f.name} aria-label={f.name} aria-checked={pinFarbe(e) === f.wert} role="radio"
@@ -592,6 +611,7 @@ type ListeProps = {
   darfBearbeiten: boolean; kannEintrag: (e: Eintrag) => boolean; kannGruppe: (g: Gruppe) => boolean
   onGruppeSpeichern: (g: Gruppe) => void; onGruppeLoeschen: (id: string) => void
   onInGruppe: (g: Gruppe | null, liste: Eintrag[]) => void; neueGruppe: () => Gruppe | null; ichId?: string
+  nummern: Record<string, number>; gruppenAus: string[]; onSichtbar: (gid: string) => void; onReihenfolge: (gid: string, ids: string[]) => void
 }
 function Liste(p: ListeProps) {
   // Zwei strikt getrennte Listen: Nadeln | Flächen – jeweils vollständig; aktive Filter werden deutlich angezeigt
@@ -668,36 +688,65 @@ function Liste(p: ListeProps) {
   const ha = reiter === 'flaeche' ? alle.reduce((s, e) => s + (e.typ === 'flaeche' ? hektar(e.punkte) : 0), 0) : 0
 
   // ---- Gruppen anlegen / umbenennen ----
-  const [neuName, setNeuName] = useState<string | null>(null)
-  const [umbenennen, setUmbenennen] = useState<{ id: string; name: string } | null>(null)
+  // Formular für neue Gruppe bzw. Bearbeiten (Name + Farbe); id null = neue Gruppe
+  const [gForm, setGForm] = useState<{ id: string | null; name: string; farbe: string } | null>(null)
   const nameSauber = (s: string) => s.replace(/\s+/g, ' ').trim().slice(0, 40)
-  const gruppeAnlegen = () => {
-    const name = nameSauber(neuName ?? '')
+  const gFormSpeichern = () => {
+    if (!gForm) return
+    const name = nameSauber(gForm.name)
     if (!name) return
-    p.onGruppeSpeichern({ id: neueId(), name, ...(p.ichId ? { von: p.ichId } : {}), erstellt: new Date().toISOString() })
-    setNeuName(null)
+    const alt = gForm.id ? p.gruppen.find((g) => g.id === gForm.id) : undefined
+    p.onGruppeSpeichern(alt ? { ...alt, name, farbe: gForm.farbe } : { id: neueId(), name, farbe: gForm.farbe, reihenfolge: [], ...(p.ichId ? { von: p.ichId } : {}), erstellt: new Date().toISOString() })
+    setGForm(null)
   }
+  const gruppenFormular = (
+    gForm && (
+      <form className="gruppe-form" onSubmit={(ev) => { ev.preventDefault(); gFormSpeichern() }}>
+        <div className="gruppe-name-form">
+          <input autoFocus aria-label={gForm.id ? 'Name der Gruppe' : 'Name der neuen Gruppe'} maxLength={40} value={gForm.name} onFocus={(x) => x.target.select()} onChange={(x) => setGForm({ ...gForm, name: x.target.value })} />
+        </div>
+        <div className="farben gruppe-farben" role="radiogroup" aria-label="Farbe der Gruppe">
+          {GRUPPEN_FARBEN.map((f) => (
+            <button type="button" key={f} role="radio" aria-checked={gForm.farbe === f} aria-label={farbName(f)} title={farbName(f)} className={gForm.farbe === f ? 'aktiv' : ''} style={{ background: f }} onClick={() => setGForm({ ...gForm, farbe: f })} />
+          ))}
+          <label className="frei" title="Eigene Farbe">eigene:<input type="color" value={gForm.farbe} onChange={(x) => setGForm({ ...gForm, farbe: x.target.value.toLowerCase() })} /></label>
+        </div>
+        <div className="gruppe-name-form">
+          <button type="submit" className="primaer" disabled={!nameSauber(gForm.name)}>{gForm.id ? 'Speichern' : 'Anlegen'}</button>
+          <button type="button" onClick={() => setGForm(null)}>Abbrechen</button>
+        </div>
+      </form>
+    )
+  )
 
   // ---- Ziehen am Griff ≡ (Maus: sofort; Touch: langes Drücken) ----
   const panelRef = useRef<HTMLElement>(null)
   const zug = useRef<{ id: string; x0: number; y0: number; x: number; y: number; aktiv: boolean; timer?: number; scroll?: number } | null>(null)
-  const [zieh, setZieh] = useState<{ id: string; x: number; y: number; ziel: string | null | undefined } | null>(null)
-  const zielAn = (x: number, y: number): string | null | undefined => {
-    const el = document.elementFromPoint(x, y)?.closest('[data-drop]') as HTMLElement | null
-    return el ? el.dataset.drop || null : undefined
+  type Ziel = { gruppe: string | null | undefined; vor?: { id: string; vorher: boolean } }
+  const [zieh, setZieh] = useState<{ id: string; x: number; y: number; ziel: string | null | undefined; vor?: { id: string; vorher: boolean } } | null>(null)
+  // Ziel unter dem Finger: Gruppe (bzw. null = ohne Gruppe) und – über einer Gruppenzeile – Einfügen davor/danach
+  const zielGenau = (x: number, y: number): Ziel => {
+    const el = document.elementFromPoint(x, y)
+    const drop = el?.closest('[data-drop]') as HTMLElement | null
+    if (!drop) return { gruppe: undefined }
+    const gruppe = drop.dataset.drop || null
+    const li = el?.closest('.gruppe li[data-id]') as HTMLElement | null
+    if (gruppe && li) { const r = li.getBoundingClientRect(); return { gruppe, vor: { id: li.dataset.id!, vorher: y < r.top + r.height / 2 } } }
+    return { gruppe }
   }
+  const ziehStand = (id: string, x: number, y: number) => { const z = zielGenau(x, y); return { id, x, y, ziel: z.gruppe, vor: z.vor } }
   const zugEnde = () => { const z = zug.current; if (z) { clearTimeout(z.timer); clearInterval(z.scroll) } zug.current = null; setZieh(null) }
   const zugStart = (z: NonNullable<typeof zug.current>) => {
     z.aktiv = true
     navigator.vibrate?.(15)
-    setZieh({ id: z.id, x: z.x, y: z.y, ziel: zielAn(z.x, z.y) })
+    setZieh(ziehStand(z.id, z.x, z.y))
     // Liste automatisch weiterscrollen, wenn der Finger/Zeiger am oberen oder unteren Rand steht
     z.scroll = window.setInterval(() => {
       const pn = panelRef.current
       if (!pn || !zug.current) return
       const r = pn.getBoundingClientRect()
       const d = z.y < r.top + 44 ? -Math.ceil((r.top + 44 - z.y) / 3) : z.y > r.bottom - 44 ? Math.ceil((z.y - r.bottom + 44) / 3) : 0 // je näher am Rand, desto schneller
-      if (d) { pn.scrollTop += d; setZieh((s) => (s ? { ...s, ziel: zielAn(z.x, z.y) } : s)) }
+      if (d) { pn.scrollTop += d; setZieh((s) => (s ? ziehStand(z.id, z.x, z.y) : s)) }
     }, 30)
   }
   const griffRunter = (ev: React.PointerEvent, e: Eintrag) => {
@@ -719,30 +768,58 @@ function Liste(p: ListeProps) {
       else if (ev.pointerType !== 'mouse' && weg > 12) zugEnde() // Finger bewegt, bevor das lange Drücken erkannt wurde
       return
     }
-    setZieh({ id: z.id, x: z.x, y: z.y, ziel: zielAn(z.x, z.y) })
+    setZieh(ziehStand(z.id, z.x, z.y))
   }
   const griffLos = () => {
     const z = zug.current
     if (z?.aktiv) {
-      const ziel = zielAn(z.x, z.y)
+      const { gruppe: ziel, vor } = zielGenau(z.x, z.y)
       const e = p.eintraege.find((x) => x.id === z.id)
-      if (e && ziel !== undefined && ziel !== gid(e)) p.onInGruppe(ziel ? p.gruppen.find((g) => g.id === ziel) ?? null : null, [e])
+      const zg = ziel ? p.gruppen.find((g) => g.id === ziel) ?? null : null
+      if (e && ziel !== undefined) {
+        const wechsel = ziel !== gid(e)
+        if (wechsel) p.onInGruppe(zg, [e])
+        // Nummernfolge: an der Einfügestelle einsortieren (ohne Stelle: neu hinten, innerhalb der Gruppe unverändert)
+        if (zg && vor && vor.id !== e.id && (!wechsel || p.kannEintrag(e))) {
+          const ids = gruppenOrdnung(zg, p.eintraege).map((x) => x.id).filter((id) => id !== e.id)
+          let i = ids.indexOf(vor.id)
+          i = i < 0 ? ids.length : vor.vorher ? i : i + 1
+          ids.splice(i, 0, e.id)
+          p.onReihenfolge(zg.id, ids)
+        }
+      }
     }
     zugEnde()
   }
   const gezogen = zieh ? p.eintraege.find((x) => x.id === zieh.id) : null
 
+  const griffFuer = (e: Eintrag) => (
+    <span className="zieh-griff" role="button" tabIndex={-1} title="Ziehen: in eine Gruppe verschieben oder Reihenfolge ändern (Handy: lange drücken)" aria-label="Ziehen, um zu verschieben oder umzusortieren"
+      onPointerDown={(ev) => griffRunter(ev, e)} onPointerMove={griffBewegt} onPointerUp={griffLos} onPointerCancel={zugEnde}
+      onClick={(ev) => ev.stopPropagation()} onContextMenu={(ev) => ev.preventDefault()}>≡</span>
+  )
+  // Kompakte Zeile in einer Gruppe (wie My Maps): Nummernkreis in Gruppenfarbe, Tierzahl kurz, Name klein
+  const gruppenZeile = (e: Eintrag, farbe: string) => {
+    // Umsortieren darf jeder mit Zugang; in andere Gruppen verschieben nur eigene (Admin: alle)
+    const griff = p.darfBearbeiten
+    const einf = zieh?.vor?.id === e.id && zieh.id !== e.id ? (zieh.vor.vorher ? ' einf-vor' : ' einf-nach') : ''
+    const kurz = tierKurz(e)
+    return (
+      <li key={e.id} data-id={e.id} className={`gz${zieh?.id === e.id ? ' wird-gezogen' : ''}${einf}`} onClick={() => p.onWahl(e)}>
+        <span className="nr-kreis" style={{ background: farbe, color: hell(farbe) ? '#1d2a1d' : '#fff' }}>{p.nummern[e.id] ?? '·'}</span>
+        <span className="gz-tiere">{kurz || '–'}</span>
+        <span className="gz-name">{e.titel}</span>
+        {griff && griffFuer(e)}
+      </li>
+    )
+  }
   const zeile = (e: Eintrag) => {
     const griff = reiter === 'pin' && p.darfBearbeiten && p.kannEintrag(e) && p.gruppen.length > 0
     return (
       <li key={e.id} data-id={e.id} className={zieh?.id === e.id ? 'wird-gezogen' : undefined} onClick={() => p.onWahl(e)}>
         <div className="zeile-oben">
           <strong>{e.typ === 'pin' ? <span className="farbpunkt" style={{ background: pinFarbe(e) }} /> : <span className="flaechen-symbol" style={{ color: pinFarbe(e) }}>⬠</span>} {e.titel || <span className="ohne-name">ohne Namen</span>}</strong>
-          {griff && (
-            <span className="zieh-griff" role="button" tabIndex={-1} title="Ziehen, um die Nadel in eine Gruppe zu verschieben (Handy: lange drücken)" aria-label="Ziehen, um in eine Gruppe zu verschieben"
-              onPointerDown={(ev) => griffRunter(ev, e)} onPointerMove={griffBewegt} onPointerUp={griffLos} onPointerCancel={zugEnde}
-              onClick={(ev) => ev.stopPropagation()} onContextMenu={(ev) => ev.preventDefault()}>≡</span>
-          )}
+          {griff && griffFuer(e)}
         </div>
         {e.notizen.length > 0 && <span className="notiz-kurz">{notizenSortiert(e)[0].text}</span>}
         <small>📅 {tagText(eintragDatum(e))} · 📝 {e.notizen.length} {e.notizen.length === 1 ? 'Notiz' : 'Notizen'} · {e.typ === 'flaeche' && <>≈ {hektar(e.punkte).toLocaleString('de-DE', { maximumFractionDigits: 2 })} ha · </>}{tierSummen([e]).length > 0 && <><TierAnzeige summen={tierSummen([e])} /> · </>}{e.herde ? `${e.herde}` : ''}</small>
@@ -855,46 +932,38 @@ function Liste(p: ListeProps) {
         <div className="gruppen">
           <div className="gruppen-kopf">
             <span>Gruppen{p.gruppen.length ? ` (${p.gruppen.length})` : ''}</span>
-            {p.darfBearbeiten && neuName === null && <button onClick={() => setNeuName(gruppenVorschlag(p.gruppen))}>＋ Neue Gruppe</button>}
+            {p.darfBearbeiten && !(gForm && !gForm.id) && <button onClick={() => setGForm({ id: null, name: gruppenVorschlag(p.gruppen), farbe: naechsteGruppenFarbe(p.gruppen) })}>＋ Neue Gruppe</button>}
           </div>
-          {neuName !== null && (
-            <form className="gruppe-name-form" onSubmit={(ev) => { ev.preventDefault(); gruppeAnlegen() }}>
-              <input autoFocus aria-label="Name der neuen Gruppe" maxLength={40} value={neuName} onFocus={(x) => x.target.select()} onChange={(x) => setNeuName(x.target.value)} />
-              <button type="submit" className="primaer" disabled={!nameSauber(neuName)}>Anlegen</button>
-              <button type="button" onClick={() => setNeuName(null)}>Abbrechen</button>
-            </form>
-          )}
+          {gForm && !gForm.id && gruppenFormular}
           {p.gruppen.map((g) => {
+            const gf = gruppenFarbe(g, p.gruppen)
             const alleG = typListe.filter((e) => gid(e) === g.id)
-            const treffer = liste.filter((e) => gid(e) === g.id)
+            const sichtbar = new Set(liste.map((e) => e.id))
+            const treffer = gruppenOrdnung(g, p.eintraege).filter((e) => sichtbar.has(e.id))
             const offen = !!farbe || !gruppenZu.includes(g.id)
-            const gs = tierSummen(treffer)
+            const aufKarte = !p.gruppenAus.includes(g.id)
             return (
-              <div key={g.id} className={`gruppe${zieh?.ziel === g.id ? ' drop-aktiv' : ''}`} data-drop={g.id}>
-                {umbenennen?.id === g.id ? (
-                  <form className="gruppe-name-form" onSubmit={(ev) => { ev.preventDefault(); const n = nameSauber(umbenennen.name); if (n) p.onGruppeSpeichern({ ...g, name: n }); setUmbenennen(null) }}>
-                    <input autoFocus aria-label="Neuer Name der Gruppe" maxLength={40} value={umbenennen.name} onFocus={(x) => x.target.select()} onChange={(x) => setUmbenennen({ id: g.id, name: x.target.value })} />
-                    <button type="submit" className="primaer" disabled={!nameSauber(umbenennen.name)}>OK</button>
-                    <button type="button" onClick={() => setUmbenennen(null)}>Abbrechen</button>
-                  </form>
-                ) : (
+              <div key={g.id} className={`gruppe${zieh?.ziel === g.id ? ' drop-aktiv' : ''}${aufKarte ? '' : ' ausgeblendet'}`} data-drop={g.id} style={{ borderLeftColor: gf }}>
+                {gForm?.id === g.id ? gruppenFormular : (
                   <div className="gruppe-kopf">
+                    <label className="gruppe-haken" title={aufKarte ? 'Auf der Karte ausblenden' : 'Auf der Karte einblenden'}>
+                      <input type="checkbox" checked={aufKarte} onChange={() => p.onSichtbar(g.id)} aria-label={`Gruppe „${g.name}“ auf der Karte zeigen`} />
+                    </label>
                     <button className="gruppe-auf" aria-expanded={offen} disabled={!!farbe} onClick={() => setGruppenZu((z) => (z.includes(g.id) ? z.filter((x) => x !== g.id) : [...z, g.id]))}>
-                      {!farbe && <span className="pfeil">{offen ? '▾' : '▸'}</span>}
                       <span className="gruppe-name">{g.name}</span>
-                      <small> · {filterAktiv ? `${treffer.length} von ${alleG.length}` : alleG.length} {alleG.length === 1 ? wort[0] : wort[1]}{gs.length > 0 && <> · <TierAnzeige summen={gs} /></>}</small>
+                      <small> {filterAktiv ? `${treffer.length}/${alleG.length}` : alleG.length}{!farbe && <span className="pfeil"> {offen ? '▾' : '▸'}</span>}</small>
                     </button>
                     {p.darfBearbeiten && p.kannGruppe(g) && (
                       <>
-                        <button className="mini" title="Umbenennen" aria-label={`Gruppe „${g.name}“ umbenennen`} onClick={() => setUmbenennen({ id: g.id, name: g.name })}><Icon name="stift" /></button>
+                        <button className="mini" title="Name und Farbe ändern" aria-label={`Gruppe „${g.name}“ bearbeiten`} onClick={() => setGForm({ id: g.id, name: g.name, farbe: gf })}><Icon name="stift" /></button>
                         <button className="mini" title="Gruppe löschen" aria-label={`Gruppe „${g.name}“ löschen`} onClick={() => confirm(`Gruppe „${g.name}“ löschen?\n\nDie ${anz(alleG.length)} bleiben erhalten und sind danach ohne Gruppe.`) && p.onGruppeLoeschen(g.id)}><Icon name="x" /></button>
                       </>
                     )}
                   </div>
                 )}
                 {offen && (treffer.length
-                  ? <ul className="liste">{treffer.map(zeile)}</ul>
-                  : <p className="gruppe-leer">{alleG.length ? `Keine ${wort[1]} für diese Auswahl.` : p.darfBearbeiten ? 'Noch leer – Nadeln am ≡ hierher ziehen oder in der Nadel „Gruppe“ wählen.' : 'Noch leer.'}</p>)}
+                  ? <><div className="zahlenfolge">Zahlenfolge</div><ul className="liste gruppen-liste">{treffer.map((e) => gruppenZeile(e, gf))}</ul></>
+                  : <p className="gruppe-leer">{alleG.length ? `Keine ${wort[1]} für diese Auswahl.` : p.darfBearbeiten ? 'Noch leer – Nadeln am ≡ hierher ziehen oder in der Nadel „In Gruppe“ wählen.' : 'Noch leer.'}</p>)}
               </div>
             )
           })}

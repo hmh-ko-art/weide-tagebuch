@@ -158,5 +158,6 @@ interface Karte {          // geteilte Karte (Server)
 ## 12. Kartenwerkzeuge & Liste (Stand 14.11.2026)
 
 - Oben links auf der Karte: **🏷️ an/aus** blendet die Namen unter Nadeln und auf Flächen ein/aus (pro Gerät gespeichert, `wt-beschriftung`).
-- Darunter **Farb-Chips** der tatsächlich verwendeten Nadelfarben (Mehrfachauswahl): gewählte Farben werden dezent hervorgehoben (Nadel etwas größer, dunklerer Rand, heller Schein), alle anderen bleiben normal; erneutes Tippen hebt auf. Flächen haben keine eigene Farbe und sind davon nicht betroffen.
+- Darunter **Farb-Chips** der tatsächlich verwendeten Farben von Nadeln und Flächen (Mehrfachauswahl): gewählte Farben werden dezent hervorgehoben (Nadel etwas größer, dunklerer Rand, heller Schein; Fläche etwas dickerer Rand und kräftigere Füllung), alle anderen bleiben normal; erneutes Tippen hebt auf.
+- **Flächenfarbe:** Flächen haben jetzt ein Farbfeld (`farbe`) mit derselben Palette wie Nadeln plus „Grün“ (bisherige Flächenfarbe = Vorgabe für alte Flächen ohne Farbe); wählbar beim Anlegen und Bearbeiten, gilt für Rand und Füllung. Ausgewählte Fläche: weißer, dicker Rand.
 - **Liste offen:** Das Listenfenster lässt links einen ca. 64 px breiten Kartenstreifen frei; dort bleiben Standort/Fläche/Nadel (am Handy als runde Symbolknöpfe) sichtbar und bedienbar. „Fläche“/„Nadel“ schließen die Liste und starten das Setzen.

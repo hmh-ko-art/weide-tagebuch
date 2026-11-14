@@ -18,13 +18,13 @@ interface Basis {
   notiz?: string
   tiere?: number
   herde?: string
+  farbe?: string // Hex-Farbe (Nadel bzw. Fläche); fehlt bei alten Einträgen -> STANDARD_FARBE / FLAECHE_STANDARD
   erstellt: string
   geaendert: string
 }
 export interface Pin extends Basis {
   typ: 'pin'
   position: LatLng
-  farbe?: string // Hex-Farbe der Stecknadel, fehlt bei alten Nadeln -> STANDARD_FARBE
 }
 
 // Gut auf Satellitenbild sichtbare Vorschlagsfarben
@@ -39,8 +39,12 @@ export const FARBEN: { name: string; wert: string }[] = [
   { name: 'Cyan', wert: '#00e5ff' },
 ]
 export const STANDARD_FARBE = FARBEN[0].wert
-export const pinFarbe = (e: Pin) => e.farbe || STANDARD_FARBE
-export const farbName = (f: string) => FARBEN.find((x) => x.wert === f.toLowerCase())?.name ?? f
+// Flächen waren bisher immer grün – das bleibt die Vorgabe für alte/neue Flächen ohne gewählte Farbe
+export const FLAECHE_STANDARD = '#2e7d32'
+export const FLAECHEN_FARBEN = [{ name: 'Grün', wert: FLAECHE_STANDARD }, ...FARBEN]
+// Farbe eines Eintrags (Nadel oder Fläche)
+export const pinFarbe = (e: { typ: 'pin' | 'flaeche'; farbe?: string }) => (e.farbe || (e.typ === 'pin' ? STANDARD_FARBE : FLAECHE_STANDARD)).toLowerCase()
+export const farbName = (f: string) => FLAECHEN_FARBEN.find((x) => x.wert === f.toLowerCase())?.name ?? f
 export interface Flaeche extends Basis {
   typ: 'flaeche'
   punkte: LatLng[]

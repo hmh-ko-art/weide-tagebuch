@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Karte, { HAT_GOOGLE_KEY } from './map/Karte'
 import { useKarte, zugangsLink, NAME_MAX, type Ich, type Nutzer } from './daten'
 import { googleNaviLink, routeBerechnen, routeText } from './route'
-import { FARBEN, START, STANDARD_FARBE, datum, farbName, hektar, mitte, neueId, notizenSortiert, pinFarbe, type Eintrag, type Notiz, type Fokus, type LatLng, type Route } from './types'
+import { FARBEN, FLAECHEN_FARBEN, FLAECHE_STANDARD, START, STANDARD_FARBE, datum, farbName, hektar, mitte, neueId, notizenSortiert, pinFarbe, type Eintrag, type Notiz, type Fokus, type LatLng, type Route } from './types'
 
 type Modus = 'ansicht' | 'pin' | 'flaeche'
 type Panel = null | 'liste' | 'einstellungen' | 'nutzer' | 'profil'
@@ -44,9 +44,9 @@ export default function App() {
   const [hervorWahl, setHervorWahl] = useState<string[]>([])
   const verwendeteFarben = useMemo(() => {
     const anzahl = new Map<string, number>()
-    for (const e of k.eintraege) if (e.typ === 'pin') { const f = pinFarbe(e).toLowerCase(); anzahl.set(f, (anzahl.get(f) ?? 0) + 1) }
+    for (const e of k.eintraege) { const f = pinFarbe(e); anzahl.set(f, (anzahl.get(f) ?? 0) + 1) }
     // in der Reihenfolge der Vorschlagsfarben, eigene Farben danach
-    const rang = (f: string) => { const i = FARBEN.findIndex((x) => x.wert === f); return i < 0 ? 99 : i }
+    const rang = (f: string) => { const i = FLAECHEN_FARBEN.findIndex((x) => x.wert === f); return i < 0 ? 99 : i }
     return [...anzahl.entries()].sort((a, b) => rang(a[0]) - rang(b[0])).map(([farbe, n]) => ({ farbe, n }))
   }, [k.eintraege])
   const hervor = hervorWahl.filter((f) => verwendeteFarben.some((x) => x.farbe === f))
@@ -128,14 +128,14 @@ export default function App() {
   const flaecheFertig = () => {
     if (zeichenPunkte.length < 3) { setMeldung('Bitte mindestens 3 Eckpunkte antippen.'); return }
     const jetzt = new Date().toISOString()
-    setFormular({ neu: true, e: { id: neueId(), typ: 'flaeche', punkte: zeichenPunkte, titel: '', notizen: [], ...(k.ich ? { erstelltVon: k.ich.id } : {}), erstellt: jetzt, geaendert: jetzt } })
+    setFormular({ neu: true, e: { id: neueId(), typ: 'flaeche', punkte: zeichenPunkte, farbe: localStorage.getItem('wt-letzte-flaechenfarbe') || FLAECHE_STANDARD, titel: '', notizen: [], ...(k.ich ? { erstelltVon: k.ich.id } : {}), erstellt: jetzt, geaendert: jetzt } })
     setZeichenPunkte([])
     setModus('ansicht')
   }
 
   const speichern = (e: Eintrag) => {
     const fertig = { ...e, titel: e.titel.trim(), geaendert: new Date().toISOString() }
-    if (fertig.typ === 'pin' && fertig.farbe) localStorage.setItem('wt-letzte-farbe', fertig.farbe)
+    if (fertig.farbe) localStorage.setItem(fertig.typ === 'pin' ? 'wt-letzte-farbe' : 'wt-letzte-flaechenfarbe', fertig.farbe)
     k.speichern(fertig)
     setFormular(null)
     setAusgewaehlt(fertig.id)
@@ -188,7 +188,7 @@ export default function App() {
             <span aria-hidden="true">🏷️</span><small>{beschriftung ? 'an' : 'aus'}</small>
           </button>
           {verwendeteFarben.length > 0 && (
-            <div className="farb-chips" role="group" aria-label="Nadeln einer Farbe hervorheben">
+            <div className="farb-chips" role="group" aria-label="Nadeln und Flächen einer Farbe hervorheben">
               {verwendeteFarben.map(({ farbe, n }) => (
                 <button key={farbe} className={`farb-chip${hervor.includes(farbe) ? ' aktiv' : ''}`} style={{ background: farbe }} aria-pressed={hervor.includes(farbe)}
                   title={`${farbName(farbe)} (${n}) ${hervor.includes(farbe) ? '– Hervorhebung aufheben' : 'hervorheben'}`} aria-label={`${farbName(farbe)} hervorheben`} onClick={() => hervorUmschalten(farbe)} />
@@ -269,11 +269,11 @@ function Detail(p: { e: Eintrag; routeInfo: string; darfBearbeiten: boolean; kan
   return (
     <section className="sheet">
       <div className="sheet-kopf">
-        <h2>{e.typ === 'pin' ? <span className="farbpunkt" style={{ background: pinFarbe(e), width: 16, height: 16 }} /> : '⬠'} {e.titel || <span className="ohne-name">ohne Namen</span>}</h2>
+        <h2>{e.typ === 'pin' ? <span className="farbpunkt" style={{ background: pinFarbe(e), width: 16, height: 16 }} /> : <span className="flaechen-symbol" style={{ color: pinFarbe(e) }}>⬠</span>} {e.titel || <span className="ohne-name">ohne Namen</span>}</h2>
         <button className="x" onClick={p.onSchliessen} aria-label="Schließen">✕</button>
       </div>
       <div className="meta">
-        {e.typ === 'pin' && <span>Farbe: {farbName(pinFarbe(e))}</span>}
+        <span>Farbe: {farbName(pinFarbe(e))}</span>
         {e.tiere != null && <span>🐑 {e.tiere} Tiere</span>}
         {e.herde && <span>Herde: {e.herde}</span>}
         {e.typ === 'flaeche' && <span>≈ {hektar(e.punkte).toLocaleString('de-DE', { maximumFractionDigits: 2 })} ha</span>}
@@ -368,11 +368,11 @@ function Formular(p: { start: Eintrag; neu: boolean; onSpeichern: (e: Eintrag) =
         ) : (
           <p className="hinweis klein">Notizen ({e.notizen.length}) fügst du in der Detailansicht hinzu bzw. bearbeitest sie dort.</p>
         )}
-        {e.typ === 'pin' && (
+        {(
           <div className="farbwahl">
-            <span className="feldname">Farbe der Nadel</span>
-            <div className="farben" role="radiogroup" aria-label="Farbe der Nadel">
-              {FARBEN.map((f) => (
+            <span className="feldname">{e.typ === 'pin' ? 'Farbe der Nadel' : 'Farbe der Fläche'}</span>
+            <div className="farben" role="radiogroup" aria-label={e.typ === 'pin' ? 'Farbe der Nadel' : 'Farbe der Fläche'}>
+              {(e.typ === 'pin' ? FARBEN : FLAECHEN_FARBEN).map((f) => (
                 <button type="button" key={f.wert} title={f.name} aria-label={f.name} aria-checked={pinFarbe(e) === f.wert} role="radio"
                   className={pinFarbe(e) === f.wert ? 'aktiv' : ''} style={{ background: f.wert }} onClick={() => setE({ ...e, farbe: f.wert })} />
               ))}
@@ -398,10 +398,10 @@ function Liste(p: { eintraege: Eintrag[]; onWahl: (e: Eintrag) => void; onSchlie
   const [suche, setSuche] = useState('')
   const [filter, setFilter] = useState<'alle' | 'pin' | 'flaeche'>('alle')
   const [farbFilter, setFarbFilter] = useState<string | null>(null)
-  const vorhandeneFarben = [...new Set(p.eintraege.flatMap((e) => (e.typ === 'pin' ? [pinFarbe(e)] : [])))]
+  const vorhandeneFarben = [...new Set(p.eintraege.map((e) => pinFarbe(e)))]
   const liste = [...p.eintraege]
     .filter((e) => filter === 'alle' || e.typ === filter)
-    .filter((e) => !farbFilter || (e.typ === 'pin' && pinFarbe(e) === farbFilter))
+    .filter((e) => !farbFilter || pinFarbe(e) === farbFilter)
     .filter((e) => `${e.titel} ${e.herde ?? ''} ${e.notizen.map((n) => `${n.text} ${n.autor ?? ''}`).join(' ')}`.toLowerCase().includes(suche.toLowerCase()))
     .sort((a, b) => b.geaendert.localeCompare(a.geaendert))
   const tiere = p.eintraege.reduce((s, e) => s + (e.typ === 'pin' ? e.tiere ?? 0 : 0), 0)
@@ -423,7 +423,7 @@ function Liste(p: { eintraege: Eintrag[]; onWahl: (e: Eintrag) => void; onSchlie
           <button className={!farbFilter ? 'aktiv' : ''} onClick={() => setFarbFilter(null)}>Alle Farben</button>
           {vorhandeneFarben.map((f) => (
             <button key={f} className={farbFilter === f ? 'aktiv' : ''} onClick={() => setFarbFilter(farbFilter === f ? null : f)}>
-              <span className="farbpunkt" style={{ background: f }} />{farbName(f)} ({p.eintraege.filter((e) => e.typ === 'pin' && pinFarbe(e) === f).length})
+              <span className="farbpunkt" style={{ background: f }} />{farbName(f)} ({p.eintraege.filter((e) => pinFarbe(e) === f).length})
             </button>
           ))}
         </div>
@@ -432,7 +432,7 @@ function Liste(p: { eintraege: Eintrag[]; onWahl: (e: Eintrag) => void; onSchlie
       <ul className="liste">
         {liste.map((e) => (
           <li key={e.id} onClick={() => p.onWahl(e)}>
-            <strong>{e.typ === 'pin' ? <span className="farbpunkt" style={{ background: pinFarbe(e) }} /> : '⬠'} {e.titel || <span className="ohne-name">ohne Namen</span>}</strong>
+            <strong>{e.typ === 'pin' ? <span className="farbpunkt" style={{ background: pinFarbe(e) }} /> : <span className="flaechen-symbol" style={{ color: pinFarbe(e) }}>⬠</span>} {e.titel || <span className="ohne-name">ohne Namen</span>}</strong>
             {e.notizen.length > 0 && <span className="notiz-kurz">{notizenSortiert(e)[0].text}</span>}
             <small>📝 {e.notizen.length} {e.notizen.length === 1 ? 'Notiz' : 'Notizen'} · {e.tiere != null ? `🐑 ${e.tiere} · ` : ''}{e.herde ? `${e.herde} · ` : ''}{datum(e.geaendert)}</small>
           </li>

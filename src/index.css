@@ -120,3 +120,4 @@ select { font: inherit; border: 1px solid #c9d3c4; border-radius: 10px; padding:
   .liste-offen .fab span { display: none; }
   .liste-offen .haupt-fab { font-size: 1.4rem; }
 }
+.flaechen-symbol { font-weight: 700; text-shadow: 0 0 1px rgba(0,0,0,.6); }

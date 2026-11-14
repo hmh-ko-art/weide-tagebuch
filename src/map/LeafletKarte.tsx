@@ -3,7 +3,7 @@ import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { START, START_ZOOM, pinFarbe } from '../types'
 import { NADEL_BREITE, NADEL_HOEHE, nadelHtml } from './nadel'
-import { FARBE, FARBE_AKTIV, ROUTE_FARBE, type KartenProps } from './props'
+import { FARBE_AKTIV, ROUTE_FARBE, type KartenProps } from './props'
 
 const pinIcon = (aktiv: boolean, text: string, farbe: string, hervor: boolean) =>
   L.divIcon({
@@ -55,9 +55,11 @@ export default function LeafletKarte(p: KartenProps) {
       const aktiv = e.id === p.ausgewaehlt
       const klick = (ev: L.LeafletMouseEvent) => { L.DomEvent.stopPropagation(ev); cb.current.onAuswahl(e.id) }
       if (e.typ === 'pin') {
-        L.marker([e.position.lat, e.position.lng], { icon: pinIcon(aktiv, p.beschriftung ? e.titel : '', pinFarbe(e), hervor.has(pinFarbe(e).toLowerCase())), zIndexOffset: aktiv ? 1000 : hervor.has(pinFarbe(e).toLowerCase()) ? 500 : 0 }).on('click', klick).addTo(g)
+        L.marker([e.position.lat, e.position.lng], { icon: pinIcon(aktiv, p.beschriftung ? e.titel : '', pinFarbe(e), hervor.has(pinFarbe(e))), zIndexOffset: aktiv ? 1000 : hervor.has(pinFarbe(e)) ? 500 : 0 }).on('click', klick).addTo(g)
       } else {
-        const poly = L.polygon(e.punkte.map((q) => [q.lat, q.lng] as [number, number]), { color: aktiv ? FARBE_AKTIV : FARBE, weight: aktiv ? 4 : 2, fillOpacity: 0.25 })
+        // Fläche in ihrer Farbe; ausgewählt: weißer, dicker Rand; hervorgehoben: dezent dickerer Rand + etwas kräftigere Füllung
+        const f = pinFarbe(e), h = hervor.has(f) && !aktiv
+        const poly = L.polygon(e.punkte.map((q) => [q.lat, q.lng] as [number, number]), { color: aktiv ? '#fff' : f, fillColor: f, weight: aktiv ? 4 : h ? 3.5 : 2, opacity: 1, fillOpacity: aktiv ? 0.35 : h ? 0.38 : 0.25 })
         // Nur beschriften, wenn die Fläche einen Namen hat
         if (p.beschriftung && e.titel.trim()) poly.bindTooltip(e.titel, { permanent: true, direction: 'center', className: 'flaeche-label' })
         poly.on('click', klick).addTo(g)

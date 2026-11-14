@@ -23,7 +23,7 @@ async function ablageStarten() {
   pg = new pgMod.Pool({ connectionString: DATABASE_URL, ssl: lokal ? false : { rejectUnauthorized: false }, max: 3 })
   await pg.query('CREATE TABLE IF NOT EXISTS karten (id text PRIMARY KEY, daten jsonb NOT NULL, geaendert timestamptz NOT NULL DEFAULT now())')
   const { rows } = await pg.query('SELECT id, daten FROM karten')
-  for (const row of rows) { const k = row.daten; k.eintraege = (k.eintraege ?? []).map(migrieren); cache.set(row.id, k) }
+  for (const row of rows) cache.set(row.id, karteMigrieren(row.daten))
   console.log(`Ablage: Postgres (${rows.length} Karten geladen)`)
 }
 // Schreibvorgänge pro Karte nacheinander ausführen
@@ -56,6 +56,16 @@ function migrieren(e) {
   delete neu.notiz
   return neu
 }
+// Karte migrieren: alter Bearbeiten-Schlüssel -> erster Admin-Zugang (der alte Link funktioniert weiter)
+function karteMigrieren(k) {
+  k.eintraege = (k.eintraege ?? []).map(migrieren)
+  if (!Array.isArray(k.nutzer)) {
+    k.nutzer = k.schluessel ? [{ id: 'admin0', name: 'Admin', rolle: 'admin', zugang: k.schluessel, erstellt: k.erstellt || new Date().toISOString() }] : []
+  }
+  delete k.schluessel
+  k.nutzerVersion ??= 1
+  return k
+}
 const notizOk = (n) => n && typeof n.id === 'string' && typeof n.text === 'string' && typeof n.zeitpunkt === 'string'
 
 function laden(id) {
@@ -63,8 +73,7 @@ function laden(id) {
   if (cache.has(id)) return cache.get(id)
   if (pg) return null // bei Postgres liegen alle Karten nach dem Start im Cache
   try {
-    const k = JSON.parse(fs.readFileSync(datei(id), 'utf8'))
-    k.eintraege = k.eintraege.map(migrieren)
+    const k = karteMigrieren(JSON.parse(fs.readFileSync(datei(id), 'utf8')))
     cache.set(id, k)
     return k
   } catch {
@@ -79,100 +88,182 @@ function speichern(k) {
   fs.renameSync(datei(k.id) + '.tmp', datei(k.id))
   senden(k)
 }
-const oeffentlich = (k) => ({ id: k.id, name: k.name, version: k.version, eintraege: k.eintraege, geaendert: k.geaendert })
+// Öffentliche Sicht (auch für den Ansehen-Link): ohne Nutzerliste/Zugänge
+const oeffentlich = (k) => ({ id: k.id, name: k.name, version: k.version, nutzerVersion: k.nutzerVersion, eintraege: k.eintraege, geaendert: k.geaendert })
 function senden(k) {
   const set = clients.get(k.id)
   if (!set) return
   const data = `event: karte\ndata: ${JSON.stringify(oeffentlich(k))}\n\n`
   for (const res of set) res.write(data)
 }
-function darfBearbeiten(req, k) {
-  return req.get('x-bearbeiten-schluessel') === k.schluessel
+// Wer ruft an? Persönlicher Zugang per Header x-zugang (alt: x-bearbeiten-schluessel)
+const gleich = (a, b) => { const x = Buffer.from(String(a)), y = Buffer.from(String(b)); return x.length === y.length && crypto.timingSafeEqual(x, y) }
+function wer(req, k) {
+  const z = req.get('x-zugang') || req.get('x-bearbeiten-schluessel')
+  if (!z) return null
+  return k.nutzer.find((n) => gleich(n.zugang, z)) ?? null
+}
+const istAdmin = (n) => n?.rolle === 'admin'
+const ichInfo = (n) => (n ? { id: n.id, name: n.name, rolle: n.rolle } : null)
+// Darf `n` den Eintrag `e` bearbeiten/löschen? Admin: alles; Nutzer: nur eigene
+const darfEintrag = (n, e) => istAdmin(n) || (!!n && e.erstelltVon === n.id)
+const darfNotiz = (n, notiz) => istAdmin(n) || (!!n && notiz.autorId === n.id)
+function nutzerGeaendert(k) { k.nutzerVersion = (k.nutzerVersion ?? 1) + 1; speichern(k) }
+
+// Middleware: Karte laden + Nutzer bestimmen
+function mitKarte(rolle) {
+  return (req, res, next) => {
+    const k = laden(req.params.id)
+    if (!k) return res.status(404).json({ fehler: 'Karte nicht gefunden' })
+    const n = wer(req, k)
+    if (rolle === 'nutzer' && !n) return res.status(403).json({ fehler: 'Nur Lesezugriff – kein gültiger Zugang' })
+    if (rolle === 'admin' && !istAdmin(n)) return res.status(403).json({ fehler: 'Nur für Admins' })
+    req.karte = k
+    req.nutzer = n
+    next()
+  }
 }
 
 // Neue geteilte Karte anlegen (optional mit Startdaten)
 app.post('/api/karten', (req, res) => {
   const id = zufall(10)
+  const jetzt = new Date().toISOString()
+  const admin = { id: 'u' + zufall(8), name: String(req.body?.adminName || 'Admin').slice(0, 60), rolle: 'admin', zugang: zufall(20), erstellt: jetzt }
   const k = {
     id,
     name: String(req.body?.name || 'Meine Weidekarte').slice(0, 100),
-    schluessel: zufall(16),
     version: 0,
-    eintraege: Array.isArray(req.body?.eintraege) ? req.body.eintraege.map(migrieren) : [],
-    erstellt: new Date().toISOString(),
+    nutzerVersion: 1,
+    nutzer: [admin],
+    eintraege: Array.isArray(req.body?.eintraege) ? req.body.eintraege.map((e) => ({ ...migrieren(e), erstelltVon: admin.id })) : [],
+    erstellt: jetzt,
   }
   cache.set(id, k)
   speichern(k)
-  res.status(201).json({ ...oeffentlich(k), schluessel: k.schluessel })
+  res.status(201).json({ ...oeffentlich(k), zugang: admin.zugang, ich: ichInfo(admin) })
 })
 
-app.get('/api/karten/:id', (req, res) => {
-  const k = laden(req.params.id)
-  if (!k) return res.status(404).json({ fehler: 'Karte nicht gefunden' })
-  res.json({ ...oeffentlich(k), darfBearbeiten: darfBearbeiten(req, k) })
+app.get('/api/karten/:id', mitKarte(), (req, res) => {
+  res.json({ ...oeffentlich(req.karte), ich: ichInfo(req.nutzer), darfBearbeiten: !!req.nutzer })
 })
 
 // Eintrag anlegen/ändern
-app.put('/api/karten/:id/eintraege/:eid', (req, res) => {
-  const k = laden(req.params.id)
-  if (!k) return res.status(404).json({ fehler: 'Karte nicht gefunden' })
-  if (!darfBearbeiten(req, k)) return res.status(403).json({ fehler: 'Nur Lesezugriff' })
+app.put('/api/karten/:id/eintraege/:eid', mitKarte('nutzer'), (req, res) => {
+  const k = req.karte, ich = req.nutzer
   const body = req.body
   if (!body || body.id !== req.params.eid || !['pin', 'flaeche'].includes(body.typ)) return res.status(400).json({ fehler: 'Ungültiger Eintrag' })
   const e = migrieren(body)
   const i = k.eintraege.findIndex((x) => x.id === e.id)
   // Notizen eines bestehenden Eintrags werden nur über die Notiz-Endpunkte geändert,
   // damit ein Bearbeiten (Name/Farbe …) nie gleichzeitig hinzugefügte Notizen überschreibt.
-  if (i >= 0) k.eintraege[i] = { ...e, notizen: k.eintraege[i].notizen ?? [] }
-  else k.eintraege.push(e)
+  if (i >= 0) {
+    const alt = k.eintraege[i]
+    if (!darfEintrag(ich, alt)) return res.status(403).json({ fehler: 'Nur eigene Einträge bearbeiten (oder Admin)' })
+    k.eintraege[i] = { ...e, erstelltVon: alt.erstelltVon, notizen: alt.notizen ?? [] }
+  } else {
+    // neue Notizen beim Anlegen bekommen den Nutzer als Autor
+    const notizen = e.notizen.filter(notizOk).map((n) => ({ id: n.id, text: n.text.slice(0, 5000), zeitpunkt: n.zeitpunkt, autor: ich.name, autorId: ich.id }))
+    k.eintraege.push({ ...e, erstelltVon: ich.id, notizen })
+  }
   speichern(k)
   res.json({ ok: true, version: k.version })
 })
 
-app.delete('/api/karten/:id/eintraege/:eid', (req, res) => {
-  const k = laden(req.params.id)
-  if (!k) return res.status(404).json({ fehler: 'Karte nicht gefunden' })
-  if (!darfBearbeiten(req, k)) return res.status(403).json({ fehler: 'Nur Lesezugriff' })
+app.delete('/api/karten/:id/eintraege/:eid', mitKarte('nutzer'), (req, res) => {
+  const k = req.karte
+  const e = k.eintraege.find((x) => x.id === req.params.eid)
+  if (!e) return res.json({ ok: true, version: k.version })
+  if (!darfEintrag(req.nutzer, e)) return res.status(403).json({ fehler: 'Nur eigene Einträge löschen (oder Admin)' })
   k.eintraege = k.eintraege.filter((x) => x.id !== req.params.eid)
   speichern(k)
   res.json({ ok: true, version: k.version })
 })
 
 // Alle Einträge ersetzen (Import)
-app.put('/api/karten/:id/eintraege', (req, res) => {
-  const k = laden(req.params.id)
-  if (!k) return res.status(404).json({ fehler: 'Karte nicht gefunden' })
-  if (!darfBearbeiten(req, k)) return res.status(403).json({ fehler: 'Nur Lesezugriff' })
+app.put('/api/karten/:id/eintraege', mitKarte('admin'), (req, res) => {
+  const k = req.karte
   if (!Array.isArray(req.body)) return res.status(400).json({ fehler: 'Liste erwartet' })
-  k.eintraege = req.body.map(migrieren)
+  k.eintraege = req.body.map((e) => ({ erstelltVon: req.nutzer.id, ...migrieren(e) }))
   speichern(k)
   res.json({ ok: true, version: k.version })
 })
 
 // Notiz anlegen/ändern (per Notiz-ID zusammengeführt -> gleichzeitige Notizen gehen nicht verloren)
-app.put('/api/karten/:id/eintraege/:eid/notizen/:nid', (req, res) => {
-  const k = laden(req.params.id)
-  if (!k) return res.status(404).json({ fehler: 'Karte nicht gefunden' })
-  if (!darfBearbeiten(req, k)) return res.status(403).json({ fehler: 'Nur Lesezugriff' })
+// Notizen: jeder Nutzer darf an jedem Eintrag Notizen hinzufügen; ändern/löschen nur eigene (Admin: alle)
+app.put('/api/karten/:id/eintraege/:eid/notizen/:nid', mitKarte('nutzer'), (req, res) => {
+  const k = req.karte, ich = req.nutzer
   const e = k.eintraege.find((x) => x.id === req.params.eid)
   if (!e) return res.status(404).json({ fehler: 'Eintrag nicht gefunden' })
   const n = req.body
   if (!notizOk(n) || n.id !== req.params.nid) return res.status(400).json({ fehler: 'Ungültige Notiz' })
-  const notiz = { id: n.id, text: n.text.slice(0, 5000), zeitpunkt: n.zeitpunkt, ...(n.autor ? { autor: String(n.autor).slice(0, 60) } : {}) }
+  const alt = (e.notizen ?? []).find((x) => x.id === n.id)
+  if (alt && !darfNotiz(ich, alt)) return res.status(403).json({ fehler: 'Nur eigene Notizen bearbeiten (oder Admin)' })
+  // Autor setzt der Server: beim Anlegen der aktuelle Nutzer, beim Bearbeiten bleibt der ursprüngliche Autor
+  const autor = alt ? { autor: alt.autor, autorId: alt.autorId } : { autor: ich.name, autorId: ich.id }
+  const notiz = { id: n.id, text: n.text.slice(0, 5000), zeitpunkt: n.zeitpunkt, ...(autor.autor ? { autor: autor.autor } : {}), ...(autor.autorId ? { autorId: autor.autorId } : {}) }
   e.notizen = [...(e.notizen ?? []).filter((x) => x.id !== n.id), notiz]
   speichern(k)
   res.json({ ok: true, version: k.version })
 })
 
-app.delete('/api/karten/:id/eintraege/:eid/notizen/:nid', (req, res) => {
-  const k = laden(req.params.id)
-  if (!k) return res.status(404).json({ fehler: 'Karte nicht gefunden' })
-  if (!darfBearbeiten(req, k)) return res.status(403).json({ fehler: 'Nur Lesezugriff' })
+app.delete('/api/karten/:id/eintraege/:eid/notizen/:nid', mitKarte('nutzer'), (req, res) => {
+  const k = req.karte
   const e = k.eintraege.find((x) => x.id === req.params.eid)
   if (!e) return res.status(404).json({ fehler: 'Eintrag nicht gefunden' })
+  const alt = (e.notizen ?? []).find((x) => x.id === req.params.nid)
+  if (!alt) return res.json({ ok: true, version: k.version })
+  if (!darfNotiz(req.nutzer, alt)) return res.status(403).json({ fehler: 'Nur eigene Notizen löschen (oder Admin)' })
   e.notizen = (e.notizen ?? []).filter((x) => x.id !== req.params.nid)
   speichern(k)
   res.json({ ok: true, version: k.version })
+})
+
+// ---- Nutzerverwaltung (nur Admins) ----
+const nutzerListe = (k) => k.nutzer.map((n) => ({ id: n.id, name: n.name, rolle: n.rolle, zugang: n.zugang, erstellt: n.erstellt }))
+const rolleOk = (r) => r === 'admin' || r === 'nutzer'
+const adminAnzahl = (k) => k.nutzer.filter((n) => n.rolle === 'admin').length
+
+app.get('/api/karten/:id/nutzer', mitKarte('admin'), (req, res) => res.json(nutzerListe(req.karte)))
+
+app.post('/api/karten/:id/nutzer', mitKarte('admin'), (req, res) => {
+  const k = req.karte
+  const name = String(req.body?.name ?? '').trim().slice(0, 60)
+  const rolle = req.body?.rolle ?? 'nutzer'
+  if (!name) return res.status(400).json({ fehler: 'Name fehlt' })
+  if (!rolleOk(rolle)) return res.status(400).json({ fehler: 'Ungültige Rolle' })
+  const n = { id: 'u' + zufall(8), name, rolle, zugang: zufall(20), erstellt: new Date().toISOString() }
+  k.nutzer.push(n)
+  nutzerGeaendert(k)
+  res.status(201).json(n)
+})
+
+app.patch('/api/karten/:id/nutzer/:nid', mitKarte('admin'), (req, res) => {
+  const k = req.karte
+  const n = k.nutzer.find((x) => x.id === req.params.nid)
+  if (!n) return res.status(404).json({ fehler: 'Nutzer nicht gefunden' })
+  if (req.body?.rolle !== undefined) {
+    if (!rolleOk(req.body.rolle)) return res.status(400).json({ fehler: 'Ungültige Rolle' })
+    if (n.rolle === 'admin' && req.body.rolle !== 'admin' && adminAnzahl(k) <= 1) return res.status(409).json({ fehler: 'Mindestens ein Admin muss bleiben' })
+    n.rolle = req.body.rolle
+  }
+  if (req.body?.name !== undefined) {
+    const name = String(req.body.name).trim().slice(0, 60)
+    if (!name) return res.status(400).json({ fehler: 'Name fehlt' })
+    n.name = name
+  }
+  if (req.body?.neuerZugang) n.zugang = zufall(20) // alter Link wird sofort ungültig
+  nutzerGeaendert(k)
+  res.json(n)
+})
+
+app.delete('/api/karten/:id/nutzer/:nid', mitKarte('admin'), (req, res) => {
+  const k = req.karte
+  const n = k.nutzer.find((x) => x.id === req.params.nid)
+  if (!n) return res.status(404).json({ fehler: 'Nutzer nicht gefunden' })
+  if (n.rolle === 'admin' && adminAnzahl(k) <= 1) return res.status(409).json({ fehler: 'Mindestens ein Admin muss bleiben' })
+  k.nutzer = k.nutzer.filter((x) => x.id !== n.id) // Zugang ab sofort ungültig
+  nutzerGeaendert(k)
+  res.json({ ok: true })
 })
 
 // Live-Updates per Server-Sent Events

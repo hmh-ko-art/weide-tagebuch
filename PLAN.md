@@ -145,3 +145,11 @@ interface Karte {          // geteilte Karte (Server)
 - Ziel: Render Free (Frankfurt) per `render.yaml`: Webservice `weide-tagebuch` + Free-Postgres `weide-tagebuch-db`. Der Server speichert bei gesetztem `DATABASE_URL` in Postgres (Tabelle `karten`, JSONB), sonst in JSON-Dateien. Lokal getestet: Daten und Notizen überstehen einen Neustart.
 - Render baut nur aus einem Git-Repo (GitHub/GitLab/Bitbucket). Voraussetzung: GitHub-Verbindung + leeres Repo des Nutzers; dann Push und Blueprint anlegen.
 - Free-Grenzen: Einschlafen nach 15 Min. Inaktivität (Aufwachen ~1 Min.), 750 Free-Stunden/Monat, kein dauerhaftes Dateisystem, **Free-Postgres läuft nach 30 Tagen ab** (14 Tage Frist, dann gelöscht). Dauerhaft kostenlos: externe DB wie Supabase/Neon Free über `DATABASE_URL`.
+
+## 11. Nutzerverwaltung (Stand 14.11.2026)
+
+- Pro Karte eine Nutzerliste (gespeichert mit der Karte in Postgres): `{ id, name, rolle: 'nutzer' | 'admin', zugang }`. Jede Person bekommt einen persönlichen Link `?karte=ID&zugang=KEY`; der Zugang wird am Gerät gespeichert und aus der Adresszeile entfernt.
+- **Nutzer:** Nadeln/Flächen anlegen, eigene bearbeiten/löschen; Notizen an allen Einträgen hinzufügen, eigene Notizen bearbeiten/löschen. **Admin:** zusätzlich alles bearbeiten/löschen, JSON-Import, Bereich „👥 Nutzer“ (hinzufügen + Link teilen, umbenennen, Rolle ändern, neuen Link erzeugen, entfernen). Mindestens ein Admin bleibt immer.
+- Notizen bekommen den Nutzernamen automatisch als Autor (setzt der Server). Einträge merken sich `erstelltVon`.
+- Alles wird serverseitig geprüft (Header `x-zugang`); entfernte Nutzer verlieren sofort den Zugriff und sehen die Karte nur noch.
+- Migration: Der alte Bearbeiten-Schlüssel einer Karte wird zum ersten Admin-Zugang („Admin“, umbenennbar); alte `&schluessel=`-Links funktionieren weiter. Der Ansehen-Link bleibt nur-lesen. Alte Einträge/Notizen ohne Ersteller können nur Admins ändern.

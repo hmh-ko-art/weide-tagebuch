@@ -5,13 +5,15 @@ export interface Notiz {
   id: string
   text: string
   zeitpunkt: string // ISO, automatisch jetzt, editierbar
-  autor?: string // Name/Gerät, optional
+  autor?: string // Name des Nutzers (bei geteilten Karten setzt der Server ihn)
+  autorId?: string // Nutzer-ID des Autors (für „eigene Notizen bearbeiten/löschen“)
 }
 
 interface Basis {
   id: string
   titel: string
   notizen: Notiz[]
+  erstelltVon?: string // Nutzer-ID (geteilte Karten): Nutzer dürfen nur eigene Einträge bearbeiten/löschen
   /** @deprecated altes Einzel-Notizfeld – wird per migrieren() zu notizen[0] */
   notiz?: string
   tiere?: number

@@ -1,11 +1,25 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { migrieren, type Eintrag, type Notiz } from './types'
 
-// Geteilte Karte: ?karte=ID (ansehen) bzw. ?karte=ID&schluessel=KEY (bearbeiten)
+// Geteilte Karte: ?karte=ID (ansehen) bzw. ?karte=ID&zugang=KEY (persönlicher Zugang; alt: &schluessel=KEY).
+// Der Zugang wird am Gerät gespeichert und aus der Adresszeile entfernt.
+const zugangKey = (id: string) => `wt-zugang-${id}`
 export function linkParameter() {
   const p = new URLSearchParams(location.search)
-  return { karteId: p.get('karte'), schluessel: p.get('schluessel') }
+  const karteId = p.get('karte')
+  const ausLink = p.get('zugang') || p.get('schluessel')
+  if (karteId && ausLink) {
+    localStorage.setItem(zugangKey(karteId), ausLink)
+    p.delete('zugang'); p.delete('schluessel')
+    history.replaceState(null, '', `${location.pathname}?${p.toString()}`)
+  }
+  return { karteId, zugang: karteId ? localStorage.getItem(zugangKey(karteId)) : null }
 }
+const PARAMS = linkParameter()
+
+export interface Ich { id: string; name: string; rolle: 'admin' | 'nutzer' }
+export interface Nutzer extends Ich { zugang: string; erstellt: string }
+export const zugangsLink = (karteId: string, zugang: string) => `${location.origin}${location.pathname}?karte=${karteId}&zugang=${zugang}`
 
 type Ausstehend =
   | { art: 'put'; eintrag: Eintrag }
@@ -46,14 +60,40 @@ function lesen<T>(key: string, fallback: T): T {
 }
 
 export function useKarte() {
-  const { karteId, schluessel } = linkParameter()
+  const { karteId, zugang } = PARAMS
   const [eintraege, setEintraege] = useState<Eintrag[]>(() => lesen<Eintrag[]>(cacheKey(karteId), []).map(migrieren))
   const [status, setStatus] = useState<SyncStatus>(karteId ? 'verbinde' : 'lokal')
-  const [darfBearbeiten, setDarfBearbeiten] = useState<boolean>(!karteId || !!schluessel)
+  const [ich, setIch] = useState<Ich | null>(null)
+  const [hinweis, setHinweis] = useState('')
   const [kartenName, setKartenName] = useState<string>('')
+  const nutzerVersion = useRef<number | null>(null)
+  const darfBearbeiten = !karteId || !!ich
+  const istAdmin = !karteId || ich?.rolle === 'admin'
   const queue = useRef<Ausstehend[]>(karteId ? lesen(queueKey(karteId), []) : [])
 
-  const headers = { 'Content-Type': 'application/json', ...(schluessel ? { 'x-bearbeiten-schluessel': schluessel } : {}) }
+  const headers = { 'Content-Type': 'application/json', ...(zugang ? { 'x-zugang': zugang } : {}) }
+
+  // Wer bin ich auf dieser Karte? (bei Rollen-/Nutzeränderungen neu laden)
+  const ichLaden = useCallback(async (mitEintraegen = false) => {
+    if (!karteId) return
+    try {
+      const r = await fetch(`/api/karten/${karteId}`, { headers })
+      if (!r.ok) return
+      const k = await r.json()
+      setKartenName(k.name)
+      nutzerVersion.current = k.nutzerVersion
+      setIch((alt) => {
+        if (zugang && alt && !k.ich) setHinweis('Dein Zugang ist nicht mehr gültig – du kannst die Karte nur noch ansehen.')
+        return k.ich
+      })
+      if (mitEintraegen) {
+        let liste: Eintrag[] = k.eintraege.map(migrieren)
+        for (const a of queue.current) liste = anwenden(liste, a)
+        setEintraege(liste)
+      }
+    } catch { /* offline */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [karteId, zugang])
 
   // Offline-Cache aktuell halten
   useEffect(() => {
@@ -73,41 +113,42 @@ export function useKarte() {
     if (r.status === 403 || r.status === 404) throw Object.assign(new Error('Nur Lesezugriff'), { endgueltig: true })
     if (!r.ok) throw new Error('Serverfehler ' + r.status)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [karteId, schluessel])
+  }, [karteId, zugang])
 
   const laeuft = useRef(false)
   const queueAbarbeiten = useCallback(async () => {
     if (laeuft.current) return // nur ein Durchlauf gleichzeitig, sonst werden Einträge doppelt/gar nicht gesendet
     laeuft.current = true
+    let abgelehnt = false
     try {
     while (queue.current.length) {
       try {
         await senden(queue.current[0])
       } catch (e) {
         if (!(e as { endgueltig?: boolean }).endgueltig) { setStatus('offline'); break }
+        // Vom Server abgelehnt (keine Berechtigung): Hinweis + Serverstand wiederherstellen
+        setHinweis('Diese Änderung ist nicht erlaubt und wurde verworfen.')
+        abgelehnt = true
       }
       queue.current.shift()
       queueSpeichern()
     }
     } finally { laeuft.current = false }
+    if (abgelehnt) ichLaden(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [senden])
+  }, [senden, ichLaden])
 
   // Live-Verbindung (SSE) zum Server
   useEffect(() => {
     if (!karteId) return
-    fetch(`/api/karten/${karteId}`, { headers }).then(async (r) => {
-      if (r.ok) {
-        const k = await r.json()
-        setDarfBearbeiten(k.darfBearbeiten)
-        setKartenName(k.name)
-      }
-    }).catch(() => setStatus('offline'))
+    ichLaden()
     const es = new EventSource(`/api/karten/${karteId}/live`)
     es.addEventListener('karte', (ev) => {
       const k = JSON.parse((ev as MessageEvent).data)
       setKartenName(k.name)
       setStatus('verbunden')
+      // Nutzerliste geändert (z. B. Rolle geändert oder Zugang entfernt) -> eigene Rechte neu holen
+      if (nutzerVersion.current !== null && k.nutzerVersion !== nutzerVersion.current) ichLaden()
       // Lokale, noch nicht gesendete Änderungen obenauf legen
       let liste: Eintrag[] = k.eintraege.map(migrieren)
       for (const a of queue.current) liste = anwenden(liste, a)
@@ -137,7 +178,7 @@ export function useKarte() {
     setEintraege(liste)
     if (karteId) await fetch(`/api/karten/${karteId}/eintraege`, { method: 'PUT', headers, body: JSON.stringify(liste) })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [karteId, schluessel])
+  }, [karteId, zugang])
 
   // Lokale Karte in eine geteilte Server-Karte umwandeln
   const teilen = useCallback(async (name: string) => {
@@ -145,8 +186,29 @@ export function useKarte() {
     if (!r.ok) throw new Error('Server nicht erreichbar')
     const k = await r.json()
     localStorage.setItem(cacheKey(k.id), JSON.stringify(eintraege))
-    location.href = `${location.pathname}?karte=${k.id}&schluessel=${k.schluessel}`
+    localStorage.setItem(zugangKey(k.id), k.zugang)
+    location.href = `${location.pathname}?karte=${k.id}`
   }, [eintraege])
 
-  return { eintraege, speichern, loeschen, notizSpeichern, notizLoeschen, alleErsetzen, teilen, status, darfBearbeiten, karteId, schluessel, kartenName }
+  const abmelden = useCallback(() => {
+    if (karteId) localStorage.removeItem(zugangKey(karteId))
+    location.reload()
+  }, [karteId])
+
+  // ---- Nutzerverwaltung (Admin) ----
+  const api = useCallback(async <T,>(pfad: string, method = 'GET', body?: unknown): Promise<T> => {
+    const r = await fetch(`/api/karten/${karteId}/nutzer${pfad}`, { method, headers, body: body ? JSON.stringify(body) : undefined })
+    const j = await r.json().catch(() => ({}))
+    if (!r.ok) throw new Error(j.fehler || `Fehler ${r.status}`)
+    return j as T
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [karteId, zugang])
+  const nutzer = {
+    laden: () => api<Nutzer[]>(''),
+    anlegen: (name: string, rolle: Ich['rolle']) => api<Nutzer>('', 'POST', { name, rolle }),
+    aendern: (id: string, daten: { name?: string; rolle?: Ich['rolle']; neuerZugang?: boolean }) => api<Nutzer>(`/${id}`, 'PATCH', daten),
+    entfernen: (id: string) => api<{ ok: boolean }>(`/${id}`, 'DELETE'),
+  }
+
+  return { eintraege, speichern, loeschen, notizSpeichern, notizLoeschen, alleErsetzen, teilen, abmelden, status, darfBearbeiten, istAdmin, ich, ichLaden, hinweis, setHinweis, nutzer, karteId, zugang, kartenName }
 }

@@ -1,11 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Karte, { HAT_GOOGLE_KEY } from './map/Karte'
-import { useKarte } from './daten'
+import { useKarte, zugangsLink, type Ich, type Nutzer } from './daten'
 import { googleNaviLink, routeBerechnen, routeText } from './route'
 import { FARBEN, START, STANDARD_FARBE, datum, farbName, hektar, mitte, neueId, notizenSortiert, pinFarbe, type Eintrag, type Notiz, type Fokus, type LatLng, type Route } from './types'
 
 type Modus = 'ansicht' | 'pin' | 'flaeche'
-type Panel = null | 'liste' | 'einstellungen'
+type Panel = null | 'liste' | 'einstellungen' | 'nutzer'
+
+// Aktuell angemeldeter Nutzer (geteilte Karte) – für Autor neuer Notizen
+let aktuellerNutzer: Ich | null = null
+const autorFelder = (): { autor?: string; autorId?: string } =>
+  aktuellerNutzer ? { autor: aktuellerNutzer.name, autorId: aktuellerNutzer.id } : localStorage.getItem('wt-autor') ? { autor: localStorage.getItem('wt-autor')! } : {}
 
 function standortHolen(): Promise<LatLng> {
   return new Promise((ok, fehler) => {
@@ -20,6 +25,10 @@ function standortHolen(): Promise<LatLng> {
 
 export default function App() {
   const k = useKarte()
+  aktuellerNutzer = k.karteId ? k.ich : null
+  // Berechtigungen (der Server prüft zusätzlich): Admin alles, Nutzer nur eigene Einträge/Notizen
+  const kannEintrag = (e: Eintrag) => !k.karteId || k.istAdmin || (!!k.ich && e.erstelltVon === k.ich.id)
+  const kannNotiz = (n: Notiz) => !k.karteId || k.istAdmin || (!!k.ich && n.autorId === k.ich.id)
   const [modus, setModus] = useState<Modus>('ansicht')
   const [zeichenPunkte, setZeichenPunkte] = useState<LatLng[]>([])
   const [ausgewaehlt, setAusgewaehlt] = useState<string | null>(null)
@@ -34,6 +43,10 @@ export default function App() {
   const routeNr = useRef(0)
 
   const auswahl = useMemo(() => k.eintraege.find((e) => e.id === ausgewaehlt) ?? null, [k.eintraege, ausgewaehlt])
+
+  useEffect(() => {
+    if (k.hinweis) { setMeldung(k.hinweis); k.setHinweis('') }
+  }, [k.hinweis, k])
 
   useEffect(() => {
     if (!meldung) return
@@ -57,7 +70,7 @@ export default function App() {
 
   const neuerPin = (p: LatLng) => {
     const jetzt = new Date().toISOString()
-    setFormular({ neu: true, e: { id: neueId(), typ: 'pin', position: p, farbe: localStorage.getItem('wt-letzte-farbe') || STANDARD_FARBE, titel: '', notizen: [], erstellt: jetzt, geaendert: jetzt } })
+    setFormular({ neu: true, e: { id: neueId(), typ: 'pin', position: p, farbe: localStorage.getItem('wt-letzte-farbe') || STANDARD_FARBE, titel: '', notizen: [], ...(k.ich ? { erstelltVon: k.ich.id } : {}), erstellt: jetzt, geaendert: jetzt } })
     setModus('ansicht')
   }
 
@@ -101,7 +114,7 @@ export default function App() {
   const flaecheFertig = () => {
     if (zeichenPunkte.length < 3) { setMeldung('Bitte mindestens 3 Eckpunkte antippen.'); return }
     const jetzt = new Date().toISOString()
-    setFormular({ neu: true, e: { id: neueId(), typ: 'flaeche', punkte: zeichenPunkte, titel: '', notizen: [], erstellt: jetzt, geaendert: jetzt } })
+    setFormular({ neu: true, e: { id: neueId(), typ: 'flaeche', punkte: zeichenPunkte, titel: '', notizen: [], ...(k.ich ? { erstelltVon: k.ich.id } : {}), erstellt: jetzt, geaendert: jetzt } })
     setZeichenPunkte([])
     setModus('ansicht')
   }
@@ -129,10 +142,11 @@ export default function App() {
       <header className="kopf">
         <div>
           <h1>🐑 Weide-Tagebuch</h1>
-          <small className={`status ${k.status}`}>{k.kartenName ? `${k.kartenName} · ` : ''}{statusText}{!k.darfBearbeiten && ' · nur ansehen'}</small>
+          <small className={`status ${k.status}`}>{k.kartenName ? `${k.kartenName} · ` : ''}{statusText}{k.karteId && k.ich ? ` · ${k.ich.name}${k.ich.rolle === 'admin' ? ' (Admin)' : ''}` : ''}{!k.darfBearbeiten && ' · nur ansehen'}</small>
         </div>
         <nav>
           <button onClick={() => setPanel(panel === 'liste' ? null : 'liste')}>📋 Liste</button>
+          {k.karteId && k.istAdmin && <button title="Nutzer verwalten" aria-label="Nutzer verwalten" onClick={() => setPanel(panel === 'nutzer' ? null : 'nutzer')}>👥</button>}
           <button onClick={() => setPanel(panel === 'einstellungen' ? null : 'einstellungen')}>⚙️</button>
         </nav>
       </header>
@@ -191,6 +205,8 @@ export default function App() {
             e={auswahl}
             routeInfo={routeInfo}
             darfBearbeiten={k.darfBearbeiten}
+            kannBearbeiten={kannEintrag(auswahl)}
+            kannNotiz={kannNotiz}
             onSchliessen={abwaehlen}
             onBearbeiten={() => setFormular({ e: auswahl, neu: false })}
             onLoeschen={() => loeschen(auswahl)}
@@ -201,12 +217,13 @@ export default function App() {
           />
         )}
 
-        {formular && <Formular start={formular.e} neu={formular.neu} onSpeichern={speichern} onAbbrechen={() => setFormular(null)} onLoeschen={formular.neu ? undefined : () => loeschen(formular.e)} />}
+        {formular && <Formular start={formular.e} neu={formular.neu} onSpeichern={speichern} onAbbrechen={() => setFormular(null)} onLoeschen={formular.neu || !kannEintrag(formular.e) ? undefined : () => loeschen(formular.e)} />}
 
         {panel === 'liste' && (
           <Liste eintraege={k.eintraege} onSchliessen={() => setPanel(null)} onWahl={(e) => { fliege(mitte(e), e.typ === 'pin' ? 15 : undefined); waehle(e.id) }} />
         )}
-        {panel === 'einstellungen' && <Einstellungen k={k} onSchliessen={() => setPanel(null)} meldung={setMeldung} />}
+        {panel === 'einstellungen' && <Einstellungen k={k} onSchliessen={() => setPanel(null)} meldung={setMeldung} onNutzer={() => setPanel('nutzer')} />}
+        {panel === 'nutzer' && k.istAdmin && k.karteId && <NutzerVerwaltung k={k} onSchliessen={() => setPanel(null)} meldung={setMeldung} />}
 
         {meldung && <div className="toast">{meldung}</div>}
       </main>
@@ -214,7 +231,7 @@ export default function App() {
   )
 }
 
-function Detail(p: { e: Eintrag; routeInfo: string; darfBearbeiten: boolean; onSchliessen: () => void; onBearbeiten: () => void; onLoeschen: () => void; onRoute: () => void; onRouteAus: () => void; onNotizSpeichern: (n: Notiz) => void; onNotizLoeschen: (id: string) => void }) {
+function Detail(p: { e: Eintrag; routeInfo: string; darfBearbeiten: boolean; kannBearbeiten: boolean; kannNotiz: (n: Notiz) => boolean; onSchliessen: () => void; onBearbeiten: () => void; onLoeschen: () => void; onRoute: () => void; onRouteAus: () => void; onNotizSpeichern: (n: Notiz) => void; onNotizLoeschen: (id: string) => void }) {
   const { e } = p
   const ziel = mitte(e)
   return (
@@ -234,10 +251,11 @@ function Detail(p: { e: Eintrag; routeInfo: string; darfBearbeiten: boolean; onS
       <div className="knoepfe">
         {p.routeInfo ? <button onClick={p.onRouteAus}>Route ausblenden</button> : <button onClick={p.onRoute}>Route anzeigen</button>}
         <a className="btn primaer" href={googleNaviLink(ziel)} target="_blank" rel="noreferrer">In Google Maps navigieren</a>
-        {p.darfBearbeiten && <button onClick={p.onBearbeiten}>Bearbeiten</button>}
-        {p.darfBearbeiten && <button className="gefahr" onClick={p.onLoeschen}>Löschen</button>}
+        {p.kannBearbeiten && <button onClick={p.onBearbeiten}>Bearbeiten</button>}
+        {p.kannBearbeiten && <button className="gefahr" onClick={p.onLoeschen}>Löschen</button>}
       </div>
-      <Notizen e={e} darfBearbeiten={p.darfBearbeiten} onSpeichern={p.onNotizSpeichern} onLoeschen={p.onNotizLoeschen} />
+      {e.erstelltVon && !p.kannBearbeiten && p.darfBearbeiten && <p className="hinweis klein">Diesen Eintrag kann nur die Person, die ihn angelegt hat, oder ein Admin ändern. Notizen kannst du trotzdem hinzufügen.</p>}
+      <Notizen e={e} darfBearbeiten={p.darfBearbeiten} kannNotiz={p.kannNotiz} onSpeichern={p.onNotizSpeichern} onLoeschen={p.onNotizLoeschen} />
     </section>
   )
 }
@@ -245,15 +263,14 @@ function Detail(p: { e: Eintrag; routeInfo: string; darfBearbeiten: boolean; onS
 // ISO <-> Wert für <input type="datetime-local"> (lokale Zeit)
 const zuLokal = (iso: string) => { const d = new Date(iso); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16) }
 const ausLokal = (v: string) => new Date(v).toISOString()
-const autorName = () => localStorage.getItem('wt-autor') || undefined
 
-function Notizen(p: { e: Eintrag; darfBearbeiten: boolean; onSpeichern: (n: Notiz) => void; onLoeschen: (id: string) => void }) {
+function Notizen(p: { e: Eintrag; darfBearbeiten: boolean; kannNotiz: (n: Notiz) => boolean; onSpeichern: (n: Notiz) => void; onLoeschen: (id: string) => void }) {
   const [text, setText] = useState('')
   const [bearbeite, setBearbeite] = useState<Notiz | null>(null)
   const liste = notizenSortiert(p.e)
   const hinzufuegen = () => {
     if (!text.trim()) return
-    p.onSpeichern({ id: neueId(), text: text.trim(), zeitpunkt: new Date().toISOString(), ...(autorName() ? { autor: autorName() } : {}) })
+    p.onSpeichern({ id: neueId(), text: text.trim(), zeitpunkt: new Date().toISOString(), ...autorFelder() })
     setText('')
   }
   return (
@@ -282,7 +299,7 @@ function Notizen(p: { e: Eintrag; darfBearbeiten: boolean; onSpeichern: (n: Noti
               <div className="notiz-kopf">
                 <time dateTime={n.zeitpunkt}>{datum(n.zeitpunkt)}</time>
                 {n.autor && <span className="autor">· {n.autor}</span>}
-                {p.darfBearbeiten && (
+                {p.kannNotiz(n) && (
                   <span className="notiz-aktionen">
                     <button title="Notiz bearbeiten" aria-label="Notiz bearbeiten" onClick={() => setBearbeite(n)}>✏️</button>
                     <button title="Notiz löschen" aria-label="Notiz löschen" onClick={() => confirm('Diese Notiz löschen?') && p.onLoeschen(n.id)}>🗑️</button>
@@ -306,7 +323,7 @@ function Formular(p: { start: Eintrag; neu: boolean; onSpeichern: (e: Eintrag) =
     <section className="sheet formular">
       <form onSubmit={(ev) => {
         ev.preventDefault()
-        const notizen = p.neu && ersteNotiz.trim() ? [{ id: neueId(), text: ersteNotiz.trim(), zeitpunkt: new Date().toISOString(), ...(autorName() ? { autor: autorName() } : {}) }] : e.notizen
+        const notizen = p.neu && ersteNotiz.trim() ? [{ id: neueId(), text: ersteNotiz.trim(), zeitpunkt: new Date().toISOString(), ...autorFelder() }] : e.notizen
         p.onSpeichern({ ...e, notizen })
       }}>
         <div className="sheet-kopf">
@@ -393,7 +410,7 @@ function Liste(p: { eintraege: Eintrag[]; onWahl: (e: Eintrag) => void; onSchlie
   )
 }
 
-function Einstellungen(p: { k: ReturnType<typeof useKarte>; onSchliessen: () => void; meldung: (s: string) => void }) {
+function Einstellungen(p: { k: ReturnType<typeof useKarte>; onSchliessen: () => void; meldung: (s: string) => void; onNutzer: () => void }) {
   const { k } = p
   const [name, setName] = useState('Weidekarte Deichschäferei')
   const basis = `${location.origin}${location.pathname}?karte=${k.karteId}`
@@ -436,23 +453,112 @@ function Einstellungen(p: { k: ReturnType<typeof useKarte>; onSchliessen: () => 
         <>
           <p className="hinweis">Status: {k.status === 'verbunden' ? 'live verbunden' : k.status}. Änderungen erscheinen sofort bei allen, die den Link offen haben.</p>
           <button onClick={() => kopieren(basis)}>🔗 Link zum Ansehen kopieren</button>
-          {k.schluessel && <button onClick={() => kopieren(`${basis}&schluessel=${k.schluessel}`)}>✏️ Link zum Bearbeiten kopieren</button>}
-          {k.schluessel && <p className="hinweis klein">Den Bearbeiten-Link nur an Personen geben, die Nadeln setzen und ändern dürfen.</p>}
+          <p className="hinweis klein">Der Ansehen-Link ist nur zum Lesen. Zum Mitarbeiten bekommt jede Person einen eigenen Zugangs-Link vom Admin.</p>
+          {k.istAdmin && <button className="primaer" onClick={p.onNutzer}>👥 Nutzer verwalten / Leute einladen</button>}
         </>
       )}
 
-      <h3>Dein Name</h3>
-      <label>Name/Gerät für deine Notizen (optional)<input defaultValue={localStorage.getItem('wt-autor') ?? ''} placeholder="z. B. Henning" onChange={(e) => (e.target.value.trim() ? localStorage.setItem('wt-autor', e.target.value.trim()) : localStorage.removeItem('wt-autor'))} /></label>
+      {k.karteId ? (
+        <>
+          <h3>Dein Zugang</h3>
+          {k.ich ? (
+            <>
+              <p className="hinweis">Angemeldet als <strong>{k.ich.name}</strong> ({k.ich.rolle === 'admin' ? 'Admin' : 'Nutzer'}). Dein persönlicher Link ist auf diesem Gerät gespeichert.</p>
+              <button onClick={() => k.zugang && kopieren(zugangsLink(k.karteId!, k.zugang))}>🔑 Meinen persönlichen Link kopieren (für ein weiteres Gerät)</button>
+              <button onClick={() => confirm('Auf diesem Gerät abmelden? Du brauchst danach deinen persönlichen Link wieder.') && k.abmelden()}>Abmelden</button>
+            </>
+          ) : (
+            <p className="hinweis">Nur ansehen. Zum Mitarbeiten den persönlichen Link vom Admin öffnen.{k.zugang ? ' (Der gespeicherte Zugang ist nicht mehr gültig.)' : ''}</p>
+          )}
+        </>
+      ) : (
+        <>
+          <h3>Dein Name</h3>
+          <label>Name/Gerät für deine Notizen (optional)<input defaultValue={localStorage.getItem('wt-autor') ?? ''} placeholder="z. B. Henning" onChange={(e) => (e.target.value.trim() ? localStorage.setItem('wt-autor', e.target.value.trim()) : localStorage.removeItem('wt-autor'))} /></label>
+        </>
+      )}
 
       <h3>Daten</h3>
       <button onClick={exportieren}>⬇️ Als JSON exportieren</button>
-      {k.darfBearbeiten && (
+      {k.istAdmin && (
         <label className="btn">⬆️ JSON importieren<input type="file" accept="application/json,.json" hidden onChange={(e) => e.target.files?.[0] && importieren(e.target.files[0])} /></label>
       )}
 
       <h3>Karte</h3>
       <p className="hinweis">Kartendienst: {HAT_GOOGLE_KEY ? 'Google Maps (Satellit)' : 'Esri-Satellit / OpenStreetMap (kostenlos) – für Google Maps einen API-Key in VITE_GOOGLE_MAPS_API_KEY eintragen'}.<br />Routen: {HAT_GOOGLE_KEY ? 'Google Directions' : 'OSRM (kostenloser Demo-Server)'}.</p>
       <p className="hinweis klein">Weide-Tagebuch · Prototyp v0.1</p>
+    </section>
+  )
+}
+
+function NutzerVerwaltung(p: { k: ReturnType<typeof useKarte>; onSchliessen: () => void; meldung: (s: string) => void }) {
+  const { k } = p
+  const [liste, setListe] = useState<Nutzer[] | null>(null)
+  const [name, setName] = useState('')
+  const [rolle, setRolle] = useState<Ich['rolle']>('nutzer')
+  const [neu, setNeu] = useState<Nutzer | null>(null)
+  const laden = useCallback(() => { k.nutzer.laden().then(setListe).catch((e) => p.meldung(e.message)) }, [k, p])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(laden, [])
+  const fehler = (e: Error) => p.meldung(e.message)
+  const link = (n: Nutzer) => zugangsLink(k.karteId!, n.zugang)
+  const teilen = async (n: Nutzer) => {
+    const text = `Hallo ${n.name}, hier ist dein persönlicher Zugang zur Weidekarte „${k.kartenName}“: ${link(n)}`
+    if (navigator.share) { try { await navigator.share({ title: 'Weide-Tagebuch', text, url: link(n) }); return } catch { /* abgebrochen */ } }
+    try { await navigator.clipboard.writeText(link(n)); p.meldung(`Link für ${n.name} kopiert`) } catch { prompt(`Link für ${n.name} kopieren:`, link(n)) }
+  }
+  const admins = liste?.filter((n) => n.rolle === 'admin').length ?? 0
+  return (
+    <section className="panel nutzer-panel">
+      <div className="sheet-kopf">
+        <h2>Nutzer</h2>
+        <button className="x" onClick={p.onSchliessen} aria-label="Schließen">✕</button>
+      </div>
+      <p className="hinweis">Jede Person bekommt einen eigenen Link. <strong>Nutzer</strong> dürfen Nadeln, Flächen und Notizen anlegen und ihre eigenen ändern/löschen. <strong>Admins</strong> dürfen alles und Nutzer verwalten.</p>
+
+      <h3>Person hinzufügen</h3>
+      <form className="nutzer-neu" onSubmit={(ev) => {
+        ev.preventDefault()
+        if (!name.trim()) return
+        k.nutzer.anlegen(name.trim(), rolle).then((n) => { setNeu(n); setName(''); setRolle('nutzer'); laden(); k.ichLaden() }).catch(fehler)
+      }}>
+        <label>Name<input value={name} placeholder="z. B. Jan (Schäfer)" onChange={(e) => setName(e.target.value)} /></label>
+        <label>Rolle<select value={rolle} onChange={(e) => setRolle(e.target.value as Ich['rolle'])}><option value="nutzer">Nutzer</option><option value="admin">Admin</option></select></label>
+        <button type="submit" className="primaer" disabled={!name.trim()}>Hinzufügen</button>
+      </form>
+      {neu && (
+        <div className="neu-link">
+          <p><strong>{neu.name}</strong> wurde angelegt. Schick ihm/ihr diesen persönlichen Link:</p>
+          <input readOnly value={link(neu)} onFocus={(e) => e.target.select()} />
+          <div className="knoepfe">
+            <button className="primaer" onClick={() => teilen(neu)}>Link teilen / kopieren</button>
+            <button onClick={() => setNeu(null)}>Fertig</button>
+          </div>
+        </div>
+      )}
+
+      <h3>Alle Personen ({liste?.length ?? '…'})</h3>
+      <ul className="nutzer-liste">
+        {liste?.map((n) => (
+          <li key={n.id}>
+            <div className="nutzer-kopf">
+              <strong>{n.name}</strong>{n.id === k.ich?.id && <span className="hinweis"> (du)</span>}
+              <select value={n.rolle} aria-label={`Rolle von ${n.name}`} disabled={n.rolle === 'admin' && admins <= 1}
+                onChange={(e) => k.nutzer.aendern(n.id, { rolle: e.target.value as Ich['rolle'] }).then(() => { laden(); k.ichLaden() }).catch(fehler)}>
+                <option value="nutzer">Nutzer</option><option value="admin">Admin</option>
+              </select>
+            </div>
+            <div className="knoepfe">
+              <button onClick={() => teilen(n)}>🔗 Link teilen</button>
+              <button onClick={() => { const neuName = prompt('Neuer Name:', n.name); if (neuName?.trim()) k.nutzer.aendern(n.id, { name: neuName.trim() }).then(() => { laden(); k.ichLaden() }).catch(fehler) }}>Umbenennen</button>
+              <button title="Alter Link wird ungültig" onClick={() => confirm(`Neuen Link für ${n.name} erzeugen? Der alte Link funktioniert dann nicht mehr.`) && k.nutzer.aendern(n.id, { neuerZugang: true }).then((x) => { setNeu(x); laden() }).catch(fehler)}>Neuer Link</button>
+              <button className="gefahr" disabled={n.rolle === 'admin' && admins <= 1}
+                onClick={() => confirm(`${n.name} entfernen? Der Zugang ist sofort ungültig.`) && k.nutzer.entfernen(n.id).then(() => { laden(); p.meldung(`${n.name} entfernt`) }).catch(fehler)}>Entfernen</button>
+            </div>
+          </li>
+        ))}
+      </ul>
+      <p className="hinweis klein">Mindestens ein Admin muss bleiben. Wer entfernt wird, kann die Karte nur noch über den Ansehen-Link lesen.</p>
     </section>
   )
 }

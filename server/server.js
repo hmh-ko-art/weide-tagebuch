@@ -36,6 +36,7 @@ function pgSchreiben(k) {
 }
 
 const app = express()
+app.set('trust proxy', 1) // hinter Render-Proxy: echte Client-IP für das Rate-Limit
 app.use(express.json({ limit: '5mb' }))
 
 const cache = new Map() // id -> karte
@@ -96,6 +97,8 @@ function migrieren(e) {
   delete neu.tiere
   delete neu.tierart
   delete neu.einheitenBasis
+  // Datum des Eintrags: nur gültiges YYYY-MM-DD, sonst entfällt es (= Erstelldatum)
+  if (typeof neu.datum !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(neu.datum) || isNaN(Date.parse(neu.datum))) delete neu.datum
   // Tierliste: 'fest' (Standard) oder 'ausblendbar'; ungültige Werte entfallen (= fest)
   if (!['fest', 'ausblendbar'].includes(neu.tierlisteModus)) delete neu.tierlisteModus
   return neu
@@ -214,6 +217,7 @@ app.put('/api/karten/:id/eintraege/:eid', mitKarte('nutzer'), (req, res) => {
     const einheiten = ohneEinheiten ? alt.einheiten ?? [] : einheitenMergen(alt.einheiten ?? [], e.einheiten, body.einheitenBasis)
     // ältere App-Versionen kennen tierlisteModus nicht -> bisherigen Wert behalten
     const modus = body.tierlisteModus === undefined && alt.tierlisteModus ? { tierlisteModus: alt.tierlisteModus } : {}
+    if (body.datum === undefined && alt.datum) modus.datum = alt.datum
     k.eintraege[i] = { ...e, ...modus, einheiten, erstelltVon: alt.erstelltVon, notizen: alt.notizen ?? [] }
   } else {
     // neue Notizen beim Anlegen bekommen den Nutzer als Autor
@@ -340,6 +344,65 @@ app.patch('/api/karten/:id/ich', mitKarte('nutzer'), (req, res) => {
     nutzerGeaendert(k) // -> SSE an alle Clients (namen + nutzerVersion)
   }
   res.json(ichInfo(ich))
+})
+
+// ---- Kartenname (nur Admins, gilt für alle) ----
+app.patch('/api/karten/:id', mitKarte('admin'), (req, res) => {
+  const k = req.karte
+  if (typeof req.body?.name !== 'string') return res.status(400).json({ fehler: 'Name fehlt' })
+  const name = req.body.name.replace(/[\u0000-\u001f\u007f]/g, '').replace(/\s+/g, ' ').trim()
+  if (!name) return res.status(400).json({ fehler: 'Name darf nicht leer sein' })
+  if ([...name].length > 60) return res.status(400).json({ fehler: 'Name ist zu lang (höchstens 60 Zeichen)' })
+  if (name !== k.name) { k.name = name; speichern(k) } // -> Live-Update an alle
+  res.json({ ok: true, name: k.name })
+})
+
+// ---- Einladungslink zur Selbstregistrierung (legt immer nur Rolle „nutzer“ an) ----
+const einladungInfo = (k) => ({ code: k.einladung?.aktiv ? k.einladung.code : null })
+app.get('/api/karten/:id/einladung', mitKarte('admin'), (req, res) => res.json(einladungInfo(req.karte)))
+// erzeugen bzw. neu erzeugen (alter Link wird ungültig)
+app.post('/api/karten/:id/einladung', mitKarte('admin'), (req, res) => {
+  const k = req.karte
+  k.einladung = { code: zufall(16), aktiv: true, erstellt: new Date().toISOString(), von: req.nutzer.id }
+  speichern(k)
+  res.json(einladungInfo(k))
+})
+// deaktivieren
+app.delete('/api/karten/:id/einladung', mitKarte('admin'), (req, res) => {
+  const k = req.karte
+  if (k.einladung) { k.einladung.aktiv = false; speichern(k) }
+  res.json(einladungInfo(k))
+})
+// Rate-Limit: höchstens 5 Beitritte je IP und Stunde, 20 Fehlversuche je IP und Stunde
+const beitritte = new Map()
+function zuOft(schluessel, max) {
+  const jetzt = Date.now(), l = (beitritte.get(schluessel) ?? []).filter((t) => jetzt - t < 3600_000)
+  beitritte.set(schluessel, l)
+  if (l.length >= max) return true
+  l.push(jetzt)
+  return false
+}
+// Einladung prüfen (ohne anzulegen) – für den Beitritts-Dialog
+app.get('/api/karten/:id/einladung/:code', mitKarte(), (req, res) => {
+  const e = req.karte.einladung
+  res.json({ gueltig: !!(e?.aktiv && gleich(e.code, req.params.code)), karte: req.karte.name })
+})
+app.post('/api/karten/:id/beitreten', mitKarte(), (req, res) => {
+  const k = req.karte
+  const e = k.einladung
+  const code = String(req.body?.code ?? '')
+  if (!e?.aktiv || !code || !gleich(e.code, code)) {
+    if (zuOft('fehl:' + req.ip, 20)) return res.status(429).json({ fehler: 'Zu viele Versuche – bitte später erneut.' })
+    return res.status(403).json({ fehler: 'Einladungslink ungültig oder deaktiviert' })
+  }
+  const { name, fehler } = namePruefen(req.body?.name)
+  if (fehler) return res.status(400).json({ fehler })
+  if (k.nutzer.length >= 200) return res.status(409).json({ fehler: 'Zu viele Nutzer auf dieser Karte' })
+  if (zuOft('ok:' + req.ip, 5)) return res.status(429).json({ fehler: 'Zu viele Beitritte von diesem Gerät/Netz – bitte später erneut.' })
+  const n = { id: 'u' + zufall(8), name, rolle: 'nutzer', zugang: zufall(20), erstellt: new Date().toISOString(), perEinladung: true }
+  k.nutzer.push(n)
+  nutzerGeaendert(k)
+  res.status(201).json({ zugang: n.zugang, ich: ichInfo(n) })
 })
 
 // Live-Updates per Server-Sent Events

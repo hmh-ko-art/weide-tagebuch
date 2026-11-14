@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Karte, { HAT_GOOGLE_KEY } from './map/Karte'
-import { useKarte, zugangsLink, NAME_MAX, type Ich, type Nutzer } from './daten'
+import { useKarte, zugangsLink, einladungsLink, NAME_MAX, type Ich, type Nutzer } from './daten'
 import { googleNaviLink, routeBerechnen, routeText } from './route'
-import { istAusblendbar, TIERARTEN, tierText, tierSymbolHtml, tierSummen, type Einheit, type Tierart, FARBEN, FLAECHEN_FARBEN, FLAECHE_STANDARD, START, STANDARD_FARBE, datum, farbName, hektar, mitte, neueId, notizenSortiert, pinFarbe, type Eintrag, type Notiz, type Fokus, type LatLng, type Route } from './types'
+import { eintragDatum, tagText, monatText, istAusblendbar, TIERARTEN, tierText, tierSymbolHtml, tierSummen, type Einheit, type Tierart, FARBEN, FLAECHEN_FARBEN, FLAECHE_STANDARD, START, STANDARD_FARBE, datum, farbName, hektar, mitte, neueId, notizenSortiert, pinFarbe, type Eintrag, type Notiz, type Fokus, type LatLng, type Route } from './types'
 
 type Modus = 'ansicht' | 'pin' | 'flaeche'
 type Panel = null | 'liste' | 'einstellungen' | 'nutzer' | 'profil'
@@ -11,6 +11,16 @@ type Panel = null | 'liste' | 'einstellungen' | 'nutzer' | 'profil'
 let aktuellerNutzer: Ich | null = null
 const autorFelder = (): { autor?: string; autorId?: string } =>
   aktuellerNutzer ? { autor: aktuellerNutzer.name, autorId: aktuellerNutzer.id } : localStorage.getItem('wt-autor') ? { autor: localStorage.getItem('wt-autor')! } : {}
+
+// Ist eine Farbe hell? (für lesbare Schrift auf der Kopfleiste)
+function hell(hex: string) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex)
+  if (!m) return false
+  const n = parseInt(m[1], 16)
+  const lin = (c: number) => { const v = c / 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4 }
+  const L = 0.2126 * lin(n >> 16) + 0.7152 * lin((n >> 8) & 255) + 0.0722 * lin(n & 255)
+  return L > 0.4
+}
 
 function standortHolen(): Promise<LatLng> {
   return new Promise((ok, fehler) => {
@@ -40,6 +50,12 @@ export default function App() {
   // Beschriftung (Namen auf der Karte) an/aus – pro Gerät gespeichert
   const [beschriftung, setBeschriftung] = useState(() => localStorage.getItem('wt-beschriftung') !== 'aus')
   useEffect(() => { localStorage.setItem('wt-beschriftung', beschriftung ? 'an' : 'aus') }, [beschriftung])
+  // Farbe der Kopfleiste (rein optisch, pro Gerät); Textfarbe automatisch hell/dunkel
+  const [kopfFarbe, setKopfFarbe] = useState<string | null>(() => localStorage.getItem('wt-kopf-farbe'))
+  useEffect(() => {
+    if (kopfFarbe) localStorage.setItem('wt-kopf-farbe', kopfFarbe); else localStorage.removeItem('wt-kopf-farbe')
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', kopfFarbe || '#2e7d32')
+  }, [kopfFarbe])
   // Ausblendbare Tierlisten: eingeklappte Einträge pro Gerät merken
   const [tiereZu, setTiereZu] = useState<string[]>(() => { try { return JSON.parse(localStorage.getItem('wt-tiere-zu') || '[]') } catch { return [] } })
   useEffect(() => { localStorage.setItem('wt-tiere-zu', JSON.stringify(tiereZu)) }, [tiereZu])
@@ -180,7 +196,7 @@ export default function App() {
 
   return (
     <div className={`app${panel === 'liste' ? ' liste-offen' : ''}`}>
-      <header className="kopf">
+      <header className={`kopf${kopfFarbe && hell(kopfFarbe) ? ' kopf-hell' : ''}`} style={kopfFarbe ? { background: kopfFarbe, color: hell(kopfFarbe) ? '#1d2a1d' : '#fff' } : undefined}>
         <div>
           <h1>🐑 Weide-Tagebuch</h1>
           <small className={`status ${k.status}`}>{k.kartenName ? `${k.kartenName} · ` : ''}{statusText}{k.karteId && k.ich && <> · <button className="name-knopf" title="Meinen Namen ändern" onClick={() => setPanel(panel === 'profil' ? null : 'profil')}>{k.ich.name}{k.ich.rolle === 'admin' ? ' (Admin)' : ''} ✏️</button></>}{!k.darfBearbeiten && ' · nur ansehen'}</small>
@@ -286,7 +302,8 @@ export default function App() {
         {panel === 'liste' && (
           <Liste eintraege={k.eintraege} onSchliessen={() => setPanel(null)} onWahl={(e) => { fliege(mitte(e), e.typ === 'pin' ? 15 : undefined); waehle(e.id) }} />
         )}
-        {panel === 'einstellungen' && <Einstellungen k={k} onSchliessen={() => setPanel(null)} meldung={setMeldung} onNutzer={() => setPanel('nutzer')} onProfil={() => setPanel('profil')} />}
+        {panel === 'einstellungen' && <Einstellungen k={k} onSchliessen={() => setPanel(null)} meldung={setMeldung} onNutzer={() => setPanel('nutzer')} onProfil={() => setPanel('profil')} kopfFarbe={kopfFarbe} setKopfFarbe={setKopfFarbe} />}
+        {k.einladung && !k.ich && k.status !== 'verbinde' && <Beitreten k={k} />}
         {panel === 'profil' && k.ich && <Profil k={k} onSchliessen={() => setPanel(null)} meldung={setMeldung} />}
         {panel === 'nutzer' && k.istAdmin && k.karteId && <NutzerVerwaltung k={k} onSchliessen={() => setPanel(null)} meldung={setMeldung} />}
 
@@ -305,7 +322,7 @@ function TierSymbol(p: { art: Tierart }) {
 }
 // Alle Tiereinheiten zusammengefasst je Art: „🐑 25 Schafe · 🐏 2 Böcke · [Lamm] 10 Lämmer“
 function TierAnzeige(p: { summen: { art: Tierart; n: number }[] }) {
-  return <>{p.summen.map((x, i) => <span key={x.art} className="tierzahl">{i > 0 && ' · '}<TierSymbol art={x.art} /> {tierText(x.n, x.art)}</span>)}</>
+  return <>{p.summen.map((x, i) => <Fragment key={x.art}>{i > 0 && ' · '}<span className="tierzahl"><TierSymbol art={x.art} /> {tierText(x.n, x.art)}</span></Fragment>)}</>
 }
 
 function Detail(p: { e: Eintrag; routeInfo: string; darfBearbeiten: boolean; kannBearbeiten: boolean; kannNotiz: (n: Notiz) => boolean; onSchliessen: () => void; onBearbeiten: () => void; onLoeschen: () => void; onRoute: () => void; onRouteAus: () => void; onNotizSpeichern: (n: Notiz) => void; onNotizLoeschen: (id: string) => void; tiereZu: boolean; onTiereUmschalten: () => void }) {
@@ -326,6 +343,7 @@ function Detail(p: { e: Eintrag; routeInfo: string; darfBearbeiten: boolean; kan
           : <span className="tier-gesamt"><TierAnzeige summen={tierSummen([e])} /></span>)}
         {e.herde && <span>Herde: {e.herde}</span>}
         {e.typ === 'flaeche' && <span>≈ {hektar(e.punkte).toLocaleString('de-DE', { maximumFractionDigits: 2 })} ha</span>}
+        <span>Datum: {tagText(eintragDatum(e))}</span>
         <span>Geändert: {datum(e.geaendert)}</span>
       </div>
       {p.routeInfo && <p className="route-info">🚗 {p.routeInfo}</p>}
@@ -452,6 +470,7 @@ function Formular(p: { start: Eintrag; neu: boolean; onSpeichern: (e: Eintrag, b
           <button type="button" className="tiere-plus" onClick={() => setZeilen((l) => [...l, { id: neueId(), art: l.length ? l[l.length - 1].art : 'schaf', anzahl: '' }])}>＋ Tiere hinzufügen</button>
         </div>
         <div className="zeile">
+          <label>Datum<input type="date" required value={eintragDatum(e)} onChange={(x) => x.target.value && setE({ ...e, datum: x.target.value })} /></label>
           <label>Herde<input value={e.herde ?? ''} placeholder="optional" onChange={(x) => setE({ ...e, herde: x.target.value || undefined })} /></label>
         </div>
         <div className="knoepfe">
@@ -470,15 +489,47 @@ function Liste(p: { eintraege: Eintrag[]; onWahl: (e: Eintrag) => void; onSchlie
   useEffect(() => { localStorage.setItem('wt-liste-reiter', reiter) }, [reiter])
   const [suche, setSuche] = useState('')
   const [farbFilter, setFarbFilter] = useState<string | null>(null)
-  const alle = p.eintraege.filter((e) => e.typ === reiter)
+  const typListe = p.eintraege.filter((e) => e.typ === reiter)
+  // Zeitraum (nach Datum des Eintrags): alle | Jahr | Monat | frei von–bis (Grenzen inklusive, leer = offen)
+  const [zeitraum, setZeitraum] = useState('alle')
+  const [von, setVon] = useState('')
+  const [bis, setBis] = useState('')
+  const jahre = [...new Set(typListe.map((e) => eintragDatum(e).slice(0, 4)))].sort().reverse()
+  const monate = [...new Set(typListe.map((e) => eintragDatum(e).slice(0, 7)))].sort().reverse()
+  const zr = zeitraum === 'frei' || (zeitraum.startsWith('j:') && jahre.includes(zeitraum.slice(2))) || (zeitraum.startsWith('m:') && monate.includes(zeitraum.slice(2))) ? zeitraum : 'alle'
+  const imZeitraum = (e: Eintrag) => {
+    const d = eintragDatum(e)
+    if (zr === 'frei') return (!von || d >= von) && (!bis || d <= bis)
+    if (zr !== 'alle') return d.startsWith(zr.slice(2))
+    return true
+  }
+  const zeitraumAktiv = zr === 'frei' ? !!(von || bis) : zr !== 'alle'
+  const zeitraumText = zr === 'frei' ? `${von ? tagText(von) : '…'} – ${bis ? tagText(bis) : '…'}` : zr.startsWith('j:') ? `Jahr ${zr.slice(2)}` : zr.startsWith('m:') ? monatText(zr.slice(2)) : ''
+  const alle = typListe.filter(imZeitraum) // Basis für Summen und Farbübersicht
   const anzahl = { pin: p.eintraege.filter((e) => e.typ === 'pin').length, flaeche: p.eintraege.filter((e) => e.typ === 'flaeche').length }
   const vorhandeneFarben = [...new Set(alle.map((e) => pinFarbe(e)))]
+    .sort((a, b) => { const r = (f: string) => { const i = FLAECHEN_FARBEN.findIndex((x) => x.wert === f); return i < 0 ? 99 : i }; return r(a) - r(b) })
+  // Übersicht „Nach Farbe“: je Farbe Anzahl Einträge, Tiere je Art (und bei Flächen Hektar) – nur aktiver Reiter
+  const gruppen = vorhandeneFarben.map((f) => {
+    const l = alle.filter((e) => pinFarbe(e) === f)
+    return { farbe: f, n: l.length, summen: tierSummen(l), ha: l.reduce((s, e) => s + (e.typ === 'flaeche' ? hektar(e.punkte) : 0), 0) }
+  })
+  const [farbenOffen, setFarbenOffen] = useState(() => localStorage.getItem('wt-liste-farben') !== 'zu')
+  useEffect(() => { localStorage.setItem('wt-liste-farben', farbenOffen ? 'auf' : 'zu') }, [farbenOffen])
   const farbe = farbFilter && vorhandeneFarben.includes(farbFilter) ? farbFilter : null // Filter nur, wenn die Farbe im Reiter vorkommt
   const liste = alle
     .filter((e) => !farbe || pinFarbe(e) === farbe)
     .filter((e) => `${e.titel} ${e.herde ?? ''} ${e.notizen.map((n) => `${n.text} ${n.autor ?? ''}`).join(' ')}`.toLowerCase().includes(suche.trim().toLowerCase()))
-    .sort((a, b) => b.geaendert.localeCompare(a.geaendert))
-  const filterAktiv = !!farbe || !!suche.trim()
+    .sort((a, b) => eintragDatum(b).localeCompare(eintragDatum(a)) || b.geaendert.localeCompare(a.geaendert))
+  // Monatsgruppen, neueste zuerst
+  const monatsGruppen: { monat: string; eintraege: Eintrag[] }[] = []
+  for (const e of liste) {
+    const m = eintragDatum(e).slice(0, 7)
+    const g = monatsGruppen.find((x) => x.monat === m)
+    if (g) g.eintraege.push(e); else monatsGruppen.push({ monat: m, eintraege: [e] })
+  }
+  const filterAktiv = !!farbe || !!suche.trim() || zeitraumAktiv
+  const allesZeigen = () => { setSuche(''); setFarbFilter(null); setZeitraum('alle'); setVon(''); setBis('') }
   const wort = reiter === 'pin' ? ['Nadel', 'Nadeln'] : ['Fläche', 'Flächen']
   // Summen passend zum Reiter
   const summen = tierSummen(alle)
@@ -497,44 +548,80 @@ function Liste(p: { eintraege: Eintrag[]; onWahl: (e: Eintrag) => void; onSchlie
         ))}
       </div>
       <p className="hinweis summe">
-        {alle.length} {alle.length === 1 ? wort[0] : wort[1]}
+        {zeitraumAktiv && <strong>{zeitraumText}: </strong>}{alle.length} {alle.length === 1 ? wort[0] : wort[1]}
         {reiter === 'flaeche' && alle.length > 0 && <> · ≈ {ha.toLocaleString('de-DE', { maximumFractionDigits: 2 })} ha</>}
         {summen.length > 0 ? <> · <TierAnzeige summen={summen} /></> : reiter === 'pin' ? ' · 0 Tiere' : ''}
       </p>
+      <div className="zeitraum">
+        <label>Zeitraum<select value={zr} onChange={(x) => setZeitraum(x.target.value)}>
+          <option value="alle">Alle Zeiträume</option>
+          {jahre.length > 0 && <optgroup label="Jahr">{jahre.map((j) => <option key={j} value={`j:${j}`}>{j}</option>)}</optgroup>}
+          {monate.length > 0 && <optgroup label="Monat">{monate.map((m) => <option key={m} value={`m:${m}`}>{monatText(m)}</option>)}</optgroup>}
+          <option value="frei">Von – bis …</option>
+        </select></label>
+        {zr === 'frei' && (
+          <div className="von-bis">
+            <label>von<input type="date" value={von} max={bis || undefined} onChange={(x) => setVon(x.target.value)} /></label>
+            <label>bis<input type="date" value={bis} min={von || undefined} onChange={(x) => setBis(x.target.value)} /></label>
+          </div>
+        )}
+      </div>
       <input placeholder={`${wort[1]} durchsuchen (Name, Herde, Notizen) …`} value={suche} onChange={(e) => setSuche(e.target.value)} />
-      {vorhandeneFarben.length > 1 && (
-        <div className="farbfilter" aria-label="Nach Farbe filtern">
-          <button className={!farbe ? 'aktiv' : ''} onClick={() => setFarbFilter(null)}>Alle Farben</button>
-          {vorhandeneFarben.map((f) => (
-            <button key={f} className={farbe === f ? 'aktiv' : ''} onClick={() => setFarbFilter(farbe === f ? null : f)}>
-              <span className="farbpunkt" style={{ background: f }} />{farbName(f)} ({alle.filter((e) => pinFarbe(e) === f).length})
-            </button>
-          ))}
+      {gruppen.length > 0 && (
+        <div className="nach-farbe">
+          <button className="nach-farbe-kopf" aria-expanded={farbenOffen} onClick={() => setFarbenOffen((o) => !o)}>
+            {farbenOffen ? '▾' : '▸'} Nach Farbe <small>({gruppen.length} {gruppen.length === 1 ? 'Farbe' : 'Farben'}{farbenOffen ? ' · antippen filtert' : ''})</small>
+          </button>
+          {farbenOffen && (
+            <ul>
+              {gruppen.map((g) => (
+                <li key={g.farbe}>
+                  <button className={`farb-gruppe${farbe === g.farbe ? ' aktiv' : ''}`} aria-pressed={farbe === g.farbe} onClick={() => setFarbFilter(farbe === g.farbe ? null : g.farbe)}>
+                    <span className="farb-gruppe-name"><span className="farbpunkt" style={{ background: g.farbe }} />{farbName(g.farbe)} <small>({g.n} {g.n === 1 ? wort[0] : wort[1]}{reiter === 'flaeche' ? ` · ≈ ${g.ha.toLocaleString('de-DE', { maximumFractionDigits: 2 })} ha` : ''})</small></span>
+                    <span className="farb-gruppe-tiere">{g.summen.length ? <TierAnzeige summen={g.summen} /> : <span className="ohne-tiere">keine Tiere</span>}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
       {filterAktiv && (
         <div className="filter-hinweis" role="status">
-          <span>🔎 Filter aktiv{farbe ? ` · Farbe ${farbName(farbe)}` : ''}{suche.trim() ? ` · Suche „${suche.trim()}“` : ''}: <strong>{liste.length} von {alle.length}</strong> {wort[1]} angezeigt</span>
-          <button onClick={() => { setSuche(''); setFarbFilter(null) }}>Alle zeigen</button>
+          <span>🔎 Filter aktiv{farbe ? ` · Farbe ${farbName(farbe)}` : ''}{suche.trim() ? ` · Suche „${suche.trim()}“` : ''}{zeitraumAktiv ? ` · Zeitraum ${zeitraumText}` : ''}: <strong>{liste.length} von {typListe.length}</strong> {wort[1]} angezeigt</span>
+          <button onClick={allesZeigen}>Alle zeigen</button>
         </div>
       )}
-      {!alle.length && <p className="hinweis">{reiter === 'pin' ? 'Noch keine Nadeln. Tippe auf „+ Nadel“ oder direkt auf die Karte.' : 'Noch keine Flächen. Tippe auf „Fläche“ und dann die Eckpunkte.'}</p>}
-      <ul className="liste">
-        {liste.map((e) => (
-          <li key={e.id} onClick={() => p.onWahl(e)}>
-            <strong>{e.typ === 'pin' ? <span className="farbpunkt" style={{ background: pinFarbe(e) }} /> : <span className="flaechen-symbol" style={{ color: pinFarbe(e) }}>⬠</span>} {e.titel || <span className="ohne-name">ohne Namen</span>}</strong>
-            {e.notizen.length > 0 && <span className="notiz-kurz">{notizenSortiert(e)[0].text}</span>}
-            <small>📝 {e.notizen.length} {e.notizen.length === 1 ? 'Notiz' : 'Notizen'} · {e.typ === 'flaeche' && <>≈ {hektar(e.punkte).toLocaleString('de-DE', { maximumFractionDigits: 2 })} ha · </>}{tierSummen([e]).length > 0 && <><TierAnzeige summen={tierSummen([e])} /> · </>}{e.herde ? `${e.herde} · ` : ''}{datum(e.geaendert)}</small>
-          </li>
-        ))}
-      </ul>
+      {!typListe.length && <p className="hinweis">{reiter === 'pin' ? 'Noch keine Nadeln. Tippe auf „+ Nadel“ oder direkt auf die Karte.' : 'Noch keine Flächen. Tippe auf „Fläche“ und dann die Eckpunkte.'}</p>}
+      {typListe.length > 0 && !liste.length && <p className="hinweis">Keine {wort[1]} für diese Auswahl.</p>}
+      {monatsGruppen.map((g) => {
+        const ms = tierSummen(g.eintraege)
+        const mha = g.eintraege.reduce((s, e) => s + (e.typ === 'flaeche' ? hektar(e.punkte) : 0), 0)
+        return (
+          <div className="monat" key={g.monat}>
+            <h3 className="monat-kopf">{monatText(g.monat)} <small>· {g.eintraege.length} {g.eintraege.length === 1 ? wort[0] : wort[1]}{reiter === 'flaeche' ? ` · ≈ ${mha.toLocaleString('de-DE', { maximumFractionDigits: 2 })} ha` : ''}{ms.length > 0 && <> · <TierAnzeige summen={ms} /></>}</small></h3>
+            <ul className="liste">
+              {g.eintraege.map((e) => (
+                <li key={e.id} onClick={() => p.onWahl(e)}>
+                  <strong>{e.typ === 'pin' ? <span className="farbpunkt" style={{ background: pinFarbe(e) }} /> : <span className="flaechen-symbol" style={{ color: pinFarbe(e) }}>⬠</span>} {e.titel || <span className="ohne-name">ohne Namen</span>}</strong>
+                  {e.notizen.length > 0 && <span className="notiz-kurz">{notizenSortiert(e)[0].text}</span>}
+                  <small>📅 {tagText(eintragDatum(e))} · 📝 {e.notizen.length} {e.notizen.length === 1 ? 'Notiz' : 'Notizen'} · {e.typ === 'flaeche' && <>≈ {hektar(e.punkte).toLocaleString('de-DE', { maximumFractionDigits: 2 })} ha · </>}{tierSummen([e]).length > 0 && <><TierAnzeige summen={tierSummen([e])} /> · </>}{e.herde ? `${e.herde}` : ''}</small>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )
+      })}
     </section>
   )
 }
 
-function Einstellungen(p: { k: ReturnType<typeof useKarte>; onSchliessen: () => void; meldung: (s: string) => void; onNutzer: () => void; onProfil: () => void }) {
+function Einstellungen(p: { k: ReturnType<typeof useKarte>; onSchliessen: () => void; meldung: (s: string) => void; onNutzer: () => void; onProfil: () => void; kopfFarbe: string | null; setKopfFarbe: (f: string | null) => void }) {
   const { k } = p
   const [name, setName] = useState('Weidekarte Deichschäferei')
+  const [kartenName, setKartenName] = useState(k.kartenName)
+  useEffect(() => setKartenName(k.kartenName), [k.kartenName])
+  const kartenNameSauber = kartenName.replace(/\s+/g, ' ').trim()
   const basis = `${location.origin}${location.pathname}?karte=${k.karteId}`
   const kopieren = async (t: string) => {
     try { await navigator.clipboard.writeText(t); p.meldung('Link kopiert') } catch { prompt('Link kopieren:', t) }
@@ -577,6 +664,17 @@ function Einstellungen(p: { k: ReturnType<typeof useKarte>; onSchliessen: () => 
           <button onClick={() => kopieren(basis)}>🔗 Link zum Ansehen kopieren</button>
           <p className="hinweis klein">Der Ansehen-Link ist nur zum Lesen. Zum Mitarbeiten bekommt jede Person einen eigenen Zugangs-Link vom Admin.</p>
           {k.istAdmin && <button className="primaer" onClick={p.onNutzer}>👥 Nutzer verwalten / Leute einladen</button>}
+
+          <h3>Name der Karte</h3>
+          {k.istAdmin ? (
+            <form className="karten-name" onSubmit={(ev) => { ev.preventDefault(); k.kartenNameAendern(kartenNameSauber).then(() => p.meldung('Kartenname gespeichert')).catch((e) => p.meldung(e.message)) }}>
+              <input value={kartenName} maxLength={60} onChange={(e) => setKartenName(e.target.value)} aria-label="Name der Karte" />
+              <button type="submit" className="primaer" disabled={!kartenNameSauber || kartenNameSauber === k.kartenName}>Speichern</button>
+              <p className="hinweis klein">Wird oben in der Kopfzeile angezeigt – bei allen, sofort.</p>
+            </form>
+          ) : (
+            <p className="hinweis">„{k.kartenName}“ <span className="klein">(ändern können nur Admins)</span></p>
+          )}
         </>
       )}
 
@@ -601,6 +699,13 @@ function Einstellungen(p: { k: ReturnType<typeof useKarte>; onSchliessen: () => 
         </>
       )}
 
+      <h3>Darstellung</h3>
+      <div className="kopf-farbe">
+        <label className="frei">Farbe der Kopfleiste<input type="color" value={p.kopfFarbe || '#2e7d32'} onChange={(e) => p.setKopfFarbe(e.target.value)} /></label>
+        <button onClick={() => p.setKopfFarbe(null)} disabled={!p.kopfFarbe}>Standard</button>
+      </div>
+      <p className="hinweis klein">Nur auf diesem Gerät, rein optisch.</p>
+
       <h3>Daten</h3>
       <button onClick={exportieren}>⬇️ Als JSON exportieren</button>
       {k.istAdmin && (
@@ -610,6 +715,38 @@ function Einstellungen(p: { k: ReturnType<typeof useKarte>; onSchliessen: () => 
       <h3>Karte</h3>
       <p className="hinweis">Kartendienst: {HAT_GOOGLE_KEY ? 'Google Maps (Satellit)' : 'Esri-Satellit / OpenStreetMap (kostenlos) – für Google Maps einen API-Key in VITE_GOOGLE_MAPS_API_KEY eintragen'}.<br />Routen: {HAT_GOOGLE_KEY ? 'Google Directions' : 'OSRM (kostenloser Demo-Server)'}.</p>
       <p className="hinweis klein">Weide-Tagebuch · Prototyp v0.1</p>
+    </section>
+  )
+}
+
+// Beitritt per Einladungslink: Name eingeben -> als „Nutzer“ angelegt, Zugang am Gerät gespeichert
+function Beitreten(p: { k: ReturnType<typeof useKarte> }) {
+  const { k } = p
+  const [gueltig, setGueltig] = useState<boolean | null>(null)
+  const [name, setName] = useState('')
+  const [fehler, setFehler] = useState('')
+  const [laeuft, setLaeuft] = useState(false)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { k.einladungPruefen().then((x) => setGueltig(x.gueltig)).catch(() => setGueltig(false)) }, [])
+  const sauber = name.replace(/\s+/g, ' ').trim()
+  return (
+    <section className="panel profil beitreten">
+      <div className="sheet-kopf"><h2>Einladung</h2></div>
+      {gueltig === null ? <p className="hinweis">Prüfe Einladung …</p> : !gueltig ? (
+        <p className="hinweis">Dieser Einladungslink ist ungültig oder wurde deaktiviert. Du kannst die Karte nur ansehen – frag den Admin nach einem neuen Link.</p>
+      ) : (
+        <form onSubmit={async (ev) => {
+          ev.preventDefault()
+          if (!sauber) return
+          setLaeuft(true); setFehler('')
+          try { await k.beitreten(sauber) } catch (e) { setFehler((e as Error).message); setLaeuft(false) }
+        }}>
+          <p className="hinweis">Du wurdest zur Karte <strong>„{k.kartenName}“</strong> eingeladen. Wie heißt du? Der Name erscheint bei deinen Notizen.</p>
+          <label>Dein Name<input autoFocus value={name} maxLength={NAME_MAX} onChange={(e) => setName(e.target.value)} placeholder="z. B. Jan (Schäfer)" /></label>
+          {fehler && <p className="fehler gefahr">{fehler}</p>}
+          <div className="knoepfe"><button type="submit" className="primaer" disabled={laeuft || !sauber}>Beitreten</button></div>
+        </form>
+      )}
     </section>
   )
 }
@@ -657,9 +794,19 @@ function NutzerVerwaltung(p: { k: ReturnType<typeof useKarte>; onSchliessen: () 
   const [neu, setNeu] = useState<Nutzer | null>(null)
   const laden = useCallback(() => { k.nutzer.laden().then(setListe).catch((e) => p.meldung(e.message)) }, [k, p])
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(laden, [])
+  useEffect(laden, [k.nutzerStand])
   const fehler = (e: Error) => p.meldung(e.message)
   const link = (n: Nutzer) => zugangsLink(k.karteId!, n.zugang)
+  // Einladungslink (Selbstregistrierung als „Nutzer“)
+  const [einl, setEinl] = useState<string | null | undefined>(undefined)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { k.einladungVerwalten.laden().then((x) => setEinl(x.code)).catch(fehler) }, [])
+  const einlLink = einl ? einladungsLink(k.karteId!, einl) : ''
+  const einlTeilen = async () => {
+    const text = `Einladung zur Weidekarte „${k.kartenName}“ – Link öffnen und Namen eingeben: ${einlLink}`
+    if (navigator.share) { try { await navigator.share({ title: 'Weide-Tagebuch', text, url: einlLink }); return } catch { /* abgebrochen */ } }
+    try { await navigator.clipboard.writeText(einlLink); p.meldung('Einladungslink kopiert') } catch { prompt('Einladungslink kopieren:', einlLink) }
+  }
   const teilen = async (n: Nutzer) => {
     const text = `Hallo ${n.name}, hier ist dein persönlicher Zugang zur Weidekarte „${k.kartenName}“: ${link(n)}`
     if (navigator.share) { try { await navigator.share({ title: 'Weide-Tagebuch', text, url: link(n) }); return } catch { /* abgebrochen */ } }
@@ -673,6 +820,21 @@ function NutzerVerwaltung(p: { k: ReturnType<typeof useKarte>; onSchliessen: () 
         <button className="x" onClick={p.onSchliessen} aria-label="Schließen">✕</button>
       </div>
       <p className="hinweis">Jede Person bekommt einen eigenen Link. <strong>Nutzer</strong> dürfen Nadeln, Flächen und Notizen anlegen und ihre eigenen ändern/löschen. <strong>Admins</strong> dürfen alles und Nutzer verwalten.</p>
+
+      <h3>Einladungslink</h3>
+      <p className="hinweis klein">Wer diesen Link öffnet, gibt seinen Namen ein und wird automatisch als <strong>Nutzer</strong> angelegt (nie als Admin). Du kannst die Rolle danach jederzeit ändern.</p>
+      {einl === undefined ? <p className="hinweis klein">Lade …</p> : einl ? (
+        <div className="neu-link einladung">
+          <input readOnly value={einlLink} onFocus={(e) => e.target.select()} aria-label="Einladungslink" />
+          <div className="knoepfe">
+            <button className="primaer" onClick={einlTeilen}>Einladung teilen / kopieren</button>
+            <button onClick={() => confirm('Neuen Einladungslink erzeugen? Der bisherige Link funktioniert dann nicht mehr.') && k.einladungVerwalten.erzeugen().then((x) => { setEinl(x.code); p.meldung('Neuer Einladungslink erzeugt') }).catch(fehler)}>Neuer Link</button>
+            <button className="gefahr" onClick={() => k.einladungVerwalten.deaktivieren().then((x) => { setEinl(x.code); p.meldung('Einladungslink deaktiviert') }).catch(fehler)}>Deaktivieren</button>
+          </div>
+        </div>
+      ) : (
+        <button onClick={() => k.einladungVerwalten.erzeugen().then((x) => setEinl(x.code)).catch(fehler)}>🔗 Einladungslink erzeugen</button>
+      )}
 
       <h3>Person hinzufügen</h3>
       <form className="nutzer-neu" onSubmit={(ev) => {

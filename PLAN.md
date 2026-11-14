@@ -179,3 +179,14 @@ interface Karte {          // geteilte Karte (Server)
 
 - Pro Eintrag `tierlisteModus: 'fest' | 'ausblendbar'` (fehlt = fest = bisheriges Verhalten). Auswahl „Tierliste“ im Formular (Abschnitt Tiere). Bei „ausblendbar“ kann jeder Betrachter die Tierliste in der Detailansicht (▾/▸-Knopf) und im Kartenschild (Knopf im Schild, öffnet nicht die Details) ein-/ausklappen; der Zustand wird pro Gerät gemerkt (`wt-tiere-zu`). Bei „fest“ immer sichtbar ohne Knopf. Server lässt nur die zwei Werte zu; ältere App-Versionen ohne das Feld behalten den gespeicherten Wert.
 - Liste mit zwei strikt getrennten Reitern **📍 Nadeln (n) | ⬠ Flächen (m)** statt „Alle/Nadeln/Flächen“; jeder Reiter zeigt alle seine Einträge. Summen je Reiter (Anzahl, bei Flächen Hektar, Tiere). Farbfilter nur mit Farben des Reiters; ist Suche oder Farbfilter aktiv, erscheint ein deutlicher Hinweis „Filter aktiv … X von Y angezeigt“ mit „Alle zeigen“. Gewählter Reiter wird pro Gerät gemerkt.
+
+## 16. Liste nach Farbe/Zeitraum/Monat, Kopfleiste, Kartenname, Einladungslink (Stand 14.11.2026)
+
+- **Nach Farbe** (einklappbar, pro Gerät gemerkt): im aktiven Reiter je vorkommender Farbe Anzahl Einträge, Tiere je Art (Symbol + Mehrzahl), bei Flächen Hektar. Antippen setzt/entfernt den Farbfilter. Nur Einträge des aktiven Reiters und des gewählten Zeitraums zählen.
+- **Datum des Eintrags** (`datum`, YYYY-MM-DD): im Formular als Datumsfeld wählbar, in Detail und Liste angezeigt; fehlt es (alte Einträge), gilt das Erstelldatum (lokaler Kalendertag). Server prüft das Format; ältere App-Versionen ohne Feld behalten das gespeicherte Datum.
+- **Zeitraum**: Alle / Jahr / Monat (nur vorkommende) / frei „von – bis“ (beide Grenzen inklusive, leeres Feld = offen). Reitersumme, Farbübersicht und Monatsgruppen beziehen sich darauf. Filterhinweis nennt Farbe, Suche und Zeitraum; „Alle zeigen“ setzt alles zurück.
+- **Monatsgruppen**: Liste gruppiert nach Monat des Datums („Dezember 2025 · 2 Flächen · ≈ … ha · 🐑 …“), neueste zuerst; innerhalb nach Datum absteigend.
+- **Farbe der Kopfleiste** (⚙️ → Darstellung): freie Farbe + „Standard“, pro Gerät (`wt-kopf-farbe`), Schrift automatisch hell/dunkel, `theme-color` angepasst.
+- **Name der Karte** (⚙️, nur Admins): `PATCH /api/karten/:id` (1–60 Zeichen), live für alle.
+- **Einladungslink** (👥, nur Admins): erzeugen / teilen / neu erzeugen / deaktivieren. `?karte=ID&einladung=CODE` → Dialog „Dein Name“ → `POST /beitreten` legt immer Rolle „nutzer“ an, Zugang wird am Gerät gespeichert. Rate-Limit je IP: 5 Beitritte/h, 20 Fehlversuche/h; max. 200 Nutzer je Karte. Rollenwechsel wirkt live ohne neuen Link.
+- Rückgängig-/Hinweis-Toast erscheint bei offener Liste unten statt über der Listenüberschrift.

@@ -155,3 +155,43 @@ select { font: inherit; border: 1px solid #c9d3c4; border-radius: 10px; padding:
 .reiter button { font-weight: 600; padding: 8px 6px; }
 .filter-hinweis { display: flex; align-items: center; justify-content: space-between; gap: 8px; background: #fff3e0; border: 1px solid #ffcc80; border-radius: 10px; padding: 6px 8px; font-size: .85rem; }
 .filter-hinweis button { padding: 6px 10px; flex: none; }
+
+/* Liste: Übersicht „Nach Farbe“ (einklappbar, antippen = Farbfilter) */
+.nach-farbe { border: 1px solid #dfe6da; border-radius: 12px; padding: 4px 6px; background: #fafcf8; }
+.nach-farbe-kopf { border: 0; background: none; padding: 6px 4px; font-weight: 700; width: 100%; text-align: left; color: var(--gruen-dunkel); }
+.nach-farbe-kopf small { font-weight: 400; color: #666; }
+.nach-farbe ul { list-style: none; margin: 0; padding: 0 0 2px; display: flex; flex-direction: column; gap: 4px; }
+.farb-gruppe { width: 100%; text-align: left; padding: 6px 8px; border-radius: 10px; display: flex; flex-direction: column; gap: 2px; font-size: .85rem; }
+.farb-gruppe.aktiv { background: #e8f5e9; border-color: var(--gruen); box-shadow: inset 0 0 0 1px var(--gruen); }
+.farb-gruppe-name { display: flex; align-items: center; gap: 6px; font-weight: 700; }
+.farb-gruppe-name small { font-weight: 400; color: #666; }
+.farb-gruppe-tiere { color: #333; padding-left: 18px; }
+.ohne-tiere { color: #888; font-style: italic; }
+/* Rückgängig-/Hinweis-Toast bei offener Liste nicht über die Listenüberschrift legen */
+.liste-offen .toast { top: auto; bottom: calc(16px + env(safe-area-inset-bottom)); left: calc(64px + (100% - 64px) / 2); max-width: calc(100% - 80px); }
+@media (min-width: 561px) { .liste-offen .toast { left: calc((100% - min(420px, 100% - 64px)) / 2); } }
+
+/* Liste: Zeitraum + Monatsgruppen */
+.zeitraum { display: flex; flex-direction: column; gap: 6px; }
+.zeitraum > label { flex-direction: row; align-items: center; gap: 8px; margin-top: 0; }
+.zeitraum > label select { flex: 1; }
+.von-bis { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.von-bis label { margin-top: 0; font-weight: 400; }
+.von-bis input { padding: 8px; min-width: 0; }
+.monat-kopf { position: sticky; top: -14px; z-index: 1; background: #fff; margin: 8px 0 0 !important; padding: 6px 0 4px; border-bottom: 2px solid #e3eadf; font-size: .95rem !important; }
+.monat-kopf small { font-weight: 400; color: #555; font-size: .8rem; }
+.monat .liste { margin-top: 0; }
+
+/* Kopfleisten-Farbe: bei heller Farbe dunkle Schrift/Knöpfe */
+.kopf-hell nav button { background: rgba(0,0,0,.1); color: #1d2a1d; }
+.kopf-hell .status.offline { color: #b45309; }
+.kopf-farbe { display: flex; align-items: center; gap: 10px; }
+.kopf-farbe label { flex-direction: row; align-items: center; gap: 10px; margin: 0; }
+.kopf-farbe input[type=color] { width: 56px; height: 40px; padding: 2px; }
+.karten-name { display: flex; flex-direction: column; gap: 6px; }
+.beitreten { top: 80px; }
+
+.von-bis { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.von-bis label { min-width: 0; }
+.von-bis input { width: 100%; font-size: 15px; padding: 8px 6px; }
+.farb-gruppe { min-width: 0; overflow-wrap: anywhere; }

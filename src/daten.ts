@@ -8,18 +8,22 @@ export function linkParameter() {
   const p = new URLSearchParams(location.search)
   const karteId = p.get('karte')
   const ausLink = p.get('zugang') || p.get('schluessel')
-  if (karteId && ausLink) {
-    localStorage.setItem(zugangKey(karteId), ausLink)
-    p.delete('zugang'); p.delete('schluessel')
+  const einladungLink = p.get('einladung')
+  if (karteId && ausLink) localStorage.setItem(zugangKey(karteId), ausLink)
+  if (karteId && (ausLink || einladungLink)) {
+    p.delete('zugang'); p.delete('schluessel'); p.delete('einladung')
     history.replaceState(null, '', `${location.pathname}?${p.toString()}`)
   }
-  return { karteId, zugang: karteId ? localStorage.getItem(zugangKey(karteId)) : null }
+  const zugang = karteId ? localStorage.getItem(zugangKey(karteId)) : null
+  // Einladungslink: nur relevant, wenn auf diesem Gerät noch kein Zugang gespeichert ist
+  return { karteId, zugang, einladung: karteId && !zugang ? einladungLink : null }
 }
 const PARAMS = linkParameter()
 
 export interface Ich { id: string; name: string; rolle: 'admin' | 'nutzer' }
 export interface Nutzer extends Ich { zugang: string; erstellt: string }
 export const zugangsLink = (karteId: string, zugang: string) => `${location.origin}${location.pathname}?karte=${karteId}&zugang=${zugang}`
+export const einladungsLink = (karteId: string, code: string) => `${location.origin}${location.pathname}?karte=${karteId}&einladung=${code}`
 
 type Ausstehend =
   // basis: Tiereinheiten, von denen die Änderung ausging (Server führt damit gleichzeitige Änderungen zusammen)
@@ -70,13 +74,14 @@ function lesen<T>(key: string, fallback: T): T {
 }
 
 export function useKarte() {
-  const { karteId, zugang } = PARAMS
+  const { karteId, zugang, einladung } = PARAMS
   const [eintraege, setEintraege] = useState<Eintrag[]>(() => lesen<Eintrag[]>(cacheKey(karteId), []).map(migrieren))
   const [status, setStatus] = useState<SyncStatus>(karteId ? 'verbinde' : 'lokal')
   const [ich, setIch] = useState<Ich | null>(null)
   const [hinweis, setHinweis] = useState('')
   const [kartenName, setKartenName] = useState<string>('')
   const nutzerVersion = useRef<number | null>(null)
+  const [nutzerStand, setNutzerStand] = useState(0) // ändert sich bei jeder Nutzerlisten-Änderung (z. B. Beitritt per Einladung)
   const darfBearbeiten = !karteId || !!ich
   const istAdmin = !karteId || ich?.rolle === 'admin'
   const queue = useRef<Ausstehend[]>(karteId ? lesen(queueKey(karteId), []) : [])
@@ -158,7 +163,7 @@ export function useKarte() {
       setKartenName(k.name)
       setStatus('verbunden')
       // Nutzerliste geändert (z. B. Rolle geändert oder Zugang entfernt) -> eigene Rechte neu holen
-      if (nutzerVersion.current !== null && k.nutzerVersion !== nutzerVersion.current) ichLaden()
+      if (nutzerVersion.current !== null && k.nutzerVersion !== nutzerVersion.current) { ichLaden(); setNutzerStand(k.nutzerVersion) }
       // Lokale, noch nicht gesendete Änderungen obenauf legen
       let liste: Eintrag[] = namenAnwenden(k.eintraege.map(migrieren), k.namen)
       for (const a of queue.current) liste = anwenden(liste, a)
@@ -220,6 +225,29 @@ export function useKarte() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [karteId, zugang])
 
+  // Selbstregistrierung per Einladungslink: Name eingeben -> Server legt Rolle „nutzer“ an -> Zugang am Gerät speichern
+  const einladungPruefen = useCallback(async (): Promise<{ gueltig: boolean; karte: string }> => {
+    const r = await fetch(`/api/karten/${karteId}/einladung/${encodeURIComponent(einladung ?? '')}`)
+    if (!r.ok) return { gueltig: false, karte: '' }
+    return r.json()
+  }, [karteId, einladung])
+  const beitreten = useCallback(async (name: string) => {
+    const r = await fetch(`/api/karten/${karteId}/beitreten`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: einladung, name }) })
+    const j = await r.json().catch(() => ({}))
+    if (!r.ok) throw new Error(j.fehler || `Fehler ${r.status}`)
+    localStorage.setItem(zugangKey(karteId!), j.zugang)
+    location.href = `${location.pathname}?karte=${karteId}`
+  }, [karteId, einladung])
+
+  // Kartenname ändern (nur Admin, gilt für alle)
+  const kartenNameAendern = useCallback(async (name: string) => {
+    const r = await fetch(`/api/karten/${karteId}`, { method: 'PATCH', headers, body: JSON.stringify({ name }) })
+    const j = await r.json().catch(() => ({}))
+    if (!r.ok) throw new Error(j.fehler || `Fehler ${r.status}`)
+    setKartenName(j.name)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [karteId, zugang])
+
   // ---- Nutzerverwaltung (Admin) ----
   const api = useCallback(async <T,>(pfad: string, method = 'GET', body?: unknown): Promise<T> => {
     const r = await fetch(`/api/karten/${karteId}/nutzer${pfad}`, { method, headers, body: body ? JSON.stringify(body) : undefined })
@@ -234,6 +262,13 @@ export function useKarte() {
     aendern: (id: string, daten: { name?: string; rolle?: Ich['rolle']; neuerZugang?: boolean }) => api<Nutzer>(`/${id}`, 'PATCH', daten),
     entfernen: (id: string) => api<{ ok: boolean }>(`/${id}`, 'DELETE'),
   }
+  const einladungApi = async (method: string) => {
+    const r = await fetch(`/api/karten/${karteId}/einladung`, { method, headers })
+    const j = await r.json().catch(() => ({}))
+    if (!r.ok) throw new Error(j.fehler || `Fehler ${r.status}`)
+    return j as { code: string | null }
+  }
+  const einladungVerwalten = { laden: () => einladungApi('GET'), erzeugen: () => einladungApi('POST'), deaktivieren: () => einladungApi('DELETE') }
 
-  return { eintraege, speichern, loeschen, notizSpeichern, notizLoeschen, alleErsetzen, teilen, abmelden, nameAendern, status, darfBearbeiten, istAdmin, ich, ichLaden, hinweis, setHinweis, nutzer, karteId, zugang, kartenName }
+  return { eintraege, speichern, loeschen, notizSpeichern, notizLoeschen, alleErsetzen, teilen, abmelden, nameAendern, einladung, einladungPruefen, beitreten, kartenNameAendern, einladungVerwalten, nutzerStand, status, darfBearbeiten, istAdmin, ich, ichLaden, hinweis, setHinweis, nutzer, karteId, zugang, kartenName }
 }

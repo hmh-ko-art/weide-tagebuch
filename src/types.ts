@@ -22,6 +22,7 @@ interface Basis {
   /** @deprecated altes Einzel-Symbol – wird per migrieren() zu einheiten[0].art */
   tierart?: Tierart
   einheiten?: Einheit[] // beliebig viele Tiereinheiten (je Anzahl + Tierart)
+  datum?: string // Datum des Eintrags (YYYY-MM-DD, im Formular wählbar); fehlt = Erstelldatum
   tierlisteModus?: 'fest' | 'ausblendbar' // fehlt = 'fest' (bisheriges Verhalten)
   farbe?: string // Hex-Farbe (Nadel bzw. Fläche); fehlt bei alten Einträgen -> STANDARD_FARBE / FLAECHE_STANDARD
   erstellt: string
@@ -149,3 +150,11 @@ export function tierSummen(liste: { einheiten?: Einheit[] }[]): { art: Tierart; 
   })).filter((x) => x.n > 0)
 }
 export const istAusblendbar = (e: { tierlisteModus?: string }) => e.tierlisteModus === 'ausblendbar'
+
+// ---- Datum des Eintrags (maßgeblich für Zeitraum-Filter und Monatsgruppen) ----
+const zweistellig = (n: number) => String(n).padStart(2, '0')
+export const isoTag = (d: Date) => `${d.getFullYear()}-${zweistellig(d.getMonth() + 1)}-${zweistellig(d.getDate())}`
+// e.datum (im Formular gesetzt) – sonst das Erstelldatum (lokaler Kalendertag)
+export const eintragDatum = (e: { datum?: string; erstellt: string }) => (e.datum && /^\d{4}-\d{2}-\d{2}$/.test(e.datum) ? e.datum : isoTag(new Date(e.erstellt)))
+export const tagText = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })
+export const monatText = (ym: string) => new Date(`${ym}-15T12:00:00`).toLocaleDateString('de-DE', { month: 'long', year: 'numeric' })

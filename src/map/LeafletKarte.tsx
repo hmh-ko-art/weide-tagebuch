@@ -5,10 +5,10 @@ import { START, START_ZOOM, pinFarbe } from '../types'
 import { NADEL_BREITE, NADEL_HOEHE, nadelHtml } from './nadel'
 import { FARBE, FARBE_AKTIV, ROUTE_FARBE, type KartenProps } from './props'
 
-const pinIcon = (aktiv: boolean, text: string, farbe: string) =>
+const pinIcon = (aktiv: boolean, text: string, farbe: string, hervor: boolean) =>
   L.divIcon({
     className: 'pin-icon',
-    html: `${nadelHtml(farbe, aktiv)}${text.trim() ? `<div class="pin-label">${text.replace(/[<>&]/g, '')}</div>` : ''}`,
+    html: `${nadelHtml(farbe, aktiv, hervor)}${text.trim() ? `<div class="pin-label">${text.replace(/[<>&]/g, '')}</div>` : ''}`,
     iconSize: [NADEL_BREITE, NADEL_HOEHE],
     iconAnchor: [NADEL_BREITE / 2, NADEL_HOEHE - 1],
   })
@@ -50,19 +50,21 @@ export default function LeafletKarte(p: KartenProps) {
   useEffect(() => {
     const g = ebene.current!
     g.clearLayers()
+    const hervor = new Set(p.hervor)
     for (const e of p.eintraege) {
       const aktiv = e.id === p.ausgewaehlt
       const klick = (ev: L.LeafletMouseEvent) => { L.DomEvent.stopPropagation(ev); cb.current.onAuswahl(e.id) }
       if (e.typ === 'pin') {
-        L.marker([e.position.lat, e.position.lng], { icon: pinIcon(aktiv, e.titel, pinFarbe(e)), zIndexOffset: aktiv ? 1000 : 0 }).on('click', klick).addTo(g)
+        L.marker([e.position.lat, e.position.lng], { icon: pinIcon(aktiv, p.beschriftung ? e.titel : '', pinFarbe(e), hervor.has(pinFarbe(e).toLowerCase())), zIndexOffset: aktiv ? 1000 : hervor.has(pinFarbe(e).toLowerCase()) ? 500 : 0 }).on('click', klick).addTo(g)
       } else {
         const poly = L.polygon(e.punkte.map((q) => [q.lat, q.lng] as [number, number]), { color: aktiv ? FARBE_AKTIV : FARBE, weight: aktiv ? 4 : 2, fillOpacity: 0.25 })
         // Nur beschriften, wenn die Fläche einen Namen hat
-        if (e.titel.trim()) poly.bindTooltip(e.titel, { permanent: true, direction: 'center', className: 'flaeche-label' })
+        if (p.beschriftung && e.titel.trim()) poly.bindTooltip(e.titel, { permanent: true, direction: 'center', className: 'flaeche-label' })
         poly.on('click', klick).addTo(g)
       }
     }
-  }, [p.eintraege, p.ausgewaehlt])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [p.eintraege, p.ausgewaehlt, p.beschriftung, p.hervor.join()])
 
   // Zeichnen einer Fläche
   useEffect(() => {

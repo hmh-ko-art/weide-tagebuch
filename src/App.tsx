@@ -37,6 +37,20 @@ export default function App() {
   const [route, setRoute] = useState<Route | null>(null)
   const [routeInfo, setRouteInfo] = useState<string>('')
   const [standort, setStandort] = useState<LatLng | null>(null)
+  // Beschriftung (Namen auf der Karte) an/aus – pro Gerät gespeichert
+  const [beschriftung, setBeschriftung] = useState(() => localStorage.getItem('wt-beschriftung') !== 'aus')
+  useEffect(() => { localStorage.setItem('wt-beschriftung', beschriftung ? 'an' : 'aus') }, [beschriftung])
+  // Schnellauswahl: hervorgehobene Nadelfarben (Mehrfachauswahl)
+  const [hervorWahl, setHervorWahl] = useState<string[]>([])
+  const verwendeteFarben = useMemo(() => {
+    const anzahl = new Map<string, number>()
+    for (const e of k.eintraege) if (e.typ === 'pin') { const f = pinFarbe(e).toLowerCase(); anzahl.set(f, (anzahl.get(f) ?? 0) + 1) }
+    // in der Reihenfolge der Vorschlagsfarben, eigene Farben danach
+    const rang = (f: string) => { const i = FARBEN.findIndex((x) => x.wert === f); return i < 0 ? 99 : i }
+    return [...anzahl.entries()].sort((a, b) => rang(a[0]) - rang(b[0])).map(([farbe, n]) => ({ farbe, n }))
+  }, [k.eintraege])
+  const hervor = hervorWahl.filter((f) => verwendeteFarben.some((x) => x.farbe === f))
+  const hervorUmschalten = (f: string) => setHervorWahl((l) => (l.includes(f) ? l.filter((x) => x !== f) : [...l, f]))
   const [fokus, setFokus] = useState<Fokus | null>(null)
   const [meldung, setMeldung] = useState<string>('')
   const mitteRef = useRef<LatLng>(START)
@@ -138,7 +152,7 @@ export default function App() {
   const statusText = { lokal: 'Nur auf diesem Gerät', verbunden: 'Live geteilt', offline: 'Offline – wird später synchronisiert', verbinde: 'Verbinde …' }[k.status]
 
   return (
-    <div className="app">
+    <div className={`app${panel === 'liste' ? ' liste-offen' : ''}`}>
       <header className="kopf">
         <div>
           <h1>🐑 Weide-Tagebuch</h1>
@@ -159,6 +173,8 @@ export default function App() {
           route={route}
           standort={standort}
           fokus={fokus}
+          beschriftung={beschriftung}
+          hervor={hervor}
           onKlick={kartenKlick}
           onAuswahl={waehle}
           onMitte={(p) => (mitteRef.current = p)}
@@ -166,13 +182,28 @@ export default function App() {
 
         {modus === 'pin' && <div className="fadenkreuz">＋</div>}
 
+        {/* Kartenwerkzeuge oben links: Beschriftung an/aus + Farb-Schnellauswahl */}
+        <div className="karten-werkzeug">
+          <button className={`werkzeug-knopf${beschriftung ? ' an' : ''}`} aria-pressed={beschriftung} title={beschriftung ? 'Beschriftung ausblenden' : 'Beschriftung einblenden'} onClick={() => setBeschriftung((b) => !b)}>
+            <span aria-hidden="true">🏷️</span><small>{beschriftung ? 'an' : 'aus'}</small>
+          </button>
+          {verwendeteFarben.length > 0 && (
+            <div className="farb-chips" role="group" aria-label="Nadeln einer Farbe hervorheben">
+              {verwendeteFarben.map(({ farbe, n }) => (
+                <button key={farbe} className={`farb-chip${hervor.includes(farbe) ? ' aktiv' : ''}`} style={{ background: farbe }} aria-pressed={hervor.includes(farbe)}
+                  title={`${farbName(farbe)} (${n}) ${hervor.includes(farbe) ? '– Hervorhebung aufheben' : 'hervorheben'}`} aria-label={`${farbName(farbe)} hervorheben`} onClick={() => hervorUmschalten(farbe)} />
+              ))}
+            </div>
+          )}
+        </div>
+
         {modus === 'ansicht' && !formular && (
           <div className="fab-leiste">
             <button className="fab" title="Mein Standort" onClick={() => meinStandort()}>📍<span>Standort</span></button>
             {k.darfBearbeiten && (
               <>
-                <button className="fab" onClick={() => { abwaehlen(); setZeichenPunkte([]); setModus('flaeche') }}>⬠<span>Fläche</span></button>
-                <button className="fab haupt-fab" onClick={() => { abwaehlen(); setModus('pin') }}>＋ Nadel</button>
+                <button className="fab" onClick={() => { abwaehlen(); if (panel === 'liste') setPanel(null); setZeichenPunkte([]); setModus('flaeche') }}>⬠<span>Fläche</span></button>
+                <button className="fab haupt-fab" onClick={() => { abwaehlen(); if (panel === 'liste') setPanel(null); setModus('pin') }}>＋<span>Nadel</span></button>
               </>
             )}
           </div>

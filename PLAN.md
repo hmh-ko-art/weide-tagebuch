@@ -154,3 +154,9 @@ interface Karte {          // geteilte Karte (Server)
 - **Eigener Name:** Jeder angemeldete Nutzer tippt oben auf seinen Namen (oder ⚙️ → „Meinen Namen ändern“) → Fenster „Mein Name“ → Speichern. Server: `PATCH /api/karten/:id/ich` ändert nur den eigenen Namen (1–40 Zeichen, nicht leer). Die Karte liefert öffentlich `namen` (Nutzer-ID → aktueller Name, nur für Notiz-Autoren, ohne Zugänge); Notizen mit `autorId` zeigen damit bei allen live den neuen Namen. Notizen ohne Nutzer-ID oder von entfernten Nutzern behalten den gespeicherten Namen.
 - Alles wird serverseitig geprüft (Header `x-zugang`); entfernte Nutzer verlieren sofort den Zugriff und sehen die Karte nur noch.
 - Migration: Der alte Bearbeiten-Schlüssel einer Karte wird zum ersten Admin-Zugang („Admin“, umbenennbar); alte `&schluessel=`-Links funktionieren weiter. Der Ansehen-Link bleibt nur-lesen. Alte Einträge/Notizen ohne Ersteller können nur Admins ändern.
+
+## 12. Kartenwerkzeuge & Liste (Stand 14.11.2026)
+
+- Oben links auf der Karte: **🏷️ an/aus** blendet die Namen unter Nadeln und auf Flächen ein/aus (pro Gerät gespeichert, `wt-beschriftung`).
+- Darunter **Farb-Chips** der tatsächlich verwendeten Nadelfarben (Mehrfachauswahl): gewählte Farben werden dezent hervorgehoben (Nadel etwas größer, dunklerer Rand, heller Schein), alle anderen bleiben normal; erneutes Tippen hebt auf. Flächen haben keine eigene Farbe und sind davon nicht betroffen.
+- **Liste offen:** Das Listenfenster lässt links einen ca. 64 px breiten Kartenstreifen frei; dort bleiben Standort/Fläche/Nadel (am Handy als runde Symbolknöpfe) sichtbar und bedienbar. „Fläche“/„Nadel“ schließen die Liste und starten das Setzen.

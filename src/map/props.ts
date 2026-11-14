@@ -7,6 +7,8 @@ export interface KartenProps {
   route: Route | null
   standort: LatLng | null
   fokus: Fokus | null
+  beschriftung: boolean // Namen unter Nadeln / auf Flächen anzeigen
+  hervor: string[] // hervorgehobene Nadelfarben (Kleinbuchstaben-Hex)
   onKlick: (p: LatLng) => void
   onAuswahl: (id: string) => void
   onMitte: (p: LatLng) => void

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Karte, { HAT_GOOGLE_KEY } from './map/Karte'
 import { useKarte, zugangsLink, NAME_MAX, type Ich, type Nutzer } from './daten'
 import { googleNaviLink, routeBerechnen, routeText } from './route'
-import { TIERARTEN, tierart, tierText, tierSymbolHtml, type Tierart, FARBEN, FLAECHEN_FARBEN, FLAECHE_STANDARD, START, STANDARD_FARBE, datum, farbName, hektar, mitte, neueId, notizenSortiert, pinFarbe, type Eintrag, type Notiz, type Fokus, type LatLng, type Route } from './types'
+import { TIERARTEN, tierText, tierSymbolHtml, tierSummen, type Einheit, type Tierart, FARBEN, FLAECHEN_FARBEN, FLAECHE_STANDARD, START, STANDARD_FARBE, datum, farbName, hektar, mitte, neueId, notizenSortiert, pinFarbe, type Eintrag, type Notiz, type Fokus, type LatLng, type Route } from './types'
 
 type Modus = 'ansicht' | 'pin' | 'flaeche'
 type Panel = null | 'liste' | 'einstellungen' | 'nutzer' | 'profil'
@@ -156,10 +156,10 @@ export default function App() {
     setModus('ansicht')
   }
 
-  const speichern = (e: Eintrag) => {
+  const speichern = (e: Eintrag, basis?: Einheit[]) => {
     const fertig = { ...e, titel: e.titel.trim(), geaendert: new Date().toISOString() }
     if (fertig.farbe) localStorage.setItem(fertig.typ === 'pin' ? 'wt-letzte-farbe' : 'wt-letzte-flaechenfarbe', fertig.farbe)
-    k.speichern(fertig)
+    k.speichern(fertig, basis)
     setFormular(null)
     setAusgewaehlt(fertig.id)
     setMeldung('Gespeichert')
@@ -295,6 +295,10 @@ export default function App() {
 function TierSymbol(p: { art: Tierart }) {
   return <span className="tier-symbol" aria-hidden="true" dangerouslySetInnerHTML={{ __html: tierSymbolHtml(p.art) }} />
 }
+// Alle Tiereinheiten zusammengefasst je Art: „🐑 25 Schafe · 🐏 2 Böcke · [Lamm] 10 Lämmer“
+function TierAnzeige(p: { summen: { art: Tierart; n: number }[] }) {
+  return <>{p.summen.map((x, i) => <span key={x.art} className="tierzahl">{i > 0 && ' · '}<TierSymbol art={x.art} /> {tierText(x.n, x.art)}</span>)}</>
+}
 
 function Detail(p: { e: Eintrag; routeInfo: string; darfBearbeiten: boolean; kannBearbeiten: boolean; kannNotiz: (n: Notiz) => boolean; onSchliessen: () => void; onBearbeiten: () => void; onLoeschen: () => void; onRoute: () => void; onRouteAus: () => void; onNotizSpeichern: (n: Notiz) => void; onNotizLoeschen: (id: string) => void }) {
   const { e } = p
@@ -307,7 +311,7 @@ function Detail(p: { e: Eintrag; routeInfo: string; darfBearbeiten: boolean; kan
       </div>
       <div className="meta">
         <span>Farbe: {farbName(pinFarbe(e))}</span>
-        {e.tiere != null && <span className="tierzahl"><TierSymbol art={tierart(e)} /> {tierText(e.tiere, tierart(e))}</span>}
+        {tierSummen([e]).length > 0 && <span className="tier-gesamt"><TierAnzeige summen={tierSummen([e])} /></span>}
         {e.herde && <span>Herde: {e.herde}</span>}
         {e.typ === 'flaeche' && <span>≈ {hektar(e.punkte).toLocaleString('de-DE', { maximumFractionDigits: 2 })} ha</span>}
         <span>Geändert: {datum(e.geaendert)}</span>
@@ -380,8 +384,11 @@ function Notizen(p: { e: Eintrag; darfBearbeiten: boolean; kannNotiz: (n: Notiz)
   )
 }
 
-function Formular(p: { start: Eintrag; neu: boolean; onSpeichern: (e: Eintrag) => void; onAbbrechen: () => void; onLoeschen?: () => void }) {
+function Formular(p: { start: Eintrag; neu: boolean; onSpeichern: (e: Eintrag, basis?: Einheit[]) => void; onAbbrechen: () => void; onLoeschen?: () => void }) {
   const [e, setE] = useState<Eintrag>(p.start)
+  // Tiereinheiten als Zeilen (Anzahl als Text, damit das Feld beim Tippen leer sein darf)
+  const [zeilen, setZeilen] = useState(() => (p.start.einheiten ?? []).map((x) => ({ ...x, anzahl: String(x.anzahl) })))
+  const zeileAendern = (id: string, teil: Partial<{ art: Tierart; anzahl: string }>) => setZeilen((l) => l.map((z) => (z.id === id ? { ...z, ...teil } : z)))
   const [ersteNotiz, setErsteNotiz] = useState('')
   const art = e.typ === 'pin' ? 'Nadel' : 'Fläche'
   return (
@@ -389,7 +396,9 @@ function Formular(p: { start: Eintrag; neu: boolean; onSpeichern: (e: Eintrag) =
       <form onSubmit={(ev) => {
         ev.preventDefault()
         const notizen = p.neu && ersteNotiz.trim() ? [{ id: neueId(), text: ersteNotiz.trim(), zeitpunkt: new Date().toISOString(), ...autorFelder() }] : e.notizen
-        p.onSpeichern({ ...e, notizen })
+        // leere/ungültige Zeilen fallen weg
+        const einheiten: Einheit[] = zeilen.filter((z) => z.anzahl.trim() !== '' && Number(z.anzahl) >= 0).map((z) => ({ id: z.id, art: z.art, anzahl: Math.round(Number(z.anzahl)) }))
+        p.onSpeichern({ ...e, notizen, einheiten }, p.start.einheiten ?? [])
       }}>
         <div className="sheet-kopf">
           <h2>{p.neu ? `Neue ${art}` : `${art} bearbeiten`}</h2>
@@ -413,11 +422,18 @@ function Formular(p: { start: Eintrag; neu: boolean; onSpeichern: (e: Eintrag) =
             </div>
           </div>
         )}
-        <div className="zeile">
-          <label>Anzahl Tiere<input type="number" inputMode="numeric" min={0} value={e.tiere ?? ''} onChange={(x) => setE({ ...e, tiere: x.target.value === '' ? undefined : Number(x.target.value) })} /></label>
-          <label>Symbol<select value={tierart(e)} onChange={(x) => setE({ ...e, tierart: x.target.value as Tierart })}>
-            {TIERARTEN.map((t) => <option key={t.wert} value={t.wert}>{t.emoji ? `${t.emoji} ` : ''}{t.name}</option>)}
-          </select></label>
+        <div className="einheiten">
+          <span className="feldname">Tiere</span>
+          {zeilen.map((z, i) => (
+            <div className="einheit-zeile" key={z.id}>
+              <input type="number" inputMode="numeric" min={0} aria-label={`Anzahl (Zeile ${i + 1})`} placeholder="Anzahl" value={z.anzahl} onChange={(x) => zeileAendern(z.id, { anzahl: x.target.value })} />
+              <select aria-label={`Tierart (Zeile ${i + 1})`} value={z.art} onChange={(x) => zeileAendern(z.id, { art: x.target.value as Tierart })}>
+                {TIERARTEN.map((t) => <option key={t.wert} value={t.wert}>{t.emoji ? `${t.emoji} ` : ''}{t.name}</option>)}
+              </select>
+              <button type="button" className="x" aria-label={`Zeile ${i + 1} entfernen`} title="Zeile entfernen" onClick={() => setZeilen((l) => l.filter((x) => x.id !== z.id))}>✕</button>
+            </div>
+          ))}
+          <button type="button" className="tiere-plus" onClick={() => setZeilen((l) => [...l, { id: neueId(), art: l.length ? l[l.length - 1].art : 'schaf', anzahl: '' }])}>＋ Tiere hinzufügen</button>
         </div>
         <div className="zeile">
           <label>Herde<input value={e.herde ?? ''} placeholder="optional" onChange={(x) => setE({ ...e, herde: x.target.value || undefined })} /></label>
@@ -443,14 +459,14 @@ function Liste(p: { eintraege: Eintrag[]; onWahl: (e: Eintrag) => void; onSchlie
     .filter((e) => `${e.titel} ${e.herde ?? ''} ${e.notizen.map((n) => `${n.text} ${n.autor ?? ''}`).join(' ')}`.toLowerCase().includes(suche.toLowerCase()))
     .sort((a, b) => b.geaendert.localeCompare(a.geaendert))
   // Summen je Tierart (nur Nadeln), z. B. „50 Schafe · 2 Böcke · 12 Lämmer an Nadeln“
-  const summen = TIERARTEN.map((t) => ({ art: t.wert, n: p.eintraege.reduce((s, e) => s + (e.typ === 'pin' && tierart(e) === t.wert ? e.tiere ?? 0 : 0), 0) })).filter((x) => x.n > 0)
+  const summen = tierSummen(p.eintraege.filter((e) => e.typ === 'pin'))
   return (
     <section className="panel">
       <div className="sheet-kopf">
         <h2>Tagebuch</h2>
         <button className="x" onClick={p.onSchliessen} aria-label="Schließen">✕</button>
       </div>
-      <p className="hinweis">{p.eintraege.filter((e) => e.typ === 'pin').length} Nadeln · {p.eintraege.filter((e) => e.typ === 'flaeche').length} Flächen · {summen.length ? <>{summen.map((x, i) => <span key={x.art} className="tierzahl">{i > 0 && ' · '}<TierSymbol art={x.art} /> {tierText(x.n, x.art)}</span>)} an Nadeln</> : '0 Tiere an Nadeln'}</p>
+      <p className="hinweis">{p.eintraege.filter((e) => e.typ === 'pin').length} Nadeln · {p.eintraege.filter((e) => e.typ === 'flaeche').length} Flächen · {summen.length ? <><TierAnzeige summen={summen} /> an Nadeln</> : '0 Tiere an Nadeln'}</p>
       <input placeholder="Suchen (Name, Herde, alle Notizen) …" value={suche} onChange={(e) => setSuche(e.target.value)} />
       <div className="tabs">
         {(['alle', 'pin', 'flaeche'] as const).map((f) => (
@@ -473,7 +489,7 @@ function Liste(p: { eintraege: Eintrag[]; onWahl: (e: Eintrag) => void; onSchlie
           <li key={e.id} onClick={() => p.onWahl(e)}>
             <strong>{e.typ === 'pin' ? <span className="farbpunkt" style={{ background: pinFarbe(e) }} /> : <span className="flaechen-symbol" style={{ color: pinFarbe(e) }}>⬠</span>} {e.titel || <span className="ohne-name">ohne Namen</span>}</strong>
             {e.notizen.length > 0 && <span className="notiz-kurz">{notizenSortiert(e)[0].text}</span>}
-            <small>📝 {e.notizen.length} {e.notizen.length === 1 ? 'Notiz' : 'Notizen'} · {e.tiere != null && <><span className="tierzahl"><TierSymbol art={tierart(e)} /> {tierText(e.tiere, tierart(e))}</span> · </>}{e.herde ? `${e.herde} · ` : ''}{datum(e.geaendert)}</small>
+            <small>📝 {e.notizen.length} {e.notizen.length === 1 ? 'Notiz' : 'Notizen'} · {tierSummen([e]).length > 0 && <><TierAnzeige summen={tierSummen([e])} /> · </>}{e.herde ? `${e.herde} · ` : ''}{datum(e.geaendert)}</small>
           </li>
         ))}
       </ul>

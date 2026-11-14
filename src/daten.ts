@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { migrieren, type Eintrag, type Notiz } from './types'
+import { migrieren, type Einheit, type Eintrag, type Notiz } from './types'
 
 // Geteilte Karte: ?karte=ID (ansehen) bzw. ?karte=ID&zugang=KEY (persönlicher Zugang; alt: &schluessel=KEY).
 // Der Zugang wird am Gerät gespeichert und aus der Adresszeile entfernt.
@@ -22,7 +22,8 @@ export interface Nutzer extends Ich { zugang: string; erstellt: string }
 export const zugangsLink = (karteId: string, zugang: string) => `${location.origin}${location.pathname}?karte=${karteId}&zugang=${zugang}`
 
 type Ausstehend =
-  | { art: 'put'; eintrag: Eintrag }
+  // basis: Tiereinheiten, von denen die Änderung ausging (Server führt damit gleichzeitige Änderungen zusammen)
+  | { art: 'put'; eintrag: Eintrag; basis?: Einheit[] }
   | { art: 'delete'; id: string }
   | { art: 'notiz-put'; eintragId: string; notiz: Notiz }
   | { art: 'notiz-delete'; eintragId: string; notizId: string }
@@ -114,7 +115,7 @@ export function useKarte() {
   const senden = useCallback(async (a: Ausstehend) => {
     const basis = `/api/karten/${karteId}/eintraege/`
     const [url, method, body] =
-      a.art === 'put' ? [basis + a.eintrag.id, 'PUT', a.eintrag]
+      a.art === 'put' ? [basis + a.eintrag.id, 'PUT', a.basis ? { ...a.eintrag, einheitenBasis: a.basis } : a.eintrag]
       : a.art === 'delete' ? [basis + a.id, 'DELETE', undefined]
       : a.art === 'notiz-put' ? [`${basis}${a.eintragId}/notizen/${a.notiz.id}`, 'PUT', a.notiz]
       : [`${basis}${a.eintragId}/notizen/${a.notizId}`, 'DELETE', undefined]
@@ -177,7 +178,13 @@ export function useKarte() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [karteId, queueAbarbeiten])
 
-  const speichern = useCallback((e: Eintrag) => ausfuehren({ art: 'put', eintrag: e }), [ausfuehren])
+  const eintraegeRef = useRef(eintraege)
+  eintraegeRef.current = eintraege
+  // basis: Stand der Tiereinheiten beim Öffnen des Formulars; ohne Angabe der aktuelle Stand auf diesem Gerät
+  const speichern = useCallback((e: Eintrag, basis?: Einheit[]) => {
+    const alt = eintraegeRef.current.find((x) => x.id === e.id)
+    ausfuehren({ art: 'put', eintrag: e, basis: basis ?? alt?.einheiten ?? [] })
+  }, [ausfuehren])
   const loeschen = useCallback((id: string) => ausfuehren({ art: 'delete', id }), [ausfuehren])
   const notizSpeichern = useCallback((eintragId: string, notiz: Notiz) => ausfuehren({ art: 'notiz-put', eintragId, notiz }), [ausfuehren])
   const notizLoeschen = useCallback((eintragId: string, notizId: string) => ausfuehren({ art: 'notiz-delete', eintragId, notizId }), [ausfuehren])

@@ -1,14 +1,14 @@
 import { useEffect, useRef } from 'react'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
-import { START, START_ZOOM, pinFarbe, tierart, tierSymbolHtml, type Eintrag } from '../types'
+import { START, START_ZOOM, pinFarbe, tierSummen, tierSymbolHtml, type Eintrag } from '../types'
 import { NADEL_BREITE, NADEL_HOEHE, nadelHtml } from './nadel'
 import { FARBE_AKTIV, ROUTE_FARBE, type KartenProps } from './props'
 
 // Beschriftung: Name und – falls gesetzt – dezent Symbol + Tierzahl
 const labelHtml = (e: Eintrag) => {
   const name = e.titel.trim().replace(/[<>&"]/g, '')
-  const tiere = e.tiere != null ? `<span class="label-tiere">${tierSymbolHtml(tierart(e))}${e.tiere}</span>` : ''
+  const tiere = tierSummen([e]).map((x) => `<span class="label-tiere">${tierSymbolHtml(x.art)}${x.n}</span>`).join('')
   return name || tiere ? `<div class="pin-label">${name}${tiere}</div>` : ''
 }
 const pinIcon = (aktiv: boolean, label: string, farbe: string, hervor: boolean) =>

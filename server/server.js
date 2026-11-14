@@ -46,6 +46,40 @@ const datei = (id) => path.join(DATA_DIR, `${id}.json`)
 const zufall = (n) => crypto.randomBytes(n).toString('base64url').replace(/[^a-zA-Z0-9]/g, '').slice(0, n)
 
 // Altes Einzelfeld `notiz` -> `notizen: [...]` (gleiche Logik wie im Client, deterministische ID)
+const TIERARTEN = ['schaf', 'bock', 'lamm']
+// Einheiten validieren: max. 50, Art aus der Liste (sonst Schaf), Anzahl ganze Zahl 0–100000, eindeutige kurze IDs
+function einheitenPruefen(liste) {
+  if (!Array.isArray(liste)) return []
+  const ids = new Set()
+  const aus = []
+  for (const x of liste.slice(0, 50)) {
+    if (!x || typeof x !== 'object') continue
+    const anzahl = Number(x.anzahl)
+    if (!Number.isFinite(anzahl) || anzahl < 0) continue
+    let id = typeof x.id === 'string' && /^[\w-]{1,40}$/.test(x.id) ? x.id : 'e' + zufall(8)
+    if (ids.has(id)) id = 'e' + zufall(8)
+    ids.add(id)
+    aus.push({ id, art: TIERARTEN.includes(x.art) ? x.art : 'schaf', anzahl: Math.min(100000, Math.round(anzahl)) })
+  }
+  return aus
+}
+// Gleichzeitige Änderungen zusammenführen (3-Wege): basis = Stand, von dem der Client ausging.
+// Unverändert gelassene Einheiten übernehmen den aktuellen Serverstand, geänderte/neue/gelöschte gelten vom Client,
+// von anderen inzwischen hinzugefügte Einheiten bleiben erhalten.
+function einheitenMergen(server, client, basis) {
+  if (!Array.isArray(basis)) return client
+  const b = new Map(einheitenPruefen(basis).map((x) => [x.id, x]))
+  const sv = new Map(server.map((x) => [x.id, x]))
+  const gleich = (x, y) => x.art === y.art && x.anzahl === y.anzahl
+  const aus = []
+  for (const c of client) {
+    const alt = b.get(c.id)
+    if (alt && gleich(c, alt)) { if (sv.has(c.id)) aus.push(sv.get(c.id)) } // unverändert: Serverstand (ggf. inzwischen gelöscht)
+    else aus.push(c)
+  }
+  for (const x of server) if (!b.has(x.id) && !aus.some((c) => c.id === x.id)) aus.push(x)
+  return aus
+}
 function migrieren(e) {
   if (!e || typeof e !== 'object') return e
   const notizen = Array.isArray(e.notizen) ? [...e.notizen] : []
@@ -54,8 +88,14 @@ function migrieren(e) {
   }
   const neu = { ...e, notizen }
   delete neu.notiz
-  // Tierart/Symbol: nur bekannte Werte, sonst Standard (Schaf = Feld weglassen)
-  if (!['schaf', 'bock', 'lamm'].includes(neu.tierart)) delete neu.tierart
+  // Tiereinheiten: alte Einzel-Tierzahl (+ Symbol) wird zur ersten Einheit (feste ID), dann prüfen
+  if (!Array.isArray(neu.einheiten) && typeof neu.tiere === 'number' && Number.isFinite(neu.tiere)) {
+    neu.einheiten = [{ id: `${neu.id}-t0`, art: TIERARTEN.includes(neu.tierart) ? neu.tierart : 'schaf', anzahl: neu.tiere }]
+  }
+  neu.einheiten = einheitenPruefen(neu.einheiten)
+  delete neu.tiere
+  delete neu.tierart
+  delete neu.einheitenBasis
   return neu
 }
 // Karte migrieren: alter Bearbeiten-Schlüssel -> erster Admin-Zugang (der alte Link funktioniert weiter)
@@ -161,13 +201,16 @@ app.put('/api/karten/:id/eintraege/:eid', mitKarte('nutzer'), (req, res) => {
   const body = req.body
   if (!body || body.id !== req.params.eid || !['pin', 'flaeche'].includes(body.typ)) return res.status(400).json({ fehler: 'Ungültiger Eintrag' })
   const e = migrieren(body)
+  // Alte (noch gecachte) App-Versionen schicken keine Einheiten -> bestehende Einheiten nicht anfassen
+  const ohneEinheiten = !Array.isArray(body.einheiten)
   const i = k.eintraege.findIndex((x) => x.id === e.id)
   // Notizen eines bestehenden Eintrags werden nur über die Notiz-Endpunkte geändert,
   // damit ein Bearbeiten (Name/Farbe …) nie gleichzeitig hinzugefügte Notizen überschreibt.
   if (i >= 0) {
     const alt = k.eintraege[i]
     if (!darfEintrag(ich, alt)) return res.status(403).json({ fehler: 'Nur eigene Einträge bearbeiten (oder Admin)' })
-    k.eintraege[i] = { ...e, erstelltVon: alt.erstelltVon, notizen: alt.notizen ?? [] }
+    const einheiten = ohneEinheiten ? alt.einheiten ?? [] : einheitenMergen(alt.einheiten ?? [], e.einheiten, body.einheitenBasis)
+    k.eintraege[i] = { ...e, einheiten, erstelltVon: alt.erstelltVon, notizen: alt.notizen ?? [] }
   } else {
     // neue Notizen beim Anlegen bekommen den Nutzer als Autor
     const notizen = e.notizen.filter(notizOk).map((n) => ({ id: n.id, text: n.text.slice(0, 5000), zeitpunkt: n.zeitpunkt, autor: ich.name, autorId: ich.id }))

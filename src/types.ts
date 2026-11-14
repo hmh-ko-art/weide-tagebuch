@@ -16,9 +16,12 @@ interface Basis {
   erstelltVon?: string // Nutzer-ID (geteilte Karten): Nutzer dürfen nur eigene Einträge bearbeiten/löschen
   /** @deprecated altes Einzel-Notizfeld – wird per migrieren() zu notizen[0] */
   notiz?: string
+  /** @deprecated alte Einzel-Tierzahl – wird per migrieren() zu einheiten[0] */
   tiere?: number
   herde?: string
-  tierart?: Tierart // Symbol/Tierart zur Tierzahl; fehlt bei alten Einträgen -> 'schaf'
+  /** @deprecated altes Einzel-Symbol – wird per migrieren() zu einheiten[0].art */
+  tierart?: Tierart
+  einheiten?: Einheit[] // beliebig viele Tiereinheiten (je Anzahl + Tierart)
   farbe?: string // Hex-Farbe (Nadel bzw. Fläche); fehlt bei alten Einträgen -> STANDARD_FARBE / FLAECHE_STANDARD
   erstellt: string
   geaendert: string
@@ -75,8 +78,10 @@ export function migrieren<T extends Eintrag>(e: T): T {
   if (typeof alt === 'string' && alt.trim() && !notizen.some((n) => n.id === `${e.id}-n0`)) {
     notizen.push({ id: `${e.id}-n0`, text: alt, zeitpunkt: e.erstellt || e.geaendert || new Date().toISOString() })
   }
-  const neu = { ...e, notizen }
+  const neu = { ...e, notizen, einheiten: einheitenMigrieren(e) }
   delete (neu as { notiz?: unknown }).notiz
+  delete neu.tiere
+  delete neu.tierart
   return neu
 }
 
@@ -126,3 +131,19 @@ export const tierText = (n: number, a: Tierart) => `${n.toLocaleString('de-DE')}
 // Kleines Lamm-Symbol (helles, rundes Lämmchen) als SVG-Text – für React (dangerouslySetInnerHTML) und Leaflet-HTML
 export const LAMM_SVG = `<svg class="lamm-svg" width="1.15em" height="1em" viewBox="0 0 23 20" aria-hidden="true"><g stroke="#6d5d4b" stroke-width="1.1"><line x1="7" y1="14" x2="7" y2="19" stroke-linecap="round"/><line x1="15" y1="14" x2="15" y2="19" stroke-linecap="round"/></g><g fill="#fffaf0" stroke="#8d7b68" stroke-width="1"><circle cx="7" cy="10" r="4"/><circle cx="11" cy="8" r="4.2"/><circle cx="15" cy="10" r="4"/><circle cx="11" cy="12" r="4"/></g><ellipse cx="18.8" cy="6.2" rx="3.2" ry="2.6" fill="#f3d9c0" stroke="#8d7b68" stroke-width="1"/><ellipse cx="16.6" cy="4.6" rx="1.5" ry=".8" fill="#e8c4a3" transform="rotate(-30 16.6 4.6)"/><circle cx="19.6" cy="5.7" r=".55" fill="#3a2e24"/></svg>`
 export const tierSymbolHtml = (a: Tierart) => tierInfo(a).emoji ?? LAMM_SVG
+
+// ---- Tiereinheiten: pro Eintrag beliebig viele { id, art, anzahl } ----
+export interface Einheit { id: string; art: Tierart; anzahl: number }
+// Alte Einzel-Tierzahl (+ Symbol) wird zur ersten Einheit – feste ID, damit alle Geräte dieselbe Einheit meinen
+function einheitenMigrieren(e: { id: string; einheiten?: Einheit[]; tiere?: number; tierart?: string }): Einheit[] {
+  if (Array.isArray(e.einheiten)) return e.einheiten
+  if (typeof e.tiere === 'number' && Number.isFinite(e.tiere)) return [{ id: `${e.id}-t0`, art: tierart(e), anzahl: e.tiere }]
+  return []
+}
+// Zusammengefasst je Tierart (Schaf, Bock, Lamm), z. B. 20 + 5 Schafe -> 25 Schafe
+export function tierSummen(liste: { einheiten?: Einheit[] }[]): { art: Tierart; n: number }[] {
+  return TIERARTEN.map((t) => ({
+    art: t.wert,
+    n: liste.reduce((s, e) => s + (e.einheiten ?? []).reduce((a, x) => a + (x.art === t.wert ? x.anzahl : 0), 0), 0),
+  })).filter((x) => x.n > 0)
+}

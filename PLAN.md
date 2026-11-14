@@ -166,3 +166,11 @@ interface Karte {          // geteilte Karte (Server)
 
 - **Drag-and-drop:** Nadeln, die man bearbeiten darf (eigene; Admin alle), lassen sich direkt auf der Karte ziehen (Finger runter, ziehen, loslassen). Beim Loslassen wird die Position über die normale Speichern-Warteschlange gesendet (offline-fähig, Server prüft das Recht, live an alle). Hinweis „Nadel verschoben · Rückgängig“ für 7 s. Kurzes Antippen öffnet weiter nur die Details; Karte schwenken bleibt normal; Ansehen-Link und fremde Nadeln (Nutzer) sind nicht ziehbar. Nur im normalen Ansichtsmodus (nicht beim Setzen/Zeichnen/Bearbeiten).
 - **Symbol/Tierart** (`tierart`: `schaf` | `bock` | `lamm`, Standard Schaf; alte Nadeln = Schaf): Auswahlfeld „Symbol“ beim Anlegen/Bearbeiten. Anzeige überall mit Symbol und passender Mehrzahl: „🐑 50 Schafe / 1 Schaf“, „🐏 2 Böcke / 1 Bock“, Lamm-SVG „12 Lämmer / 1 Lamm“ (es gibt kein Lamm-Emoji). Liste summiert je Tierart. Auf der Karte erscheinen Symbol + Zahl dezent im Namensschild (nur bei Beschriftung an). Server lässt nur die drei Werte zu.
+
+## 14. Mehrere Tiereinheiten pro Eintrag (Stand 14.11.2026)
+
+- Neues Feld `einheiten: [{ id, art: 'schaf'|'bock'|'lamm', anzahl }]` ersetzt `tiere`/`tierart`. Migration beim Lesen (Server und App): alte Tierzahl + Symbol wird zur ersten Einheit mit fester ID `<eintragId>-t0`; nichts geht verloren. Gespeichert wird das neue Format erst beim nächsten normalen Schreiben der Karte.
+- Formular: Abschnitt „Tiere“ mit Zeilen (Anzahl + Tierart), „＋ Tiere hinzufügen“, ✕ entfernt eine Zeile; leere Zeilen fallen beim Speichern weg.
+- Anzeige überall zusammengefasst je Art (gleiche Arten addiert): „🐑 25 Schafe · 🐏 2 Böcke · [Lamm] 10 Lämmer“ – Detail, Liste, Listensumme, Kartenlabel (nur bei Beschriftung an).
+- Gleichzeitiges Bearbeiten: Der Client schickt `einheitenBasis` (Stand beim Öffnen des Formulars) mit; der Server führt 3-Wege zusammen (unverändert gelassene Einheiten → aktueller Serverstand, geänderte/neue/gelöschte → vom Client, von anderen inzwischen hinzugefügte bleiben). Alte App-Versionen ohne `einheiten` verändern die Einheiten nicht.
+- Server-Validierung: max. 50 Einheiten, Art aus der Liste (sonst Schaf), Anzahl ganze Zahl 0–100 000, ungültige Zeilen werden verworfen, IDs eindeutig.

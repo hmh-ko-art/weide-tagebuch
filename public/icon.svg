@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#16324a"/><stop offset=".6" stop-color="#1f4d3a"/><stop offset="1" stop-color="#2e6b35"/></linearGradient>
+    <pattern id="raster" width="128" height="128" patternUnits="userSpaceOnUse"><path d="M128 0 L 0 0 0 128" fill="none" stroke="#7fd3a0" stroke-opacity=".22" stroke-width="4"/></pattern>
+  </defs>
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+  <rect width="1024" height="1024" fill="url(#raster)"/>
+  <circle cx="512" cy="530" r="330" fill="none" stroke="#7fd3a0" stroke-opacity=".45" stroke-width="6" stroke-dasharray="18 22"/>
+  <!-- Körper (Polygon-Wolle) -->
+  <polygon points="300,470 380,360 520,330 660,360 740,450 730,590 640,670 470,680 340,620" fill="#f4f7f2"/>
+  <polygon points="380,360 520,330 470,470" fill="#ffffff"/>
+  <polygon points="520,330 660,360 600,480" fill="#e6ece4"/>
+  <polygon points="300,470 380,360 470,470 400,600" fill="#e1e8de"/>
+  <polygon points="470,470 600,480 640,670 470,680" fill="#d5ded2"/>
+  <polygon points="600,480 740,450 730,590 640,670" fill="#e8eee6"/>
+  <!-- Kopf -->
+  <polygon points="650,390 760,350 830,420 800,515 700,505" fill="#1d2a24"/><polygon points="760,350 830,420 770,430" fill="#2c3d34"/>
+  <polygon points="700,380 690,300 750,360" fill="#1d2a24"/>
+  <circle cx="765" cy="440" r="15" fill="#7fd3a0"/>
+  <!-- Beine -->
+  <g fill="#1d2a24"><rect x="390" y="640" width="34" height="120" rx="8"/><rect x="460" y="660" width="34" height="110" rx="8"/><rect x="600" y="650" width="34" height="115" rx="8"/><rect x="666" y="630" width="34" height="120" rx="8"/></g>
+  <!-- Ortungspunkt -->
+  <circle cx="230" cy="250" r="40" fill="#ff8a3d"/><circle cx="230" cy="250" r="70" fill="none" stroke="#ff8a3d" stroke-width="10" opacity=".6"/>
+</svg>

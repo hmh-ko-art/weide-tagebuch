@@ -27,6 +27,20 @@ function istHandy() {
   return window.matchMedia?.('(pointer: coarse)').matches || window.innerWidth <= 560
 }
 
+const KOPF_STANDARD = '#1e4d2b'
+
+// Flache Linien-Icons (Farbe = currentColor)
+const ICONS: Record<string, string> = {
+  liste: 'M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01',
+  nutzer: 'M16 19v-1.5a3.5 3.5 0 0 0-3.5-3.5h-5A3.5 3.5 0 0 0 4 17.5V19M10 10.5a3.25 3.25 0 1 0 0-6.5 3.25 3.25 0 0 0 0 6.5ZM20 19v-1.5a3.5 3.5 0 0 0-2.5-3.35M15.5 4.15a3.25 3.25 0 0 1 0 6.2',
+  zahnrad: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z',
+  stift: 'M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z',
+  etikett: 'M20.59 13.41 13.42 20.58a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82ZM7 7h.01',
+}
+function Icon({ name }: { name: string }) {
+  return <svg className={`icon icon-${name}`} viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={ICONS[name]} /></svg>
+}
+
 function standortHolen(): Promise<LatLng> {
   return new Promise((ok, fehler) => {
     if (!navigator.geolocation) return fehler(new Error('Dieses Gerät bzw. dieser Browser kann den Standort nicht bestimmen.'))
@@ -65,7 +79,7 @@ export default function App() {
   const [kopfFarbe, setKopfFarbe] = useState<string | null>(() => localStorage.getItem('wt-kopf-farbe'))
   useEffect(() => {
     if (kopfFarbe) localStorage.setItem('wt-kopf-farbe', kopfFarbe); else localStorage.removeItem('wt-kopf-farbe')
-    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', kopfFarbe || '#2e7d32')
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', kopfFarbe || KOPF_STANDARD)
   }, [kopfFarbe])
   // Ausblendbare Tierlisten: eingeklappte Einträge pro Gerät merken
   const [tiereZu, setTiereZu] = useState<string[]>(() => { try { return JSON.parse(localStorage.getItem('wt-tiere-zu') || '[]') } catch { return [] } })
@@ -215,15 +229,19 @@ export default function App() {
 
   return (
     <div className={`app${panel === 'liste' ? ' liste-offen' : ''}`}>
-      <header className={`kopf${kopfFarbe && hell(kopfFarbe) ? ' kopf-hell' : ''}`} style={kopfFarbe ? { background: kopfFarbe, color: hell(kopfFarbe) ? '#1d2a1d' : '#fff' } : undefined}>
-        <div>
-          <h1>🐑 Weide-Tagebuch</h1>
-          <small className={`status ${k.status}`}>{k.kartenName ? `${k.kartenName} · ` : ''}{statusText}{k.karteId && k.ich && <> · <button className="name-knopf" title="Meinen Namen ändern" onClick={() => setPanel(panel === 'profil' ? null : 'profil')}>{k.ich.name}{k.ich.rolle === 'admin' ? ' (Admin)' : ''} ✏️</button></>}{!k.darfBearbeiten && ' · nur ansehen'}</small>
+      <header className={`kopf${kopfFarbe && hell(kopfFarbe) ? ' kopf-hell' : ''}`} style={kopfFarbe ? { background: kopfFarbe, color: hell(kopfFarbe) ? '#1d2a1d' : '#f4ecd8' } : undefined}>
+        <img className="marke" src="/icon.svg" alt="" width="36" height="36" />
+        <div className="kopf-text">
+          <div className="kopf-zeile">
+            {k.kartenName && <span className="marke-wort" aria-hidden="true">Weide-Tagebuch</span>}
+            <h1 className="kopf-titel" title={k.kartenName || 'Weide-Tagebuch'}>{k.kartenName || 'Weide-Tagebuch'}</h1>
+          </div>
+          <small className={`status ${k.status}`}><span className="status-punkt" aria-hidden="true" />{statusText}{k.karteId && k.ich && <> · <button className="name-knopf" title="Meinen Namen ändern" onClick={() => setPanel(panel === 'profil' ? null : 'profil')}>{k.ich.name}{k.ich.rolle === 'admin' ? ' (Admin)' : ''} <Icon name="stift" /></button></>}{!k.darfBearbeiten && ' · nur ansehen'}</small>
         </div>
         <nav>
-          <button onClick={() => setPanel(panel === 'liste' ? null : 'liste')}>📋 Liste</button>
-          {k.karteId && k.istAdmin && <button title="Nutzer verwalten" aria-label="Nutzer verwalten" onClick={() => setPanel(panel === 'nutzer' ? null : 'nutzer')}>👥</button>}
-          <button onClick={() => setPanel(panel === 'einstellungen' ? null : 'einstellungen')}>⚙️</button>
+          <button className="kopf-knopf mit-text" aria-pressed={panel === 'liste'} title="Liste" aria-label="Liste" onClick={() => setPanel(panel === 'liste' ? null : 'liste')}><Icon name="liste" /><span>Liste</span></button>
+          {k.karteId && k.istAdmin && <button className="kopf-knopf" aria-pressed={panel === 'nutzer'} title="Nutzer verwalten" aria-label="Nutzer verwalten" onClick={() => setPanel(panel === 'nutzer' ? null : 'nutzer')}><Icon name="nutzer" /></button>}
+          <button className="kopf-knopf" aria-pressed={panel === 'einstellungen'} title="Einstellungen" aria-label="Einstellungen" onClick={() => setPanel(panel === 'einstellungen' ? null : 'einstellungen')}><Icon name="zahnrad" /></button>
         </nav>
       </header>
 
@@ -251,7 +269,7 @@ export default function App() {
         {/* Kartenwerkzeuge oben links: Beschriftung an/aus + Farb-Schnellauswahl */}
         <div className="karten-werkzeug">
           <button className={`werkzeug-knopf${beschriftung ? ' an' : ''}`} aria-pressed={beschriftung} title={beschriftung ? 'Beschriftung ausblenden' : 'Beschriftung einblenden'} onClick={() => setBeschriftung((b) => !b)}>
-            <span aria-hidden="true">🏷️</span><small>{beschriftung ? 'an' : 'aus'}</small>
+            <Icon name="etikett" /><small>{beschriftung ? 'an' : 'aus'}</small>
           </button>
           {verwendeteFarben.length > 0 && (
             <div className="farb-chips" role="group" aria-label="Nadeln und Flächen einer Farbe hervorheben">
@@ -738,7 +756,7 @@ function Einstellungen(p: { k: ReturnType<typeof useKarte>; onSchliessen: () => 
 
       <h3>Darstellung</h3>
       <div className="kopf-farbe">
-        <label className="frei">Farbe der Kopfleiste<input type="color" value={p.kopfFarbe || '#2e7d32'} onChange={(e) => p.setKopfFarbe(e.target.value)} /></label>
+        <label className="frei">Farbe der Kopfleiste<input type="color" value={p.kopfFarbe || KOPF_STANDARD} onChange={(e) => p.setKopfFarbe(e.target.value)} /></label>
         <button onClick={() => p.setKopfFarbe(null)} disabled={!p.kopfFarbe}>Standard</button>
       </div>
       <p className="hinweis klein">Nur auf diesem Gerät, rein optisch.</p>

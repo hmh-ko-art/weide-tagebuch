@@ -3,12 +3,32 @@
 html, body, #root { margin: 0; height: 100%; }
 button, .btn, input, textarea { font: inherit; }
 .app { display: flex; flex-direction: column; height: 100dvh; }
-.kopf { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: var(--gruen); color: #fff; z-index: 1100; padding-top: max(8px, env(safe-area-inset-top)); }
-.kopf h1 { font-size: 1.15rem; margin: 0; }
-.kopf .status { opacity: .9; }
-.kopf .status.offline { color: #ffcc80; }
-.kopf nav { display: flex; gap: 6px; }
-.kopf nav button { background: rgba(255,255,255,.18); color: #fff; border: 0; border-radius: 10px; padding: 8px 12px; cursor: pointer; }
+@font-face { font-family: 'Barlow Condensed'; font-weight: 700; font-style: normal; font-display: swap; src: url('/fonts/barlow-condensed-700.woff') format('woff'); }
+/* Kopfzeile: flach, Tiefgrün/Creme/Orange; Farbe pro Gerät über style (background + color) */
+.kopf { --creme: #f4ecd8; --orange: #e8682a; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: 'marke titel nav' 'marke status status'; align-items: center; gap: 1px 10px; padding: 8px 10px 8px 12px; padding-top: max(8px, env(safe-area-inset-top)); background: #1e4d2b; color: var(--creme); z-index: 1100; min-height: 56px; }
+.kopf .marke { grid-area: marke; width: 36px; height: 36px; border-radius: 9px; display: block; }
+.kopf-text { display: contents; }
+.kopf-zeile { grid-area: titel; display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.marke-wort { display: none; font-family: 'Barlow Condensed', system-ui, sans-serif; font-weight: 700; font-size: .8rem; letter-spacing: .12em; text-transform: uppercase; color: var(--orange); white-space: nowrap; }
+.kopf-hell .marke-wort { color: #b8461a; }
+.kopf .kopf-titel { font-family: 'Barlow Condensed', system-ui, sans-serif; font-weight: 700; font-size: 1.4rem; line-height: 1.05; letter-spacing: .01em; margin: 0; min-width: 0; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.kopf .status { grid-area: status; display: block; font-size: .78rem; line-height: 1.3; opacity: .85; min-width: 0; overflow-wrap: anywhere; }
+.kopf .status-punkt { display: inline-block; vertical-align: 1px; width: 7px; height: 7px; border-radius: 50%; background: currentColor; opacity: .5; margin-right: 5px; }
+.kopf .status.verbunden .status-punkt { background: #7bd88f; opacity: 1; }
+.kopf .status.offline .status-punkt { background: var(--orange); opacity: 1; }
+.kopf .status.offline { color: #ffb38a; opacity: 1; }
+.kopf .name-knopf { display: inline; }
+.kopf .name-knopf .icon { width: 11px; height: 11px; vertical-align: -1px; }
+.kopf nav { grid-area: nav; display: flex; gap: 6px; }
+.kopf-knopf { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 40px; min-width: 40px; padding: 0 10px; border: 0; border-radius: 10px; background: color-mix(in srgb, currentColor 12%, transparent); color: inherit; font: inherit; font-weight: 600; font-size: .9rem; cursor: pointer; }
+.kopf-knopf .icon { flex: none; }
+.kopf-knopf:hover { background: color-mix(in srgb, currentColor 20%, transparent); }
+.kopf-knopf[aria-pressed="true"] { background: var(--creme); color: #1e4d2b; }
+.kopf-hell .kopf-knopf[aria-pressed="true"] { background: #1d2a1d; color: #fff; }
+.kopf-knopf:focus-visible { outline: 2px solid var(--orange); outline-offset: 2px; }
+@media (min-width: 700px) { .marke-wort { display: inline; } .kopf { grid-template-areas: 'marke titel nav' 'marke status nav'; padding-left: 16px; padding-right: 14px; column-gap: 12px; } .kopf .marke { width: 38px; height: 38px; } }
+@media (max-width: 480px) { .kopf-knopf.mit-text span { display: none; } .kopf .kopf-titel { font-size: 1.3rem; } }
+@media (max-width: 359px) { .kopf-knopf { padding: 0 8px; } .kopf nav { gap: 4px; } .kopf .marke { width: 30px; height: 30px; } .kopf { column-gap: 8px; } }
 .haupt { position: relative; flex: 1; overflow: hidden; }
 .karte { position: absolute; inset: 0; }
 .karte.laden { display: grid; place-items: center; background: #e8efe4; }
@@ -102,7 +122,10 @@ select { font: inherit; border: 1px solid #c9d3c4; border-radius: 10px; padding:
 .werkzeug-knopf { width: 44px; height: 44px; padding: 0; border-radius: 12px; border: 0; background: #fff; box-shadow: 0 2px 8px rgba(0,0,0,.3); display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1; gap: 2px; }
 .werkzeug-knopf small { font-size: .65rem; font-weight: 700; color: #777; }
 .werkzeug-knopf.an small { color: var(--gruen); }
-.werkzeug-knopf:not(.an) span { opacity: .45; }
+.werkzeug-knopf { color: #1e4d2b; box-shadow: none; border: 1.5px solid #d8d2c2; background: #f4ecd8; }
+.werkzeug-knopf.an { background: #1e4d2b; color: #f4ecd8; border-color: #1e4d2b; }
+.werkzeug-knopf.an small { color: #f4ecd8; }
+.werkzeug-knopf:not(.an) .icon { opacity: .6; }
 .farb-chips { display: flex; flex-direction: column; gap: 6px; padding: 6px; background: rgba(255,255,255,.9); border-radius: 22px; box-shadow: 0 2px 8px rgba(0,0,0,.3); }
 .farb-chip { width: 28px; height: 28px; padding: 0; border-radius: 50%; border: 2px solid rgba(0,0,0,.35); transition: transform .12s; }
 .farb-chip.aktiv { border: 3px solid #111; box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--gruen); transform: scale(1.08); }
@@ -183,7 +206,6 @@ select { font: inherit; border: 1px solid #c9d3c4; border-radius: 10px; padding:
 .monat .liste { margin-top: 0; }
 
 /* Kopfleisten-Farbe: bei heller Farbe dunkle Schrift/Knöpfe */
-.kopf-hell nav button { background: rgba(0,0,0,.1); color: #1d2a1d; }
 .kopf-hell .status.offline { color: #b45309; }
 .kopf-farbe { display: flex; align-items: center; gap: 10px; }
 .kopf-farbe label { flex-direction: row; align-items: center; gap: 10px; margin: 0; }

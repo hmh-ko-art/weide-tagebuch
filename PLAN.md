@@ -198,3 +198,8 @@ interface Karte {          // geteilte Karte (Server)
   - Handy (`pointer: coarse` oder ≤ 560 px): „📍 An meinem Standort“ als erster, hervorgehobener Knopf, dann „⊕ Kartenmitte“, „Abbrechen“.
   - Desktop: Hinweis (freie Platzierung) zuerst, dann „⊕ Kartenmitte“ (primär), „📍 An meinem Standort“, „Abbrechen“.
   - Nichts wird ohne Tipp gesetzt; jede Option öffnet nur das Formular (Speichern nötig). Standort: Ladeanzeige, verständliche Fehlermeldungen (verweigert / Zeitüberschreitung / nicht verfügbar / kein https); bei Fehler bleibt der Setz-Modus aktiv.
+
+## 18. App-Icon „Geo-Schaf“ (Logo 4) und neue Kopfzeile (Stand 14.11.2026)
+
+- **Icons** (`public/`): `icon.svg` (Quelle), `icon-192.png`/`icon-512.png` (any), `icon-maskable-192.png`/`-512.png` (Motiv auf 78 % verkleinert, sichere Zone), `apple-touch-icon.png` (180), `favicon.svg` (abgerundet), `favicon.ico` (16/32/48), `favicon-32.png`. Manifest: theme `#1e4d2b`, background `#16324a`. Entwürfe liegen nur lokal in `logos/` (nicht im Repo).
+- **Kopfzeile**: flach, Standard Tiefgrün `#1e4d2b`, Schrift Creme `#f4ecd8`, Akzent Orange `#e8682a`. Links Geo-Schaf-Logo (36 px), daneben Kartenname in Barlow Condensed Bold (selbst gehostet, `public/fonts/`, SIL OFL), darunter Status mit Punkt (grün = live, orange = offline) und Name. Desktop zusätzlich Wortmarke „WEIDE-TAGEBUCH“. Buttons als flache Linien-Icons (Liste/Nutzer/Einstellungen, aktiver Zustand Creme), unter 480 px nur Icon. Lange Kartennamen umbrechen auf max. 2 Zeilen statt abgeschnitten zu werden. Eigene Kopfzeilenfarbe pro Gerät funktioniert weiter (Schrift automatisch dunkel/Creme). Beschriftungs-Knopf auf der Karte ebenfalls flach mit Etikett-Icon.

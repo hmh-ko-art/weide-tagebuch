@@ -575,6 +575,12 @@ function Liste(p: { eintraege: Eintrag[]; onWahl: (e: Eintrag) => void; onSchlie
     if (g) g.eintraege.push(e); else monatsGruppen.push({ monat: m, eintraege: [e] })
   }
   const filterAktiv = !!farbe || !!suche.trim() || zeitraumAktiv
+  // Nadeln der gewählten Farbe, die nur der Zeitraum ausblendet (wird klar angezeigt statt still versteckt)
+  const farbeAusserhalb = farbe && zeitraumAktiv ? typListe.filter((e) => pinFarbe(e) === farbe && !imZeitraum(e)).length : 0
+  // Bei Farbauswahl: Treffer sofort ins Bild holen (die Farbübersicht füllt auf dem Handy sonst den ganzen Schirm)
+  useEffect(() => {
+    if (farbe) document.querySelector('.panel .filter-hinweis')?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+  }, [farbe])
   const allesZeigen = () => { setSuche(''); setFarbFilter(null); setZeitraum('alle'); setVon(''); setBis('') }
   const wort = reiter === 'pin' ? ['Nadel', 'Nadeln'] : ['Fläche', 'Flächen']
   // Summen passend zum Reiter
@@ -638,9 +644,15 @@ function Liste(p: { eintraege: Eintrag[]; onWahl: (e: Eintrag) => void; onSchlie
           <button onClick={allesZeigen}>Alle zeigen</button>
         </div>
       )}
+      {farbeAusserhalb > 0 && (
+        <div className="filter-hinweis ausserhalb" role="status">
+          <span>{farbeAusserhalb} weitere {farbName(farbe!)}-{farbeAusserhalb === 1 ? wort[0] : wort[1]} außerhalb des Zeitraums</span>
+          <button onClick={() => { setZeitraum('alle'); setVon(''); setBis('') }}>Zeitraum aufheben</button>
+        </div>
+      )}
       {!typListe.length && <p className="hinweis">{reiter === 'pin' ? 'Noch keine Nadeln. Tippe auf „+ Nadel“ oder direkt auf die Karte.' : 'Noch keine Flächen. Tippe auf „Fläche“ und dann die Eckpunkte.'}</p>}
       {typListe.length > 0 && !liste.length && <p className="hinweis">Keine {wort[1]} für diese Auswahl.</p>}
-      {monatsGruppen.length > 1 && (() => {
+      {monatsGruppen.length > 1 && !farbe && (() => {
         const keys = monatsGruppen.map((g) => `${reiter}:${g.monat}`)
         const einerOffen = keys.some((x) => !monateZu.includes(x))
         return (
@@ -652,10 +664,11 @@ function Liste(p: { eintraege: Eintrag[]; onWahl: (e: Eintrag) => void; onSchlie
       {monatsGruppen.map((g) => {
         const ms = tierSummen(g.eintraege)
         const mha = g.eintraege.reduce((s, e) => s + (e.typ === 'flaeche' ? hektar(e.punkte) : 0), 0)
-        const offen = !monateZu.includes(`${reiter}:${g.monat}`)
+        // Bei Farbauswahl immer alle Treffer einzeln zeigen – eingeklappte Monate bleiben gespeichert, gelten aber erst wieder ohne Farbfilter
+        const offen = !!farbe || !monateZu.includes(`${reiter}:${g.monat}`)
         return (
           <div className="monat" key={g.monat}>
-            <h3 className="monat-kopf"><button aria-expanded={offen} onClick={() => monatUmschalten(g.monat)}><span className="pfeil">{offen ? '▾' : '▸'}</span> {monatText(g.monat)} <small>· {g.eintraege.length} {g.eintraege.length === 1 ? wort[0] : wort[1]}{reiter === 'flaeche' ? ` · ≈ ${mha.toLocaleString('de-DE', { maximumFractionDigits: 2 })} ha` : ''}{ms.length > 0 && <> · <TierAnzeige summen={ms} /></>}</small></button></h3>
+            <h3 className="monat-kopf"><button aria-expanded={offen} disabled={!!farbe} onClick={() => monatUmschalten(g.monat)}>{!farbe && <span className="pfeil">{offen ? '▾' : '▸'}</span>} {monatText(g.monat)} <small>· {g.eintraege.length} {g.eintraege.length === 1 ? wort[0] : wort[1]}{reiter === 'flaeche' ? ` · ≈ ${mha.toLocaleString('de-DE', { maximumFractionDigits: 2 })} ha` : ''}{ms.length > 0 && <> · <TierAnzeige summen={ms} /></>}</small></button></h3>
             {offen && <ul className="liste">
               {g.eintraege.map((e) => (
                 <li key={e.id} onClick={() => p.onWahl(e)}>

@@ -500,7 +500,7 @@ function Formular(p: { start: Eintrag; neu: boolean; onSpeichern: (e: Eintrag, b
             <div className="einheit-zeile" key={z.id}>
               <input type="number" inputMode="numeric" min={0} aria-label={`Anzahl (Zeile ${i + 1})`} placeholder="Anzahl" value={z.anzahl} onChange={(x) => zeileAendern(z.id, { anzahl: x.target.value })} />
               <select aria-label={`Tierart (Zeile ${i + 1})`} value={z.art} onChange={(x) => zeileAendern(z.id, { art: x.target.value as Tierart })}>
-                {TIERARTEN.map((t) => <option key={t.wert} value={t.wert}>{t.emoji ? `${t.emoji} ` : ''}{t.name}</option>)}
+                {TIERARTEN.map((t) => <option key={t.wert} value={t.wert}>{t.name}</option>)}
               </select>
               <button type="button" className="x" aria-label={`Zeile ${i + 1} entfernen`} title="Zeile entfernen" onClick={() => setZeilen((l) => l.filter((x) => x.id !== z.id))}><Icon name="x" /></button>
             </div>

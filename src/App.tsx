@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Karte, { HAT_GOOGLE_KEY } from './map/Karte'
 import { useKarte, zugangsLink, NAME_MAX, type Ich, type Nutzer } from './daten'
 import { googleNaviLink, routeBerechnen, routeText } from './route'
-import { FARBEN, FLAECHEN_FARBEN, FLAECHE_STANDARD, START, STANDARD_FARBE, datum, farbName, hektar, mitte, neueId, notizenSortiert, pinFarbe, type Eintrag, type Notiz, type Fokus, type LatLng, type Route } from './types'
+import { TIERARTEN, tierart, tierText, tierSymbolHtml, type Tierart, FARBEN, FLAECHEN_FARBEN, FLAECHE_STANDARD, START, STANDARD_FARBE, datum, farbName, hektar, mitte, neueId, notizenSortiert, pinFarbe, type Eintrag, type Notiz, type Fokus, type LatLng, type Route } from './types'
 
 type Modus = 'ansicht' | 'pin' | 'flaeche'
 type Panel = null | 'liste' | 'einstellungen' | 'nutzer' | 'profil'
@@ -53,6 +53,13 @@ export default function App() {
   const hervorUmschalten = (f: string) => setHervorWahl((l) => (l.includes(f) ? l.filter((x) => x !== f) : [...l, f]))
   const [fokus, setFokus] = useState<Fokus | null>(null)
   const [meldung, setMeldung] = useState<string>('')
+  // Zuletzt verschobene Nadel (für „Rückgängig“)
+  const [verschoben, setVerschoben] = useState<{ id: string; alt: LatLng; nr: number } | null>(null)
+  useEffect(() => {
+    if (!verschoben) return
+    const t = setTimeout(() => setVerschoben(null), 7000)
+    return () => clearTimeout(t)
+  }, [verschoben])
   const mitteRef = useRef<LatLng>(START)
   const routeNr = useRef(0)
 
@@ -104,6 +111,22 @@ export default function App() {
       if (nr === routeNr.current) setRouteInfo('Route nicht möglich: ' + (err as Error).message)
     }
   }, [standort, meinStandort])
+
+  // Nadel per Drag-and-drop verschoben: Position speichern (Server prüft das Recht), Rückgängig anbieten
+  const nadelVerschieben = (id: string, neu: LatLng) => {
+    const e = k.eintraege.find((x) => x.id === id)
+    if (!e || e.typ !== 'pin') return
+    if (Math.abs(e.position.lat - neu.lat) < 1e-9 && Math.abs(e.position.lng - neu.lng) < 1e-9) return
+    k.speichern({ ...e, position: neu, geaendert: new Date().toISOString() })
+    setMeldung('')
+    setVerschoben((v) => ({ id, alt: v?.id === id ? v.alt : e.position, nr: (v?.nr ?? 0) + 1 }))
+  }
+  const verschiebenRueckgaengig = () => {
+    if (!verschoben) return
+    const e = k.eintraege.find((x) => x.id === verschoben.id)
+    if (e && e.typ === 'pin') k.speichern({ ...e, position: verschoben.alt, geaendert: new Date().toISOString() })
+    setVerschoben(null)
+  }
 
   const waehle = (id: string) => {
     if (modus === 'flaeche') return
@@ -175,6 +198,8 @@ export default function App() {
           fokus={fokus}
           beschriftung={beschriftung}
           hervor={hervor}
+          verschiebbar={modus === 'ansicht' && !formular ? k.eintraege.filter((e) => e.typ === 'pin' && k.darfBearbeiten && kannEintrag(e)).map((e) => e.id) : []}
+          onVerschieben={nadelVerschieben}
           onKlick={kartenKlick}
           onAuswahl={waehle}
           onMitte={(p) => (mitteRef.current = p)}
@@ -258,9 +283,17 @@ export default function App() {
         {panel === 'nutzer' && k.istAdmin && k.karteId && <NutzerVerwaltung k={k} onSchliessen={() => setPanel(null)} meldung={setMeldung} />}
 
         {meldung && <div className="toast">{meldung}</div>}
+        {!meldung && verschoben && (
+          <div className="toast mit-knopf" role="status">Nadel verschoben<button onClick={verschiebenRueckgaengig}>Rückgängig</button></div>
+        )}
       </main>
     </div>
   )
+}
+
+// Symbol zur Tierart: 🐑 Schaf, 🐏 Schafbock, eigenes SVG für Lamm
+function TierSymbol(p: { art: Tierart }) {
+  return <span className="tier-symbol" aria-hidden="true" dangerouslySetInnerHTML={{ __html: tierSymbolHtml(p.art) }} />
 }
 
 function Detail(p: { e: Eintrag; routeInfo: string; darfBearbeiten: boolean; kannBearbeiten: boolean; kannNotiz: (n: Notiz) => boolean; onSchliessen: () => void; onBearbeiten: () => void; onLoeschen: () => void; onRoute: () => void; onRouteAus: () => void; onNotizSpeichern: (n: Notiz) => void; onNotizLoeschen: (id: string) => void }) {
@@ -274,7 +307,7 @@ function Detail(p: { e: Eintrag; routeInfo: string; darfBearbeiten: boolean; kan
       </div>
       <div className="meta">
         <span>Farbe: {farbName(pinFarbe(e))}</span>
-        {e.tiere != null && <span>🐑 {e.tiere} Tiere</span>}
+        {e.tiere != null && <span className="tierzahl"><TierSymbol art={tierart(e)} /> {tierText(e.tiere, tierart(e))}</span>}
         {e.herde && <span>Herde: {e.herde}</span>}
         {e.typ === 'flaeche' && <span>≈ {hektar(e.punkte).toLocaleString('de-DE', { maximumFractionDigits: 2 })} ha</span>}
         <span>Geändert: {datum(e.geaendert)}</span>
@@ -382,6 +415,11 @@ function Formular(p: { start: Eintrag; neu: boolean; onSpeichern: (e: Eintrag) =
         )}
         <div className="zeile">
           <label>Anzahl Tiere<input type="number" inputMode="numeric" min={0} value={e.tiere ?? ''} onChange={(x) => setE({ ...e, tiere: x.target.value === '' ? undefined : Number(x.target.value) })} /></label>
+          <label>Symbol<select value={tierart(e)} onChange={(x) => setE({ ...e, tierart: x.target.value as Tierart })}>
+            {TIERARTEN.map((t) => <option key={t.wert} value={t.wert}>{t.emoji ? `${t.emoji} ` : ''}{t.name}</option>)}
+          </select></label>
+        </div>
+        <div className="zeile">
           <label>Herde<input value={e.herde ?? ''} placeholder="optional" onChange={(x) => setE({ ...e, herde: x.target.value || undefined })} /></label>
         </div>
         <div className="knoepfe">
@@ -404,14 +442,15 @@ function Liste(p: { eintraege: Eintrag[]; onWahl: (e: Eintrag) => void; onSchlie
     .filter((e) => !farbFilter || pinFarbe(e) === farbFilter)
     .filter((e) => `${e.titel} ${e.herde ?? ''} ${e.notizen.map((n) => `${n.text} ${n.autor ?? ''}`).join(' ')}`.toLowerCase().includes(suche.toLowerCase()))
     .sort((a, b) => b.geaendert.localeCompare(a.geaendert))
-  const tiere = p.eintraege.reduce((s, e) => s + (e.typ === 'pin' ? e.tiere ?? 0 : 0), 0)
+  // Summen je Tierart (nur Nadeln), z. B. „50 Schafe · 2 Böcke · 12 Lämmer an Nadeln“
+  const summen = TIERARTEN.map((t) => ({ art: t.wert, n: p.eintraege.reduce((s, e) => s + (e.typ === 'pin' && tierart(e) === t.wert ? e.tiere ?? 0 : 0), 0) })).filter((x) => x.n > 0)
   return (
     <section className="panel">
       <div className="sheet-kopf">
         <h2>Tagebuch</h2>
         <button className="x" onClick={p.onSchliessen} aria-label="Schließen">✕</button>
       </div>
-      <p className="hinweis">{p.eintraege.filter((e) => e.typ === 'pin').length} Nadeln · {p.eintraege.filter((e) => e.typ === 'flaeche').length} Flächen · {tiere} Tiere an Nadeln</p>
+      <p className="hinweis">{p.eintraege.filter((e) => e.typ === 'pin').length} Nadeln · {p.eintraege.filter((e) => e.typ === 'flaeche').length} Flächen · {summen.length ? <>{summen.map((x, i) => <span key={x.art} className="tierzahl">{i > 0 && ' · '}<TierSymbol art={x.art} /> {tierText(x.n, x.art)}</span>)} an Nadeln</> : '0 Tiere an Nadeln'}</p>
       <input placeholder="Suchen (Name, Herde, alle Notizen) …" value={suche} onChange={(e) => setSuche(e.target.value)} />
       <div className="tabs">
         {(['alle', 'pin', 'flaeche'] as const).map((f) => (
@@ -434,7 +473,7 @@ function Liste(p: { eintraege: Eintrag[]; onWahl: (e: Eintrag) => void; onSchlie
           <li key={e.id} onClick={() => p.onWahl(e)}>
             <strong>{e.typ === 'pin' ? <span className="farbpunkt" style={{ background: pinFarbe(e) }} /> : <span className="flaechen-symbol" style={{ color: pinFarbe(e) }}>⬠</span>} {e.titel || <span className="ohne-name">ohne Namen</span>}</strong>
             {e.notizen.length > 0 && <span className="notiz-kurz">{notizenSortiert(e)[0].text}</span>}
-            <small>📝 {e.notizen.length} {e.notizen.length === 1 ? 'Notiz' : 'Notizen'} · {e.tiere != null ? `🐑 ${e.tiere} · ` : ''}{e.herde ? `${e.herde} · ` : ''}{datum(e.geaendert)}</small>
+            <small>📝 {e.notizen.length} {e.notizen.length === 1 ? 'Notiz' : 'Notizen'} · {e.tiere != null && <><span className="tierzahl"><TierSymbol art={tierart(e)} /> {tierText(e.tiere, tierart(e))}</span> · </>}{e.herde ? `${e.herde} · ` : ''}{datum(e.geaendert)}</small>
           </li>
         ))}
       </ul>

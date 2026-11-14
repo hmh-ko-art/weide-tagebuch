@@ -121,3 +121,17 @@ select { font: inherit; border: 1px solid #c9d3c4; border-radius: 10px; padding:
   .liste-offen .haupt-fab { font-size: 1.4rem; }
 }
 .flaechen-symbol { font-weight: 700; text-shadow: 0 0 1px rgba(0,0,0,.6); }
+
+/* Nadel ziehen: beim Ziehen leicht angehoben; Hinweis mit Rückgängig */
+.leaflet-marker-draggable .nadel-tap { touch-action: none; }
+.pin-icon.zieht .nadel-tap svg { transform: translateY(-6px) scale(1.25); transform-origin: 50% 100%; filter: drop-shadow(0 6px 4px rgba(0,0,0,.45)); transition: transform .1s; }
+.toast.mit-knopf { display: flex; align-items: center; gap: 12px; padding: 6px 6px 6px 16px; white-space: nowrap; }
+.toast.mit-knopf button { background: #fff; color: #263238; border: 0; border-radius: 16px; padding: 6px 12px; font-weight: 700; }
+
+/* Tierart-Symbol neben der Tierzahl */
+.tier-symbol { display: inline-flex; align-items: center; vertical-align: -0.12em; }
+.lamm-svg { display: inline-block; }
+.tierzahl { white-space: nowrap; }
+.label-tiere { display: inline-flex; align-items: center; gap: 1px; margin-left: 5px; font-weight: 500; color: #444; font-size: 11px; }
+.label-tiere:first-child { margin-left: 0; }
+.label-tiere .lamm-svg { width: 14px; height: 12px; }

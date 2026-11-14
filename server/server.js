@@ -54,6 +54,8 @@ function migrieren(e) {
   }
   const neu = { ...e, notizen }
   delete neu.notiz
+  // Tierart/Symbol: nur bekannte Werte, sonst Standard (Schaf = Feld weglassen)
+  if (!['schaf', 'bock', 'lamm'].includes(neu.tierart)) delete neu.tierart
   return neu
 }
 // Karte migrieren: alter Bearbeiten-Schlüssel -> erster Admin-Zugang (der alte Link funktioniert weiter)

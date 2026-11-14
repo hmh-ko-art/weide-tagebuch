@@ -9,6 +9,8 @@ export interface KartenProps {
   fokus: Fokus | null
   beschriftung: boolean // Namen unter Nadeln / auf Flächen anzeigen
   hervor: string[] // hervorgehobene Nadelfarben (Kleinbuchstaben-Hex)
+  verschiebbar: string[] // IDs der Nadeln, die dieser Nutzer verschieben darf (Drag-and-drop)
+  onVerschieben: (id: string, p: LatLng) => void
   onKlick: (p: LatLng) => void
   onAuswahl: (id: string) => void
   onMitte: (p: LatLng) => void

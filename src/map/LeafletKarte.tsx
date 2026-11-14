@@ -1,14 +1,20 @@
 import { useEffect, useRef } from 'react'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
-import { START, START_ZOOM, pinFarbe } from '../types'
+import { START, START_ZOOM, pinFarbe, tierart, tierSymbolHtml, type Eintrag } from '../types'
 import { NADEL_BREITE, NADEL_HOEHE, nadelHtml } from './nadel'
 import { FARBE_AKTIV, ROUTE_FARBE, type KartenProps } from './props'
 
-const pinIcon = (aktiv: boolean, text: string, farbe: string, hervor: boolean) =>
+// Beschriftung: Name und – falls gesetzt – dezent Symbol + Tierzahl
+const labelHtml = (e: Eintrag) => {
+  const name = e.titel.trim().replace(/[<>&"]/g, '')
+  const tiere = e.tiere != null ? `<span class="label-tiere">${tierSymbolHtml(tierart(e))}${e.tiere}</span>` : ''
+  return name || tiere ? `<div class="pin-label">${name}${tiere}</div>` : ''
+}
+const pinIcon = (aktiv: boolean, label: string, farbe: string, hervor: boolean) =>
   L.divIcon({
     className: 'pin-icon',
-    html: `${nadelHtml(farbe, aktiv, hervor)}${text.trim() ? `<div class="pin-label">${text.replace(/[<>&]/g, '')}</div>` : ''}`,
+    html: `${nadelHtml(farbe, aktiv, hervor)}${label}`,
     iconSize: [NADEL_BREITE, NADEL_HOEHE],
     iconAnchor: [NADEL_BREITE / 2, NADEL_HOEHE - 1],
   })
@@ -23,6 +29,7 @@ export default function LeafletKarte(p: KartenProps) {
   const standortEbene = useRef<L.LayerGroup | null>(null)
   const cb = useRef(p)
   cb.current = p
+  const zieht = useRef(false) // während des Ziehens Marker nicht neu aufbauen
 
   useEffect(() => {
     const m = L.map(el.current!, { zoomControl: false }).setView([START.lat, START.lng], START_ZOOM)
@@ -48,14 +55,29 @@ export default function LeafletKarte(p: KartenProps) {
 
   // Einträge
   useEffect(() => {
+    if (zieht.current) return
     const g = ebene.current!
     g.clearLayers()
     const hervor = new Set(p.hervor)
+    const verschiebbar = new Set(p.verschiebbar)
     for (const e of p.eintraege) {
       const aktiv = e.id === p.ausgewaehlt
       const klick = (ev: L.LeafletMouseEvent) => { L.DomEvent.stopPropagation(ev); cb.current.onAuswahl(e.id) }
       if (e.typ === 'pin') {
-        L.marker([e.position.lat, e.position.lng], { icon: pinIcon(aktiv, p.beschriftung ? e.titel : '', pinFarbe(e), hervor.has(pinFarbe(e))), zIndexOffset: aktiv ? 1000 : hervor.has(pinFarbe(e)) ? 500 : 0 }).on('click', klick).addTo(g)
+        const ziehbar = verschiebbar.has(e.id)
+        const m = L.marker([e.position.lat, e.position.lng], { icon: pinIcon(aktiv, p.beschriftung ? labelHtml(e) : '', pinFarbe(e), hervor.has(pinFarbe(e))), zIndexOffset: aktiv ? 1000 : hervor.has(pinFarbe(e)) ? 500 : 0, draggable: ziehbar, autoPan: true })
+        m.on('click', klick)
+        if (ziehbar) {
+          // Finger runter, ziehen, loslassen -> neue Position (kurzes Antippen bleibt ein Klick)
+          m.on('dragstart', () => { zieht.current = true; m.getElement()?.classList.add('zieht'); m.setZIndexOffset(2000); navigator.vibrate?.(15) })
+          m.on('dragend', () => {
+            zieht.current = false
+            m.getElement()?.classList.remove('zieht')
+            const ll = m.getLatLng()
+            cb.current.onVerschieben(e.id, { lat: ll.lat, lng: ll.lng })
+          })
+        }
+        m.addTo(g)
       } else {
         // Fläche in ihrer Farbe; ausgewählt: weißer, dicker Rand; hervorgehoben: dezent dickerer Rand + etwas kräftigere Füllung
         const f = pinFarbe(e), h = hervor.has(f) && !aktiv
@@ -66,7 +88,7 @@ export default function LeafletKarte(p: KartenProps) {
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [p.eintraege, p.ausgewaehlt, p.beschriftung, p.hervor.join()])
+  }, [p.eintraege, p.ausgewaehlt, p.beschriftung, p.hervor.join(), p.verschiebbar.join()])
 
   // Zeichnen einer Fläche
   useEffect(() => {

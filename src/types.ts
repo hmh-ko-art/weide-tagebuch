@@ -18,6 +18,7 @@ interface Basis {
   notiz?: string
   tiere?: number
   herde?: string
+  tierart?: Tierart // Symbol/Tierart zur Tierzahl; fehlt bei alten Einträgen -> 'schaf'
   farbe?: string // Hex-Farbe (Nadel bzw. Fläche); fehlt bei alten Einträgen -> STANDARD_FARBE / FLAECHE_STANDARD
   erstellt: string
   geaendert: string
@@ -110,3 +111,18 @@ export function hektar(punkte: LatLng[]) {
   }
   return Math.abs((s * R * R) / 2) / 10000
 }
+
+// ---- Tierart / Symbol zur Tierzahl ----
+export type Tierart = 'schaf' | 'bock' | 'lamm'
+export const TIERARTEN: { wert: Tierart; name: string; eins: string; mehr: string; emoji?: string }[] = [
+  { wert: 'schaf', name: 'Schaf', eins: 'Schaf', mehr: 'Schafe', emoji: '🐑' },
+  { wert: 'bock', name: 'Schafbock', eins: 'Bock', mehr: 'Böcke', emoji: '🐏' },
+  { wert: 'lamm', name: 'Lamm', eins: 'Lamm', mehr: 'Lämmer' }, // kein Lamm-Emoji -> eigenes SVG (LAMM_SVG)
+]
+export const tierart = (e: { tierart?: string }): Tierart => (TIERARTEN.some((t) => t.wert === e.tierart) ? (e.tierart as Tierart) : 'schaf')
+const tierInfo = (a: Tierart) => TIERARTEN.find((t) => t.wert === a)!
+// „50 Schafe“, „1 Bock“, „3 Lämmer“ …
+export const tierText = (n: number, a: Tierart) => `${n.toLocaleString('de-DE')} ${n === 1 ? tierInfo(a).eins : tierInfo(a).mehr}`
+// Kleines Lamm-Symbol (helles, rundes Lämmchen) als SVG-Text – für React (dangerouslySetInnerHTML) und Leaflet-HTML
+export const LAMM_SVG = `<svg class="lamm-svg" width="1.15em" height="1em" viewBox="0 0 23 20" aria-hidden="true"><g stroke="#6d5d4b" stroke-width="1.1"><line x1="7" y1="14" x2="7" y2="19" stroke-linecap="round"/><line x1="15" y1="14" x2="15" y2="19" stroke-linecap="round"/></g><g fill="#fffaf0" stroke="#8d7b68" stroke-width="1"><circle cx="7" cy="10" r="4"/><circle cx="11" cy="8" r="4.2"/><circle cx="15" cy="10" r="4"/><circle cx="11" cy="12" r="4"/></g><ellipse cx="18.8" cy="6.2" rx="3.2" ry="2.6" fill="#f3d9c0" stroke="#8d7b68" stroke-width="1"/><ellipse cx="16.6" cy="4.6" rx="1.5" ry=".8" fill="#e8c4a3" transform="rotate(-30 16.6 4.6)"/><circle cx="19.6" cy="5.7" r=".55" fill="#3a2e24"/></svg>`
+export const tierSymbolHtml = (a: Tierart) => tierInfo(a).emoji ?? LAMM_SVG

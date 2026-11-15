@@ -687,6 +687,23 @@ function Liste(p: ListeProps) {
   const summen = tierSummen(alle)
   const ha = reiter === 'flaeche' ? alle.reduce((s, e) => s + (e.typ === 'flaeche' ? hektar(e.punkte) : 0), 0) : 0
 
+  // Summe je Tierart einer Gruppe (bzw. „Ohne Gruppe“) – immer aus den angezeigten Nadeln; bei Filter mit Hinweis
+  const summenZeile = (sichtbar: Eintrag[], gesamt: number, zahlenfolge: boolean) => {
+    const s = tierSummen(sichtbar)
+    const gefiltert = filterAktiv && sichtbar.length < gesamt
+    if (!gesamt) return null
+    return (
+      <div className="gruppe-summe" aria-label="Summe der Tiere">
+        <span className="gs-tiere">
+          {sichtbar.length > 0 && <><b className="gs-sigma" aria-hidden="true">Σ</b>{'\u00a0'}
+          {s.length ? s.map((x, i) => <span key={x.art} className={`gs-art gs-${x.art}`}>{i > 0 && ' · '}{tierText(x.n, x.art)}</span>) : <span className="gs-keine">keine Tierzahlen</span>}</>}
+          {gefiltert && <span className="gs-filter" title="Nur die angezeigten Nadeln sind addiert">{sichtbar.length > 0 ? ' · ' : ''}gefiltert: {sichtbar.length} von {anz(gesamt)}</span>}
+        </span>
+        {zahlenfolge && <span className="gs-folge">Zahlenfolge</span>}
+      </div>
+    )
+  }
+
   // ---- Gruppen anlegen / umbenennen ----
   // Formular für neue Gruppe bzw. Bearbeiten (Name + Farbe); id null = neue Gruppe
   const [gForm, setGForm] = useState<{ id: string | null; name: string; farbe: string } | null>(null)
@@ -961,8 +978,9 @@ function Liste(p: ListeProps) {
                     )}
                   </div>
                 )}
+                {gForm?.id !== g.id && summenZeile(treffer, alleG.length, offen && treffer.length > 0)}
                 {offen && (treffer.length
-                  ? <><div className="zahlenfolge">Zahlenfolge</div><ul className="liste gruppen-liste">{treffer.map((e) => gruppenZeile(e, gf))}</ul></>
+                  ? <><ul className="liste gruppen-liste">{treffer.map((e) => gruppenZeile(e, gf))}</ul></>
                   : <p className="gruppe-leer">{alleG.length ? `Keine ${wort[1]} für diese Auswahl.` : p.darfBearbeiten ? 'Noch leer – Nadeln am ≡ hierher ziehen oder in der Nadel „In Gruppe“ wählen.' : 'Noch leer.'}</p>)}
               </div>
             )
@@ -972,6 +990,7 @@ function Liste(p: ListeProps) {
 
       <div className={`ohne-gruppe${mitGruppen ? ' mit-rahmen' : ''}${zieh?.ziel === null ? ' drop-aktiv' : ''}`} {...(mitGruppen ? { 'data-drop': '' } : {})}>
         {mitGruppen && <h3 className="ohne-gruppe-kopf">Ohne Gruppe <small>· {anz(ungruppiert.length)}</small></h3>}
+        {mitGruppen && summenZeile(ungruppiert, typListe.filter((e) => !gid(e)).length, false)}
         {mitGruppen && !ungruppiert.length && liste.length > 0 && <p className="gruppe-leer">Alle {filterAktiv ? 'angezeigten ' : ''}{wort[1]} sind in Gruppen{zieh ? ' – hier ablegen, um eine Nadel aus ihrer Gruppe zu nehmen' : ''}.</p>}
         {monatsGruppen.length > 1 && !farbe && (() => {
           const keys = monatsGruppen.map((g) => `${reiter}:${g.monat}`)

@@ -227,3 +227,5 @@ interface Karte {          // geteilte Karte (Server)
   zuordnen hängt neu zugeordnete Nadeln hinten an. Häkchen = Gruppe auf der Karte aus/ein (pro Gerät, `wt-gruppen-aus`).
 - Zeile: Nummernkreis + Tierzahl kurz („50 + 1“, „+12 L“) + Name klein; ≡ ziehen sortiert um bzw. verschiebt.
 - Desktop ≥ 900 px: Liste als Seitenleiste links.
+- Tiersumme je Gruppe (und „Ohne Gruppe“) unter dem Gruppenkopf: „Σ 250 Schafe · 4 Böcke · 27 Lämmer“ (Einzahl/Mehrzahl),
+  rein aus den aktuellen Daten berechnet (live bei Änderung/Verschiebung). Bei aktivem Filter nur die angezeigten Nadeln + „gefiltert: x von n Nadeln“.

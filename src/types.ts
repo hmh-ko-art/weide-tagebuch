@@ -35,6 +35,7 @@ interface Basis {
 export interface Pin extends Basis {
   typ: 'pin'
   position: LatLng
+  frei?: boolean // 7h: freier Kreis ohne Nadel (Mitte = position, kreis Pflicht, keine Tiere)
   infra?: InfraArt // Weide-Technik statt normaler Nadel: Tränke, Weidezaungerät, Tor, Unterstand, Salzleckstein
   geraet?: Geraet // nur Weidezaungerät: Strom, Ladestand, letzte Prüfung, Spannung, Prüfintervall
   kreis?: Kreis | null // „eingezäunt“: Kreis um die Nadel (null = abgebaut; Feld fehlt bei alten Apps -> Server behält ihn)

@@ -52,11 +52,12 @@ function Overlays(p: KartenProps) {
         polys.push(c as unknown as google.maps.Polygon)
       }
     }
+    for (const v of p.vorschauKreise ?? []) polys.push(new google.maps.Circle({ map, center: v.mitte, radius: v.radius, strokeColor: v.farbe, strokeWeight: 2, strokeOpacity: 0.9, fillColor: v.farbe, fillOpacity: 0.12, clickable: false }) as unknown as google.maps.Polygon)
     const kb = p.kreisBearbeiten
     if (kb && !p.eintraege.some((e) => e.id === kb.id && e.typ === 'pin' && e.kreis)) polys.push(new google.maps.Circle({ map, center: kb.mitte, radius: kb.radius, strokeColor: FARBE_AKTIV, strokeWeight: 2.5, fillColor: kb.farbe, fillOpacity: 0.38, clickable: false }) as unknown as google.maps.Polygon)
     return () => polys.forEach((x) => x.setMap(null))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [map, p.eintraege, p.ausgewaehlt, p.hervor.join(), p.kreisBearbeiten?.radius, p.kreisBearbeiten?.farbe, p.kreisBearbeiten?.mitte.lat, p.kreisBearbeiten?.mitte.lng])
+  }, [map, p.eintraege, p.ausgewaehlt, p.hervor.join(), p.kreisBearbeiten?.radius, p.kreisBearbeiten?.farbe, p.kreisBearbeiten?.mitte.lat, p.kreisBearbeiten?.mitte.lng, (p.vorschauKreise ?? []).map((v) => `${v.mitte.lat},${v.mitte.lng},${v.radius}`).join('|')])
 
   useEffect(() => {
     if (!map || !p.zeichenPunkte.length) return
@@ -102,7 +103,7 @@ export default function GoogleKarte(p: KartenProps) {
         onCameraChanged={(e) => p.onMitte(e.detail.center)}
       >
         {p.eintraege.map((e) =>
-          e.typ === 'pin' ? (
+          e.typ === 'pin' && !e.frei ? (
             <AdvancedMarker key={e.id} position={e.position} title={[e.titel, spannungLetzte(e) ? `⚡ ${kvText(spannungLetzte(e)!.kv)}` : ''].filter(Boolean).join(' · ') || undefined} onClick={() => p.onAuswahl(e.id)}
               draggable={p.verschiebbar.includes(e.id)} onDragEnd={(ev) => { const ll = ev.latLng; if (ll) p.onVerschieben(e.id, { lat: ll.lat(), lng: ll.lng() }) }}>
               <div dangerouslySetInnerHTML={{ __html: e.infra ? infraSvg(e.infra, 30, e.id === p.ausgewaehlt, !!p.warnIds?.includes(e.id)) : nadelHtml(pinFarbe(e), e.id === p.ausgewaehlt, p.hervor.includes(pinFarbe(e)), p.nummern[e.id]) }} />

@@ -755,7 +755,17 @@ button.klein { padding: 6px 10px; font-size: .88rem; flex: none; }
   .wz-nadel:hover:not(:disabled) { background: #2a6b3b; color: #fff; }
   .wz-auf { min-height: 48px; }
   .liste-werkzeug-kopf { display: flex; gap: 6px; align-items: stretch; padding-bottom: 8px; border-bottom: 1px solid #e3dccb; position: sticky; top: -10px; background: inherit; z-index: 2; margin-top: -2px; }
-  .liste-werkzeuge { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; flex: 1; }
+  .liste-werkzeuge { display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px; flex: 1; }
   .liste-werkzeuge .wz { min-height: 52px; }
   .wz-zu { width: 36px; min-height: 52px; padding: 0; }
 }
+
+/* 7h: vorläufiger Kreis nach dem Verschieben (bis der Countdown abläuft) */
+.kreis-vorlaeufig { animation: kreis-puls 1.2s ease-in-out infinite; }
+@keyframes kreis-puls { 50% { stroke-opacity: .45; } }
+.strich-muster { display: inline-block; width: 22px; height: 0; border-top: 2.5px dashed currentColor; vertical-align: middle; margin: 0 2px; }
+.frei-kreis-label { font-size: 12px; }
+.frei-kreis-symbol { display: inline-block; width: 18px; height: 18px; border-radius: 50%; border: 3px solid; vertical-align: -2px; margin-right: 4px; }
+.freie-kreise { margin-top: 8px; border-top: 1px solid #e3dccb; padding-top: 6px; }
+.freie-kreise summary { cursor: pointer; font-weight: 700; color: #1e4d2b; padding: 4px 0; }
+.frei-kreis-symbol.klein { width: 12px; height: 12px; border-width: 2.5px; vertical-align: -1px; margin-right: 2px; }

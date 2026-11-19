@@ -14,16 +14,16 @@ import { nadelHtml } from './map/nadel'
 import { SpannungZeile } from './spannung/Spannung'
 import { schwelleLesen, schwelleSetzen } from './spannung/schwelle'
 import * as SP from '../server/spannung.js'
-import { KreisDetail, KreisLeiste, KreisPop, kreisAendern, kreisAnzahl, kreisAusEdit, kreisNachVerschieben, kreisStart, kreisVorgaben, kreisVorgabenSetzen, type KreisEdit } from './kreis/Kreis'
+import { FreiKreisDetail, KreisDetail, KreisLeiste, KreisPop, kreisAendern, kreisAnzahl, kreisAusEdit, kreisNachVerschieben, kreisStart, kreisVorgaben, kreisVorgabenSetzen, type KreisEdit } from './kreis/Kreis'
 import * as FL from '../server/flaechen.js'
 import type { Pacht } from '../server/flaechen.js'
 import { InfraDetail, InfraFormular, InfraListe, InfraSymbol, LinienSymbol, useInfraAus, type PruefNeu } from './infra/Infra'
-import { geraeteFaellig, istInfra, istLinie, istNormal, laengeText, linienArt, linienLaenge, naechsteStelle, netzAnzahl, pruefungEintragen, zaunUmFlaeche, TOR_BREITE, gesamtLaenge } from '../server/infrastruktur.js'
+import { geraeteFaellig, istFrei, istInfra, istLinie, istNormal, laengeText, linienArt, linienLaenge, naechsteStelle, netzAnzahl, pruefungEintragen, zaunUmFlaeche, TOR_BREITE, gesamtLaenge } from '../server/infrastruktur.js'
 import { KarteLoeschenAbschnitt, GeloeschtHinweis } from './recht/Loeschen'
 import { googleNaviLink, routeBerechnen, routeText } from './route'
 import { eintragDatum, tagText, monatText, istAusblendbar, TIERARTEN, tierText, tierSymbolHtml, tierSummen, type Einheit, type Tierart, FARBEN, FLAECHEN_FARBEN, FLAECHE_STANDARD, START, STANDARD_FARBE, datum, farbName, hektar, mitte, neueId, notizenSortiert, pinFarbe, gruppenVorschlag, gruppenFarbe, gruppenOrdnung, naechsteGruppenFarbe, tierKurz, GRUPPEN_FARBEN, type Gruppe, type Eintrag, type Notiz, type Fokus, type LatLng, type Route, type Pin } from './types'
 
-type Modus = 'ansicht' | 'pin' | 'flaeche' | 'linie' | 'punkte' | 'tor' | 'kreis'
+type Modus = 'ansicht' | 'pin' | 'flaeche' | 'linie' | 'punkte' | 'tor' | 'kreis' | 'freikreis'
 type Panel = null | 'liste' | 'einstellungen' | 'nutzer' | 'profil' | 'hof' | 'austausch' | 'meinedaten' | 'weideplan' | 'flaechen'
 
 // Aktuell angemeldeter Nutzer (geteilte Karte) – für Autor neuer Notizen
@@ -58,7 +58,7 @@ function useDesktop() {
 }
 // Ziehen aus der Seitenleiste: Vorschaubild = Nadel, Spitze unter dem Mauszeiger (Ablegepunkt = Nadelposition)
 const ZIEH_TYP = 'application/x-flockmap'
-function ziehStart(ev: React.DragEvent, art: 'pin' | 'flaeche' | 'linie', farbe: string) {
+function ziehStart(ev: React.DragEvent, art: 'pin' | 'flaeche' | 'linie' | 'kreis', farbe: string) {
   ev.dataTransfer.setData(ZIEH_TYP, art); ev.dataTransfer.setData('text/plain', `flockmap:${art}`); ev.dataTransfer.effectAllowed = 'copy'
   if (art !== 'pin') return
   const el = document.createElement('div'); el.className = 'zieh-bild'; el.innerHTML = nadelHtml(farbe, true)
@@ -181,15 +181,28 @@ export default function App() {
   const faellig = useMemo(() => faelligAnzahl(k.weideplan), [k.weideplan]) + geraeteDran.length + fristenDran.length
   const planAn = planFarben && !!k.weideplan?.belegungen.length
   // Zuletzt verschobene Nadel (für „Rückgängig“)
-  const [verschoben, setVerschoben] = useState<{ id: string; alt: LatLng; nr: number; seit?: number; kreise?: Pick<Pin, 'kreis' | 'kreiseStehen'>; neuerKreis?: boolean } | null>(null)
+  // vorlaeufig (7h): Nadel aus ihrem festen Kreis verschoben – alter Kreis bleibt / neuer Kreis entsteht erst NACH dem Countdown
+  // (bis dahin nur gestrichelte Vorschau, gespeichert/synchronisiert wird nur die Position; erneutes Verschieben ersetzt die Vorschau, Rückgängig verwirft sie)
+  const [verschoben, setVerschoben] = useState<{ id: string; alt: LatLng; nr: number; seit?: number; kreise?: Pick<Pin, 'kreis' | 'kreiseStehen'>; vorlaeufig?: boolean } | null>(null)
   const [neuGesetzt, setNeuGesetzt] = useState<{ id: string; n: number } | null>(null)
   useEffect(() => { if (!neuGesetzt) return; const t = setTimeout(() => setNeuGesetzt(null), rueckS * 1000); return () => clearTimeout(t) }, [neuGesetzt, rueckS])
   const [kreisPop, setKreisPop] = useState<{ id: string; stehenId: string | null; x: number; y: number } | null>(null)
+  // Countdown abgelaufen -> vorläufige Kreise endgültig machen (mit dem aktuellen Stand der Nadel)
+  const verschobenFertigRef = useRef<(v: NonNullable<typeof verschoben>) => void>(() => {})
+  const verschobenRef = useRef(verschoben); verschobenRef.current = verschoben
   useEffect(() => {
     if (!verschoben) return
-    const t = setTimeout(() => setVerschoben(null), rueckS * 1000)
+    const rest = Math.max(0, rueckS * 1000 - (Date.now() - (verschoben.seit ?? Date.now())))
+    const t = setTimeout(() => { verschobenFertigRef.current(verschoben); setVerschoben(null) }, rest)
     return () => clearTimeout(t)
   }, [verschoben, rueckS])
+  // App geht in den Hintergrund / wird geschlossen: sofort endgültig machen (nichts bleibt halb)
+  useEffect(() => {
+    const f = () => { const v = verschobenRef.current; if (v && document.visibilityState === 'hidden') { verschobenFertigRef.current(v); setVerschoben(null) } }
+    const g = () => { const v = verschobenRef.current; if (v) verschobenFertigRef.current(v) }
+    document.addEventListener('visibilitychange', f); window.addEventListener('pagehide', g)
+    return () => { document.removeEventListener('visibilitychange', f); window.removeEventListener('pagehide', g) }
+  }, [])
   const mitteRef = useRef<LatLng>(START)
   const routeNr = useRef(0)
 
@@ -233,7 +246,7 @@ export default function App() {
     const e: Eintrag = { id: neueId(), typ: 'pin', position: { lat: p.lat, lng: p.lng }, farbe: localStorage.getItem('wt-letzte-farbe') || STANDARD_FARBE, titel: '', notizen: [], einheiten: [], ...(k.ich ? { erstelltVon: k.ich.id } : {}), erstellt: jetzt, geaendert: jetzt }
     k.speichern(e)
     setModus('ansicht')
-    setVerschoben(null)
+    verschobenAbschliessen()
     setAusgewaehlt(e.id)
     setNeuGesetzt({ id: e.id, n: Date.now() })
     setFokus({ ...e.position, n: Date.now(), nurSichtbar: true })
@@ -256,28 +269,50 @@ export default function App() {
     }
   }, [standort, meinStandort])
 
-  // Nadel per Drag-and-drop verschoben: Position speichern (Server prüft das Recht), Rückgängig anbieten
+  // Nadel per Drag-and-drop verschoben: Position speichern (Server prüft das Recht), Rückgängig anbieten.
+  // Kreise ändern sich dabei NICHT sofort: ein fester Kreis, aus dem die Nadel heraus versetzt wurde, wird erst nach dem
+  // Countdown „zurückgelassen“ und der neue Kreis gesetzt (vorläufig = gestrichelt). So entsteht keine Kreis-Spur.
+  const verschobenFertig = (v: NonNullable<typeof verschoben>) => {
+    if (!v.vorlaeufig) return
+    const e = k.eintraege.find((x) => x.id === v.id)
+    if (!e || e.typ !== 'pin') return
+    const kr = kreisNachVerschieben(e, e.position, k.karteId || 'lokal')
+    if (kr) k.speichern({ ...e, ...kr, geaendert: new Date().toISOString() })
+  }
+  verschobenFertigRef.current = verschobenFertig
+  const verschobenAbschliessen = () => { if (verschoben) verschobenFertig(verschoben); setVerschoben(null) }
   const nadelVerschieben = (id: string, neu: LatLng) => {
     const e = k.eintraege.find((x) => x.id === id)
     if (!e || e.typ !== 'pin') return
     if (Math.abs(e.position.lat - neu.lat) < 1e-9 && Math.abs(e.position.lng - neu.lng) < 1e-9) return
-    const kr = kreisNachVerschieben(e, neu, k.karteId || 'lokal')
-    k.speichern({ ...e, position: neu, ...(kr ?? {}), geaendert: new Date().toISOString() })
+    if (verschoben && verschoben.id !== id) verschobenFertig(verschoben) // andere Nadel: deren Kreise jetzt endgültig
+    const v = verschoben?.id === id ? verschoben : null
+    k.speichern({ ...e, position: neu, geaendert: new Date().toISOString() })
     setMeldung('')
-    const vorher = { kreis: e.kreis ?? null, kreiseStehen: e.kreiseStehen ?? [] }
-    setVerschoben((v) => ({ id, alt: v?.id === id ? v.alt : e.position, nr: (v?.nr ?? 0) + 1, seit: Date.now(), kreise: v?.id === id && v.kreise ? v.kreise : vorher, neuerKreis: !!kr || (v?.id === id && !!v.neuerKreis) }))
+    const vorlaeufig = !!kreisNachVerschieben(e, neu, k.karteId || 'lokal')
+    setVerschoben({ id, alt: v ? v.alt : e.position, nr: (v?.nr ?? 0) + 1, seit: Date.now(), kreise: v?.kreise ?? { kreis: e.kreis ?? null, kreiseStehen: e.kreiseStehen ?? [] }, vorlaeufig })
   }
   const verschiebenRueckgaengig = () => {
     if (!verschoben) return
     const e = k.eintraege.find((x) => x.id === verschoben.id)
-    if (e && e.typ === 'pin') k.speichern({ ...e, position: verschoben.alt, ...(verschoben.kreise ?? {}), geaendert: new Date().toISOString() })
+    if (e && e.typ === 'pin') k.speichern({ ...e, position: verschoben.alt, geaendert: new Date().toISOString() })
     setVerschoben(null)
   }
+  // gestrichelte Vorschau des neuen Kreises während des Countdowns
+  const vorschauKreise = useMemo(() => {
+    if (!verschoben?.vorlaeufig) return []
+    const e = k.eintraege.find((x) => x.id === verschoben.id)
+    if (!e || e.typ !== 'pin') return []
+    const kr = kreisNachVerschieben(e, e.position, k.karteId || 'lokal')
+    return kr?.kreis ? [{ mitte: kr.kreis.mitte, radius: kr.kreis.radius, farbe: kr.kreis.farbe || pinFarbe(e) }] : []
+  }, [verschoben, k.eintraege, k.karteId])
 
   const waehle = (id: string, pos?: LatLng) => {
     if (modus === 'tor') { if (id === torId && pos) torUmschalten(pos); return }
     if ((modus === 'linie' || modus === 'flaeche') && pos) { setZeichenPunkte((l) => [...l, pos]); return } // darf an/in anderen Einträgen ansetzen
     if (modus === 'pin' && pos) { if (!formular) neuerPin(pos); return } // Nadel auf eine Fläche/Linie setzen
+    if (modus === 'freikreis' && pos) { freierKreisAn(pos); return }
+    if (modus === 'kreis' && pos) { setKreisEdit((x) => (x ? { ...x, mitte: pos, gebunden: false } : x)); return }
     if (modus !== 'ansicht' && modus !== 'pin') return
     setAusgewaehlt(id)
     setPanel(null)
@@ -294,10 +329,20 @@ export default function App() {
   const starteNadel = () => { setFabAuf(false); abwaehlen(); listeZuHandy(); setModus('pin') }
   const starteFlaeche = (start?: LatLng) => { setFabAuf(false); abwaehlen(); listeZuHandy(); setZeichenPunkte(start ? [start] : []); setModus('flaeche') }
   const starteZaun = (start?: LatLng) => { setFabAuf(false); abwaehlen(); listeZuHandy(); setZeichenPunkte(start ? [start] : []); if (infraAus.aus.includes('__alle')) infraAus.umschalten('__alle'); setModus('linie') }
+  // Freier Kreis (7h): Tippen setzt die Mitte, dann Radius/Farbe wie beim Kreis um eine Nadel
+  const freierKreisAn = (p: LatLng) => {
+    const v = kreisVorgaben(k.karteId || 'lokal')
+    setKreisPop(null); abwaehlen()
+    setKreisEdit({ id: neueId(), radius: v.radius, farbe: v.farbe || FLAECHE_STANDARD, gebunden: false, mitte: { lat: p.lat, lng: p.lng }, neu: true, alsStandard: false, frei: true })
+    setModus('kreis')
+  }
+  const starteKreis = (start?: LatLng) => { setFabAuf(false); abwaehlen(); listeZuHandy(); if (start) freierKreisAn(start); else setModus('freikreis') }
+  const freierKreisAendern = (pe: Pin) => { setKreisPop(null); setKreisEdit({ id: pe.id, radius: pe.kreis?.radius ?? FL.KREIS_STANDARD, farbe: pe.kreis?.farbe || pinFarbe(pe), gebunden: false, mitte: pe.position, neu: false, alsStandard: false, frei: true }); setModus('kreis') }
+  const freierKreisWeg = (pe: Pin) => { k.loeschen(pe.id); if (ausgewaehlt === pe.id) abwaehlen(); setKreisPop(null); setMeldung('Freier Kreis entfernt – abgebaut ✂️') }
   const kartenAblage = (art: string, p: LatLng) => {
     if (!k.darfBearbeiten || formular || modus !== 'ansicht') return
     setKreisPop(null)
-    if (art === 'pin') { abwaehlen(); neuerPin(p) } else if (art === 'flaeche') starteFlaeche(p); else if (art === 'linie') starteZaun(p)
+    if (art === 'pin') { abwaehlen(); neuerPin(p) } else if (art === 'flaeche') starteFlaeche(p); else if (art === 'linie') starteZaun(p); else if (art === 'kreis') starteKreis(p)
   }
   const werkzeugeFrei = modus === 'ansicht' && !formular
   const ziehFarbe = localStorage.getItem('wt-letzte-farbe') || STANDARD_FARBE
@@ -307,6 +352,7 @@ export default function App() {
       <button className="wz" disabled={!werkzeugeFrei} onClick={() => meinStandort()} title="Mein Standort"><span className="wz-i">📍</span><span>Standort</span></button>
       {k.darfBearbeiten && <button className="wz" disabled={!werkzeugeFrei} draggable={werkzeugeFrei} onDragStart={(ev) => ziehStart(ev, 'flaeche', ziehFarbe)} onClick={() => starteFlaeche()} title="Fläche zeichnen – klicken, oder auf die Karte ziehen (erster Eckpunkt)"><span className="wz-i">⬠</span><span>Fläche</span></button>}
       {k.darfBearbeiten && <button className="wz" disabled={!werkzeugeFrei} draggable={werkzeugeFrei} onDragStart={(ev) => ziehStart(ev, 'linie', ziehFarbe)} onClick={() => starteZaun()} title="Zaun, Weg oder Graben zeichnen – klicken, oder auf die Karte ziehen (erster Punkt)"><span className="wz-i">〰</span><span>Zaun</span></button>}
+      {k.darfBearbeiten && <button className="wz" disabled={!werkzeugeFrei} draggable={werkzeugeFrei} onDragStart={(ev) => ziehStart(ev, 'kreis', ziehFarbe)} onClick={() => starteKreis()} title="Freier Kreis (ohne Nadel) – klicken und Mitte in die Karte klicken, oder auf die Karte ziehen"><span className="wz-i">◯</span><span>Kreis</span></button>}
     </div>
   )
 
@@ -315,6 +361,7 @@ export default function App() {
     if (formular) return
     if (modus === 'flaeche' || modus === 'linie') { setZeichenPunkte((l) => [...l, p]); return }
     if (modus === 'punkte') { setBearbeiten((b) => (b ? { ...b, sel: null } : b)); return }
+    if (modus === 'freikreis') { freierKreisAn(p); return }
     if (modus === 'kreis') { setKreisEdit((x) => (x ? { ...x, mitte: p, gebunden: false } : x)); return } // Tippen setzt die Mitte fest (bleibt am Standort)
     if (modus === 'tor') { const e = k.eintraege.find((x) => x.id === torId); if (e && istLinie(e)) torUmschalten(p); return }
     if (modus === 'ansicht' && ausgewaehlt) { abwaehlen(); return }
@@ -382,7 +429,7 @@ export default function App() {
   }
 
   const loeschen = (e: Eintrag) => {
-    if (!confirm(e.titel ? `„${e.titel}“ wirklich löschen?` : `Diese ${istInfra(e) ? 'Markierung' : e.typ === 'pin' ? 'Nadel' : e.typ === 'linie' ? 'Linie' : 'Fläche'} ohne Namen wirklich löschen?`)) return
+    if (!confirm(e.titel ? `„${e.titel}“ wirklich löschen?` : `Diese${istFrei(e) ? 'n' : ''} ${istInfra(e) ? 'Markierung' : istFrei(e) ? 'freien Kreis' : e.typ === 'pin' ? 'Nadel' : e.typ === 'linie' ? 'Linie' : 'Fläche'} ohne Namen wirklich löschen?`)) return
     k.loeschen(e.id)
     abwaehlen()
     setFormular(null)
@@ -485,6 +532,7 @@ export default function App() {
           } : undefined}
           onKreisRadius={(r) => setKreisEdit((x) => (x ? { ...x, radius: Math.min(FL.KREIS_MAX, r) } : x))}
           spannungSchwelle={schwelle}
+          vorschauKreise={vorschauKreise}
           warnIds={geraeteDran.map((x) => x.eintrag.id)}
           route={route}
           standort={standort}
@@ -507,7 +555,7 @@ export default function App() {
           <button className={`werkzeug-knopf${beschriftung ? ' an' : ''}`} aria-pressed={beschriftung} title={beschriftung ? 'Beschriftung ausblenden' : 'Beschriftung einblenden'} onClick={() => setBeschriftung((b) => !b)}>
             <Icon name="etikett" /><small>{beschriftung ? 'an' : 'aus'}</small>
           </button>
-          {k.eintraege.some((e) => !istNormal(e)) && (
+          {k.eintraege.some((e) => !istNormal(e) && !istFrei(e)) && (
             <button className={`werkzeug-knopf${!infraAus.aus.includes('__alle') ? ' an' : ''}`} aria-pressed={!infraAus.aus.includes('__alle')} title={infraAus.aus.includes('__alle') ? 'Zäune & Wasser einblenden' : 'Zäune & Wasser ausblenden'} aria-label="Zäune und Wasser auf der Karte" onClick={() => infraAus.umschalten('__alle')}>
               <svg className="icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M4 5v15M12 5v15M20 5v15M4 9h16M4 15h16" /></svg><small>{infraAus.aus.includes('__alle') ? 'aus' : 'Zaun'}</small>
             </button>
@@ -537,6 +585,7 @@ export default function App() {
               <>
                 <button className="fab" onClick={() => starteFlaeche()}>⬠<span>Fläche</span></button>
                 <button className="fab" title="Zaun, Weg oder Graben zeichnen" onClick={() => starteZaun()}>〰<span>Zaun</span></button>
+                <button className="fab" title="Freier Kreis (ohne Nadel)" onClick={() => starteKreis()}>◯<span>Kreis</span></button>
                 <button className="fab haupt-fab" onClick={starteNadel}>＋<span>Nadel</span></button>
                 <button className="fab fab-schalter" aria-expanded={fabAuf} aria-label={fabAuf ? 'Menü schließen' : 'Hinzufügen: Nadel, Standort, Fläche, Zaun'} onClick={() => setFabAuf(!fabAuf)}><span className="fab-plus" aria-hidden="true">＋</span></button>
               </>
@@ -563,6 +612,13 @@ export default function App() {
             </div>
           )
         })()}
+
+        {modus === 'freikreis' && (
+          <div className="leiste setz-leiste" role="dialog" aria-label="Freien Kreis setzen">
+            <p className="setz-hinweis">◯ <strong>{istHandy() ? 'Tippe' : 'Klicke'} auf die Karte – dort kommt die Mitte des freien Kreises hin</strong> (ohne Nadel). Danach Radius und Farbe wählen.</p>
+            <div className="knoepfe"><button onClick={() => setModus('ansicht')}>Abbrechen</button></div>
+          </div>
+        )}
 
         {modus === 'flaeche' && (
           <div className="leiste">
@@ -606,8 +662,34 @@ export default function App() {
 
         {modus === 'kreis' && kreisEdit && (() => {
           const pe = k.eintraege.find((x) => x.id === kreisEdit.id)
-          if (!pe || pe.typ !== 'pin') return null
           const kid = k.karteId || 'lokal'
+          if (kreisEdit.frei) {
+            const fp = pe?.typ === 'pin' ? pe : null
+            const andereF = k.eintraege.filter((x) => x.typ === 'pin' && x.kreis && x.id !== kreisEdit.id && kannEintrag(x) && x.kreis.radius !== Math.round(kreisEdit.radius))
+            const zurueck = () => { setKreisEdit(null); setModus('ansicht'); if (fp) setAusgewaehlt(fp.id) }
+            return <KreisLeiste k={kreisEdit} name={fp?.titel || ''} set={setKreisEdit} standard={kreisVorgaben(kid).radius} andere={andereF.length}
+              onSpeichern={() => {
+                const jetzt = new Date().toISOString()
+                const kr = FL.kreisSauber({ radius: Math.max(FL.KREIS_MIN, Math.round(kreisEdit.radius)), farbe: kreisEdit.farbe, gebunden: true, seit: fp?.kreis?.seit ?? jetzt.slice(0, 10) }, kreisEdit.mitte)
+                if (!kr) return
+                const e: Eintrag = fp
+                  ? { ...fp, position: { ...kreisEdit.mitte }, farbe: kr.farbe ?? fp.farbe, kreis: kr, geaendert: jetzt }
+                  : { id: kreisEdit.id, typ: 'pin', frei: true, position: { ...kreisEdit.mitte }, farbe: kr.farbe ?? kreisEdit.farbe, titel: '', notizen: [], einheiten: [], kreis: kr, ...(k.ich ? { erstelltVon: k.ich.id } : {}), erstellt: jetzt, geaendert: jetzt }
+                k.speichern(e)
+                kreisVorgabenSetzen(kid, { ...(kr.farbe ? { farbe: kr.farbe } : {}), ...(kreisEdit.alsStandard ? { radius: kr.radius } : {}) })
+                setMeldung(`${fp ? 'Freier Kreis gespeichert' : 'Freier Kreis gesetzt ◯'} · ${kr.radius} m`)
+                setKreisEdit(null); setModus('ansicht'); setAusgewaehlt(e.id)
+              }}
+              onAlle={() => {
+                const r = Math.max(FL.KREIS_MIN, Math.round(kreisEdit.radius))
+                if (!window.confirm(`Radius ${r} m auf ${andereF.length === 1 ? 'den anderen Kreis' : `alle ${andereF.length} anderen Kreise`} übernehmen?`)) return
+                const jetzt = new Date().toISOString()
+                andereF.forEach((x) => { if (x.typ !== 'pin' || !x.kreis) return; const kr = FL.kreisSauber({ ...x.kreis, radius: r }, x.position); if (kr) k.speichern({ ...x, kreis: kr, geaendert: jetzt }) })
+                kreisVorgabenSetzen(kid, { radius: r }); setKreisEdit({ ...kreisEdit, radius: r, alsStandard: true })
+              }}
+              onAbbrechen={zurueck} />
+          }
+          if (!pe || pe.typ !== 'pin') return null
           const andere = k.eintraege.filter((x) => x.typ === 'pin' && x.kreis && x.id !== pe.id && kannEintrag(x) && x.kreis.radius !== Math.round(kreisEdit.radius))
           return <KreisLeiste k={kreisEdit} name={pe.titel} set={setKreisEdit} standard={kreisVorgaben(kid).radius} andere={andere.length}
             onSpeichern={(gebunden) => {
@@ -669,8 +751,9 @@ export default function App() {
                 onGeprueft={(x) => { k.geprueft(auswahl.id, x); setMeldung('Prüfung eingetragen ✓') }}
                 onPunkte={() => punkteStart(auswahl)} onTore={() => { setTorId(auswahl.id); setModus('tor') }} onZaun={() => zaunUm(auswahl)}
                 onWahl={(id) => { const e = k.eintraege.find((x) => x.id === id); if (e) { fliege(mitte(e)); waehle(id) } }} />
-              {auswahl.typ === 'pin' && !auswahl.infra && <SpannungZeile e={auswahl} darf={k.darfBearbeiten} schwelle={schwelle} onMessen={(kv) => { k.spannungMessen(auswahl.id, kv); setMeldung(`⚡ ${SP.kvText(kv)} gespeichert${kv < schwelle ? ' – unter der Warnschwelle!' : ''}`) }} />}
-              {auswahl.typ === 'pin' && <KreisDetail e={auswahl} karte={k.karteId || 'lokal'} darf={k.darfBearbeiten && kannEintrag(auswahl)}
+              {auswahl.typ === 'pin' && !auswahl.infra && !auswahl.frei && <SpannungZeile e={auswahl} darf={k.darfBearbeiten} schwelle={schwelle} onMessen={(kv) => { k.spannungMessen(auswahl.id, kv); setMeldung(`⚡ ${SP.kvText(kv)} gespeichert${kv < schwelle ? ' – unter der Warnschwelle!' : ''}`) }} />}
+              {istFrei(auswahl) && <FreiKreisDetail e={auswahl} darf={k.darfBearbeiten && kannEintrag(auswahl)} onAendern={() => freierKreisAendern(auswahl)} onAbgebaut={() => freierKreisWeg(auswahl)} />}
+              {auswahl.typ === 'pin' && !auswahl.frei && <KreisDetail e={auswahl} karte={k.karteId || 'lokal'} darf={k.darfBearbeiten && kannEintrag(auswahl)}
                 onEinkreisen={() => { const ke = kreisStart(auswahl, k.karteId || 'lokal'); setKreisEdit(ke); setModus('kreis'); setFokus({ ...(auswahl.kreis && auswahl.kreis.gebunden === false ? auswahl.kreis.mitte : auswahl.position), n: Date.now(), nurSichtbar: true }) }}
                 onAbgebaut={(sid) => { k.speichern({ ...auswahl, ...kreisAendern(auswahl, sid ?? null, () => null), geaendert: new Date().toISOString() }); setMeldung('Kreis entfernt – abgebaut ✂️') }} />}
               {auswahl.typ === 'flaeche' && <SteckbriefDetail e={auswahl} pacht={k.pacht[auswahl.id]} istAdmin={k.istAdmin} darfBearbeiten={k.darfBearbeiten} onErledigt={(fid, d) => { k.fristErledigt(auswahl.id, fid, d); setMeldung(d ? 'Frist erledigt ✓' : 'Wieder offen') }} />}
@@ -730,6 +813,9 @@ export default function App() {
           const kr = kreisPop.stehenId == null ? pe.kreis : pe.kreiseStehen?.find((x) => x.id === kreisPop.stehenId)
           if (!kr) return null
           const zu = () => setKreisPop(null)
+          if (istFrei(pe)) return <KreisPop x={kreisPop.x} y={kreisPop.y} titel={`${pe.titel || 'Freier Kreis'} · ${kr.radius} m`} farbe={kr.farbe || pinFarbe(pe)} onZu={zu}
+            onFarbe={(f) => { k.speichern({ ...pe, farbe: f, ...kreisAendern(pe, null, (x) => ({ ...x, farbe: f })), geaendert: new Date().toISOString() }); kreisVorgabenSetzen(k.karteId || 'lokal', { farbe: f }); setMeldung('Kreisfarbe geändert') }}
+            onAendern={() => freierKreisAendern(pe)} onAbgebaut={() => freierKreisWeg(pe)} />
           return <KreisPop x={kreisPop.x} y={kreisPop.y} titel={`${pe.titel || 'Nadel'}${kreisPop.stehenId ? ' · alter Standort' : ''} · ${kr.radius} m`} farbe={kr.farbe || pinFarbe(pe)} onZu={zu}
             onFarbe={(f) => { k.speichern({ ...pe, ...kreisAendern(pe, kreisPop.stehenId, (x) => ({ ...x, farbe: f })), geaendert: new Date().toISOString() }); kreisVorgabenSetzen(k.karteId || 'lokal', { farbe: f }); setMeldung(`Kreisfarbe: ${farbName(f)}`); zu() }}
             onAendern={kreisPop.stehenId == null ? () => { zu(); setKreisEdit(kreisStart(pe, k.karteId || 'lokal')); setModus('kreis') } : undefined}
@@ -742,7 +828,7 @@ export default function App() {
           </div>
         )}
         {!meldung && verschoben && (
-          <div className={`toast mit-knopf${verschoben.neuerKreis ? ' lang' : ''}`} role="status">{verschoben.neuerKreis ? 'Nadel verschoben · alter Kreis bleibt stehen, neuer Kreis gesetzt' : 'Nadel verschoben'}<button onClick={verschiebenRueckgaengig}>Rückgängig <Rest bis={(verschoben.seit ?? Date.now()) + rueckS * 1000} /></button></div>
+          <div className={`toast mit-knopf${verschoben.vorlaeufig ? ' lang vorlaeufig' : ''}`} role="status">{verschoben.vorlaeufig ? <span>Nadel verschoben · neuer Kreis <span className="strich-muster" aria-hidden="true" /> (gestrichelt) wird gesetzt, alter bleibt stehen</span> : 'Nadel verschoben'}<button onClick={verschiebenRueckgaengig}>Rückgängig <Rest bis={(verschoben.seit ?? Date.now()) + rueckS * 1000} /></button></div>
         )}
       </main>
     </div>
@@ -766,7 +852,7 @@ function Detail(p: { e: Eintrag; routeInfo: string; darfBearbeiten: boolean; kan
   return (
     <section className="sheet">
       <div className="sheet-kopf">
-        <h2>{istInfra(e) ? <InfraSymbol art={e.infra} groesse={24} /> : istLinie(e) ? <LinienSymbol e={e} /> : e.typ === 'pin' ? (gf && p.nummer ? <span className="nr-kreis" style={{ background: gf, color: hell(gf) ? '#1d2a1d' : '#fff' }}>{p.nummer}</span> : <span className="farbpunkt" style={{ background: pinFarbe(e), width: 16, height: 16 }} />) : <span className="flaechen-symbol" style={{ color: pinFarbe(e) }}>⬠</span>} {e.titel || <span className="ohne-name">ohne Namen</span>}</h2>
+        <h2>{istInfra(e) ? <InfraSymbol art={e.infra} groesse={24} /> : istLinie(e) ? <LinienSymbol e={e} /> : istFrei(e) ? <span className="frei-kreis-symbol" style={{ borderColor: e.kreis?.farbe || pinFarbe(e) }} aria-label="Freier Kreis" /> : e.typ === 'pin' ? (gf && p.nummer ? <span className="nr-kreis" style={{ background: gf, color: hell(gf) ? '#1d2a1d' : '#fff' }}>{p.nummer}</span> : <span className="farbpunkt" style={{ background: pinFarbe(e), width: 16, height: 16 }} />) : <span className="flaechen-symbol" style={{ color: pinFarbe(e) }}>⬠</span>} {e.titel || <span className="ohne-name">ohne Namen</span>}</h2>
         <button className="x" onClick={p.onSchliessen} aria-label="Schließen"><Icon name="x" /></button>
       </div>
       <div className="meta">
@@ -866,7 +952,7 @@ function Formular(p: { gruppeName?: string; start: Eintrag; neu: boolean; istAdm
   const [pruef, setPruef] = useState<PruefNeu>({ an: true, kv: '', stand: '' })
   const [pachtForm, setPachtForm] = useState(() => pachtFormAus(p.pacht))
   const normal = istNormal(e)
-  const art = istInfra(e) ? 'Markierung' : e.typ === 'pin' ? 'Nadel' : e.typ === 'linie' ? 'Linie' : 'Fläche'
+  const art = istInfra(e) ? 'Markierung' : istFrei(e) ? 'Freier Kreis' : e.typ === 'pin' ? 'Nadel' : e.typ === 'linie' ? 'Linie' : 'Fläche'
   return (
     <section className="sheet formular">
       <form onSubmit={(ev) => {
@@ -892,14 +978,14 @@ function Formular(p: { gruppeName?: string; start: Eintrag; neu: boolean; istAdm
           <h2>{p.neu ? `Neue ${art}` : `${art} bearbeiten`}</h2>
           <button type="button" className="x" onClick={p.onAbbrechen} aria-label="Abbrechen"><Icon name="x" /></button>
         </div>
-        {(e.typ === 'pin' || e.typ === 'linie') && <InfraFormular e={e} setE={setE} neu={p.neu} pruef={pruef} setPruef={setPruef} />}
+        {((e.typ === 'pin' && !e.frei) || e.typ === 'linie') && <InfraFormular e={e} setE={setE} neu={p.neu} pruef={pruef} setPruef={setPruef} />}
         <label>Name<input autoFocus={e.typ !== 'pin' || !p.neu} value={e.titel} placeholder={istInfra(e) ? (e.infra === 'geraet' ? 'z. B. Gerät Deich Nord' : e.infra === 'traenke' ? 'z. B. Tränke am Siel' : 'optional') : e.typ === 'linie' ? 'z. B. Netz Koog-Weide 3' : e.typ === 'pin' ? 'z. B. Mutterschafe Deich Nord' : 'z. B. Koog-Weide 3'} onChange={(x) => setE({ ...e, titel: x.target.value })} /></label>
         {p.neu ? (
           <label>Erste Notiz<textarea rows={3} value={ersteNotiz} placeholder="Was ist hier los? Wasser, Zaun, Lämmer …" onChange={(x) => setErsteNotiz(x.target.value)} /></label>
         ) : (
           <p className="hinweis klein">Notizen ({e.notizen.length}) fügst du in der Detailansicht hinzu bzw. bearbeitest sie dort.</p>
         )}
-        {!istInfra(e) && (
+        {!istInfra(e) && !istFrei(e) && (
           <div className="farbwahl">
             <span className="feldname">{e.typ === 'pin' ? 'Farbe der Nadel' : e.typ === 'linie' ? 'Farbe der Linie' : 'Farbe der Fläche'}</span>
             {p.gruppeName && <p className="hinweis klein">Solange die Nadel in der Gruppe „{p.gruppeName}“ ist, zeigt die Karte sie in der Gruppenfarbe. Diese Farbe gilt wieder ohne Gruppe.</p>}
@@ -980,7 +1066,7 @@ function Liste(p: ListeProps) {
   const zeitraumText = zr === 'frei' ? `${von ? tagText(von) : '…'} – ${bis ? tagText(bis) : '…'}` : zr.startsWith('j:') ? `Jahr ${zr.slice(2)}` : zr.startsWith('m:') ? monatText(zr.slice(2)) : ''
   const neuesteZuerst = (a: Eintrag, b: Eintrag) => eintragDatum(b).localeCompare(eintragDatum(a)) || b.geaendert.localeCompare(a.geaendert)
   const alle = typListe.filter(imZeitraum) // Basis für Summen und Farbübersicht
-  const anzahl = { pin: p.eintraege.filter((e) => e.typ === 'pin' && istNormal(e)).length, flaeche: p.eintraege.filter((e) => e.typ === 'flaeche').length, infra: p.eintraege.filter((e) => !istNormal(e)).length }
+  const anzahl = { pin: p.eintraege.filter((e) => e.typ === 'pin' && istNormal(e)).length, flaeche: p.eintraege.filter((e) => e.typ === 'flaeche').length, infra: p.eintraege.filter((e) => !istNormal(e) && !istFrei(e)).length }
   const vorhandeneFarben = [...new Set(alle.map((e) => pinFarbe(e)))]
     .sort((a, b) => { const r = (f: string) => { const i = FLAECHEN_FARBEN.findIndex((x) => x.wert === f); return i < 0 ? 99 : i }; return r(a) - r(b) })
   // Übersicht „Nach Farbe“: je Farbe Anzahl Einträge, Tiere je Art (und bei Flächen Hektar) – nur aktiver Reiter
@@ -1361,6 +1447,21 @@ function Liste(p: ListeProps) {
           )
         })}
       </div>
+      {reiter === 'pin' && (() => {
+        const fk = p.eintraege.filter(istFrei)
+        if (!fk.length) return null
+        return (
+          <details className="freie-kreise" open>
+            <summary>◯ Freie Kreise ({fk.length}) <small>· ≈ {FL.haText(fk.reduce((x, e) => x + (e.kreis ? FL.kreisMasse(e.kreis.radius).ha : 0), 0))}</small></summary>
+            <ul className="liste">{fk.map((e) => (
+              <li key={e.id} data-id={e.id} onClick={() => p.onWahl(e)}>
+                <div className="zeile-kopf"><strong><span className="frei-kreis-symbol klein" style={{ borderColor: e.kreis?.farbe || pinFarbe(e) }} /> {e.titel || <span className="ohne-name">Freier Kreis</span>}</strong></div>
+                <small>◯ {e.kreis?.radius ?? '?'} m · ≈ {e.kreis ? FL.haText(FL.kreisMasse(e.kreis.radius).ha) : ''}{e.kreis?.seit ? ` · seit ${e.kreis.seit.split('-').reverse().join('.')}` : ''}{e.notizen.length ? ` · 📝 ${e.notizen.length}` : ''}</small>
+              </li>
+            ))}</ul>
+          </details>
+        )
+      })()}
       </>}
       {zieh && gezogen && (
         <div className="zieh-geist" style={{ left: zieh.x, top: zieh.y }} aria-hidden="true">

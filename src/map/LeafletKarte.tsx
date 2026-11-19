@@ -141,7 +141,7 @@ export default function LeafletKarte(p: KartenProps) {
         const kr = ak.kreis, mi = ak.mitte, f = kr.farbe || pinFarbe(e), alt = ak.stehenId != null
         L.circle(ll(mi), { radius: kr.radius, color: '#000', weight: aktiv ? 6 : 4.5, opacity: alt ? 0.25 : 0.35, fill: false, interactive: false }).addTo(g)
         // Innenfläche nicht antippbar: Tippen in den Kreis setzt eine Nadel genau dort; Farbe über den Rand (Ring) oder langes Drücken
-        L.circle(ll(mi), { radius: kr.radius, color: aktiv ? '#fff' : f, weight: aktiv ? 3.5 : 2.5, fillColor: f, fillOpacity: alt ? 0.28 : aktiv ? 0.45 : 0.38, dashArray: kr.gebunden === false ? undefined : '8 5', className: alt ? 'kreis-alt-linie' : undefined, interactive: false }).addTo(g)
+        L.circle(ll(mi), { radius: kr.radius, color: aktiv ? '#fff' : f, weight: aktiv ? 3.5 : 2.5, fillColor: f, fillOpacity: alt ? 0.28 : aktiv ? 0.45 : 0.38, dashArray: kr.gebunden === false || e.frei ? undefined : '8 5', className: alt ? 'kreis-alt-linie' : undefined, interactive: false }).addTo(g)
         L.circle(ll(mi), { radius: kr.radius, color: '#000', opacity: 0, weight: 22, fill: false, className: 'kreis-ring' })
           .on('click', (ev: L.LeafletMouseEvent) => {
             L.DomEvent.stopPropagation(ev)
@@ -182,6 +182,13 @@ export default function LeafletKarte(p: KartenProps) {
           const txt = `${e.titel.trim().replace(/[<>&"]/g, '')}${e.titel.trim() ? ' · ' : ''}${laengeText(linienLaenge(e))}`
           L.tooltip({ permanent: true, direction: 'center', className: 'linie-label', interactive: false }).setLatLng(ll(punktBei(e, gesamtLaenge(e) / 2))).setContent(txt).addTo(g)
         }
+      } else if (e.typ === 'pin' && e.frei) {
+        // Freier Kreis (ohne Nadel): nur kleiner Mittelpunkt + Name in der Mitte; antippen über den Ring/langes Drücken
+        if (e.id === p.kreisBearbeiten?.id) continue
+        const f = e.kreis?.farbe || pinFarbe(e)
+        L.circleMarker(ll(e.position), { radius: aktiv ? 5 : 3.5, color: '#fff', weight: 1.5, fillColor: f, fillOpacity: 1, interactive: false }).addTo(g)
+        const name = e.titel.trim().replace(/[<>&"]/g, '')
+        if ((p.beschriftung || aktiv) && name) L.tooltip({ permanent: true, direction: 'center', className: 'flaeche-label frei-kreis-label', interactive: false, offset: [0, 14] }).setLatLng(ll(e.position)).setContent(name).addTo(g)
       } else if (e.typ === 'pin') {
         const ziehbar = verschiebbar.has(e.id)
         const m = L.marker([e.position.lat, e.position.lng], { icon: pinIcon(aktiv, labelHtml(e, tiereZu.has(e.id), p.spannungSchwelle ?? 4, p.beschriftung), pinFarbe(e), hervor.has(pinFarbe(e)), p.nummern[e.id]), zIndexOffset: aktiv ? 1000 : hervor.has(pinFarbe(e)) ? 500 : 0, draggable: ziehbar, autoPan: true })
@@ -244,6 +251,20 @@ export default function LeafletKarte(p: KartenProps) {
       m.addTo(g)
     })
   }, [p.bearbeiten])
+
+  // Vorläufige Kreise (7h): nach dem Verschieben einer Nadel bis zum Ende des Rückgängig-Countdowns gestrichelt
+  const vorschauEbene = useRef<L.LayerGroup | null>(null)
+  const vk = p.vorschauKreise ?? []
+  useEffect(() => {
+    if (!map.current) return
+    vorschauEbene.current ??= L.layerGroup().addTo(map.current)
+    const g = vorschauEbene.current
+    g.clearLayers()
+    for (const v of vk) {
+      L.circle(ll(v.mitte), { radius: v.radius, color: '#fff', weight: 4, opacity: 0.8, dashArray: '4 8', fill: false, interactive: false }).addTo(g)
+      L.circle(ll(v.mitte), { radius: v.radius, color: v.farbe, weight: 2.5, dashArray: '4 8', fillColor: v.farbe, fillOpacity: 0.14, className: 'kreis-vorlaeufig', interactive: false }).addTo(g)
+    }
+  }, [vk.map((v) => `${v.mitte.lat},${v.mitte.lng},${v.radius},${v.farbe}`).join('|')])
 
   // Kreis um Nadel bearbeiten: Kreis + Griff am Rand (ziehen = Radius)
   const kreisEbene = useRef<L.LayerGroup | null>(null)

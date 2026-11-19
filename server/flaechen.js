@@ -86,7 +86,12 @@ export function steckbriefSauber(s) {
 export function flaecheSauber(e) {
   spannungFeld(e) // Zaunspannung: nur an normalen Nadeln
   // Kreis um Nadel („eingezäunt“): nur an Nadeln
-  if (e.typ === 'pin') {
+  if (e.typ === 'pin' && e.frei === true) {
+    // freier Kreis: Mitte = Position, ohne Kreis gibt es ihn nicht
+    const k = kreisSauber({ ...(e.kreis || {}), gebunden: true }, e.position)
+    if (!k) return 'Ein freier Kreis braucht einen Radius'
+    e.kreis = k; delete e.kreiseStehen
+  } else if (e.typ === 'pin') {
     const k = kreisSauber(e.kreis, e.position); if (k) e.kreis = k; else delete e.kreis
     const st = kreiseStehenSauber(e.kreiseStehen); if (st.length) e.kreiseStehen = st; else delete e.kreiseStehen
   } else { delete e.kreis; delete e.kreiseStehen }

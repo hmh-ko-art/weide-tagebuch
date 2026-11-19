@@ -16,6 +16,7 @@ export function linienArt(w?: string): (typeof LINIEN_ARTEN)[number]
 export function infraArt(w?: string): (typeof INFRA_ARTEN)[number] | null
 export function istLinie(e: Eintrag | undefined | null): e is Linie
 export function istInfra(e: Eintrag | undefined | null): e is Pin & { infra: InfraArt }
+export function istFrei(e: Eintrag | undefined | null): e is Pin & { frei: true }
 export function istNormal(e: Eintrag): boolean
 export function abstandM(a: LatLng, b: LatLng): number
 export function linienPunkte(e: { punkte: LatLng[]; geschlossen?: boolean }): LatLng[]

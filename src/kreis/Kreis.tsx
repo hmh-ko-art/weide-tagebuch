@@ -3,7 +3,7 @@ import { FARBEN, FLAECHE_STANDARD, pinFarbe, type LatLng, type Pin } from '../ty
 import type { Kreis } from '../../server/flaechen.js'
 import * as FL from '../../server/flaechen.js'
 
-export interface KreisEdit { id: string; radius: number; farbe: string; gebunden: boolean; mitte: LatLng; neu: boolean; alsStandard: boolean }
+export interface KreisEdit { id: string; radius: number; farbe: string; gebunden: boolean; mitte: LatLng; neu: boolean; alsStandard: boolean; frei?: boolean }
 export const KREIS_FARBEN = [{ name: 'Grün', wert: FLAECHE_STANDARD }, ...FARBEN]
 const zahl = (x: number, n = 0) => x.toLocaleString('de-DE', { minimumFractionDigits: n, maximumFractionDigits: n })
 
@@ -94,7 +94,9 @@ export function KreisLeiste(p: { k: KreisEdit; name: string; standard: number; a
   const k = p.k
   return (
     <div className="leiste kreis-leiste" role="dialog" aria-label="Kreis um Nadel">
-      <p><strong>◯ Kreis um „{p.name || 'Nadel'}“</strong> – Griff <span className="kreis-griff-mini">↔</span> am Rand ziehen oder Meter eingeben</p>
+      {k.frei
+        ? <p><strong>◯ {k.neu ? 'Freier Kreis' : `Freier Kreis${p.name ? ` „${p.name}“` : ''}`}</strong> <small>(ohne Nadel)</small> – Griff <span className="kreis-griff-mini">↔</span> am Rand ziehen oder Meter eingeben · Karte antippen verschiebt die Mitte</p>
+        : <p><strong>◯ Kreis um „{p.name || 'Nadel'}“</strong> – Griff <span className="kreis-griff-mini">↔</span> am Rand ziehen oder Meter eingeben</p>}
       <div className="kreis-zeile-form">
         <label className="kreis-radius">Radius (m)<input type="number" inputMode="numeric" min={FL.KREIS_MIN} max={FL.KREIS_MAX} step={1} value={k.radius}
           onChange={(x) => { const r = Number(x.target.value); if (Number.isFinite(r) && r > 0) p.set({ ...k, radius: Math.min(FL.KREIS_MAX, r) }) }}
@@ -110,6 +112,12 @@ export function KreisLeiste(p: { k: KreisEdit; name: string; standard: number; a
         {KREIS_FARBEN.map((f) => <button type="button" key={f.wert} title={f.name} aria-label={f.name} role="radio" aria-checked={k.farbe === f.wert} className={k.farbe === f.wert ? 'aktiv' : ''} style={{ background: f.wert }} onClick={() => p.set({ ...k, farbe: f.wert })} />)}
         <label className="frei" title="Eigene Farbe">eigene:<input type="color" value={k.farbe} onChange={(x) => p.set({ ...k, farbe: x.target.value })} /></label>
       </div>
+      {k.frei ? (
+        <div className="knoepfe">
+          <button className="primaer" onClick={() => p.onSpeichern(false)}>✓ {k.neu ? 'Kreis setzen' : 'Speichern'}</button>
+          <button onClick={p.onAbbrechen}>Abbrechen</button>
+        </div>
+      ) : <>
       <p className="hinweis klein kreis-wahl-titel">Mit einem Tipp speichern:</p>
       <div className="kreis-wahl">
         <button type="button" className={k.gebunden ? 'aktiv' : ''} onClick={() => p.onSpeichern(true)}><span>🔗 An Nadel gebunden</span><small>wandert mit der Nadel</small></button>
@@ -118,6 +126,7 @@ export function KreisLeiste(p: { k: KreisEdit; name: string; standard: number; a
       <div className="knoepfe">
         <button onClick={p.onAbbrechen}>Abbrechen</button>
       </div>
+      </>}
     </div>
   )
 }
@@ -135,6 +144,22 @@ export function KreisPop(p: { x: number; y: number; titel: string; farbe: string
         {p.onAendern && <button onClick={p.onAendern}>Radius …</button>}
         <button onClick={p.onAbgebaut}>✂️ Abgebaut</button>
       </div>
+    </div>
+  )
+}
+
+// Freier Kreis (ohne Nadel) im Detail: Maße, Ändern (Radius/Farbe/Mitte), Abgebaut (= entfernen)
+export function FreiKreisDetail(p: { e: Pin; darf: boolean; onAendern: () => void; onAbgebaut: () => void }) {
+  const k = p.e.kreis
+  if (!k) return null
+  return (
+    <div className="kreis-zeile" style={{ borderColor: k.farbe || pinFarbe(p.e) }}>
+      <p><strong>◯ Freier Kreis</strong> · Radius {zahl(k.radius)} m<br /><small>{kreisText(k.radius)}</small><br />
+        <small>ohne Nadel · bleibt an seinem Platz{k.seit ? ` · seit ${k.seit.split('-').reverse().join('.')}` : ''}</small></p>
+      {p.darf && <div className="knoepfe">
+        <button onClick={p.onAendern}>◯ Kreis ändern</button>
+        <button onClick={p.onAbgebaut}>✂️ Abgebaut</button>
+      </div>}
     </div>
   )
 }

@@ -506,7 +506,7 @@ app.post('/api/karten/:id/eintraege/:eid/spannung', mitKarte('nutzer'), (req, re
   const i = k.eintraege.findIndex((x) => x.id === req.params.eid)
   if (i < 0) return res.status(409).json({ fehler: 'Nadel gibt es nicht mehr', konflikt: { art: 'spannung-weg', titel: '' } })
   const alt = k.eintraege[i]
-  if (alt.typ !== 'pin' || alt.infra) return res.status(400).json({ fehler: 'Spannung nur an Nadeln' })
+  if (alt.typ !== 'pin' || alt.infra || alt.frei) return res.status(400).json({ fehler: 'Spannung nur an Nadeln' })
   const b = req.body ?? {}
   const kv = SP.kvWert(b.kv)
   if (kv === undefined || !WP.tagOk(b.datum) || b.datum > WP.tagPlus(WP.heute(), 1) || b.datum < WP.tagPlus(WP.heute(), -400)) return res.status(400).json({ fehler: 'Ungültige Spannung (0–20 kV)' })

@@ -11,6 +11,7 @@ export interface KartenProps {
   onPunktZiehen?: (i: number, p: LatLng) => void
   onPunktWahl?: (i: number) => void
   onPunktEinfuegen?: (i: number, p: LatLng) => void // neuer Punkt an Stelle i
+  vorschauKreise?: { mitte: LatLng; radius: number; farbe: string }[] // vorläufig (gestrichelt), z. B. neuer Kreis nach dem Verschieben bis der Countdown abläuft
   kreisBearbeiten?: { id: string; mitte: LatLng; radius: number; farbe: string } | null // Kreis um Nadel: Griff zum Ziehen
   onKreisRadius?: (r: number) => void
   onLangDruck?: (p: LatLng, x: number, y: number) => void // langes Drücken / Rechtsklick auf die Karte (Kreis-Farbe)

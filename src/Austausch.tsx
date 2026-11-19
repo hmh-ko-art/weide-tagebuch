@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react'
 import type { useKarte } from './daten'
 import { FLAECHE_STANDARD, STANDARD_FARBE, isoTag, tierText, mitte, neueId, type Einheit, type Eintrag, type Gruppe, type LatLng } from './types'
 import { dateiName, herunterladen, summenBauen, technikBauen, zahl, zeilenBauen } from './austausch/zeilen'
-import { istNormal, linienArt, linienLaenge, laengeText } from '../server/infrastruktur.js'
+import { istFrei, istNormal, linienArt, linienLaenge, laengeText } from '../server/infrastruktur.js'
 import { LinienSymbol, InfraSymbol } from './infra/Infra'
 import { sicherungErzeugen, sicherungLesen } from './austausch/sicherung'
 import type { ImportErgebnis, Vorschlag } from './austausch/kml'
@@ -63,7 +63,7 @@ export function Austausch(p: { k: K; eintraege: Eintrag[]; filter: ExportFilter;
   const auswahl = useMemo(() => (nurGefiltert && p.filter ? p.eintraege.filter((e) => p.filter!.ids.includes(e.id)) : p.eintraege), [nurGefiltert, p.filter, p.eintraege])
   const zeilen = useMemo(() => zeilenBauen(auswahl, k.gruppen), [auswahl, k.gruppen])
   // Zäune & Wasser (eigenes Blatt / Kapitel / KML-Ordner)
-  const technikE = useMemo(() => auswahl.filter((e) => !istNormal(e)), [auswahl])
+  const technikE = useMemo(() => auswahl.filter((e) => !istNormal(e) && !istFrei(e)), [auswahl])
   const technik = useMemo(() => technikBauen(technikE), [technikE])
   const name = k.kartenName || 'FlockMap'
   const leer = !zeilen.length && !technik.length

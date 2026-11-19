@@ -34,14 +34,14 @@ export function spannungSauber(l) {
 // Messung eintragen: gleicher Tag wird überschrieben
 export function spannungEintragen(e, m) {
   const neu = messungSauber(m)
-  if (!e || e.typ !== 'pin' || e.infra || !neu) return e
+  if (!e || e.typ !== 'pin' || e.infra || e.frei || !neu) return e
   return { ...e, spannung: spannungSauber([neu, ...(e.spannung ?? []).filter((x) => x.datum !== neu.datum)]) }
 }
-export const spannungLetzte = (e) => (e && e.typ === 'pin' && !e.infra && e.spannung?.length ? e.spannung[0] : null)
+export const spannungLetzte = (e) => (e && e.typ === 'pin' && !e.infra && !e.frei && e.spannung?.length ? e.spannung[0] : null)
 export const kvText = (kv) => `${kv.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} kV`
 // Eintrag bereinigen (Server bei jedem Speichern/Import): nur an normalen Nadeln
 export function spannungFeld(e) {
-  if (e.typ !== 'pin' || e.infra) { delete e.spannung; return }
+  if (e.typ !== 'pin' || e.infra || e.frei) { delete e.spannung; return }
   const l = spannungSauber(e.spannung)
   if (l.length) e.spannung = l; else delete e.spannung
 }

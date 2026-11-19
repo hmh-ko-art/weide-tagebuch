@@ -31,7 +31,9 @@ export const infraArt = (w) => INFRA_ARTEN.find((a) => a.wert === w) ?? null
 export const istLinie = (e) => e?.typ === 'linie'
 export const istInfra = (e) => e?.typ === 'pin' && !!infraArt(e.infra)
 // „normale“ Einträge (Nadeln mit Tieren/Notizen, Flächen) – ohne Zäune/Technik
-export const istNormal = (e) => !istLinie(e) && !istInfra(e)
+// Freier Kreis (7h): eigener Kreis ohne Nadel – intern eine Nadel mit frei: true, Mitte = Position
+export const istFrei = (e) => e?.typ === 'pin' && e.frei === true
+export const istNormal = (e) => !istLinie(e) && !istInfra(e) && !istFrei(e)
 
 // Entfernung in Metern (Haversine)
 export function abstandM(a, b) {
@@ -156,12 +158,14 @@ export function eintragSauber(e) {
         .map((t) => ({ id: typeof t.id === 'string' ? t.id.slice(0, 64) : `t${Math.round(t.pos)}`, pos: Math.round(t.pos * 10) / 10, breite: Number.isFinite(t.breite) ? Math.max(1, Math.min(20, t.breite)) : TOR_BREITE }))
       if (!e.tore.length) delete e.tore
     } else delete e.tore
-    delete e.infra; delete e.geraet; delete e.position; delete e.herde; delete e.gruppe; delete e.tierlisteModus
+    delete e.infra; delete e.geraet; delete e.frei; delete e.position; delete e.herde; delete e.gruppe; delete e.tierlisteModus
     e.einheiten = [] // Linien haben keine Tiere
     return null
   }
   delete e.linienArt; delete e.geschlossen; delete e.tore
   if (e.typ === 'flaeche') delete e.flaeche
+  if (e.typ === 'pin' && e.frei === true) { delete e.infra; delete e.geraet; delete e.gruppe; delete e.herde; delete e.tierlisteModus; e.einheiten = []; return null }
+  delete e.frei
   if (e.typ !== 'pin' || !infraArt(e.infra)) { delete e.infra; delete e.geraet; return null }
   delete e.gruppe; delete e.herde; delete e.tierlisteModus
   e.einheiten = [] // Weide-Technik hat keine Tiere

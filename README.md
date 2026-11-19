@@ -89,6 +89,24 @@ Code: `server/flaechen.js` (gemeinsam für Server **und** App: Messen, Steckbrie
 - **Übersicht**: Liste → Flächen → „📊 Übersicht, Pacht & Summen“ (Summen gesamt/Pacht/€ je Jahr/je Art, sortierbare Tabelle, Excel/PDF „Flächenverzeichnis“).
 - **Export/Import**: Excel-Blätter „Flächenverzeichnis“, „Flächen-Summen“, „Fristen“; PDF-Kapitel; KML-ExtendedData `flockmap_steckbrief` (+ `flockmap_pacht` nur mit Admin-Option); JSON-Sicherung inkl. Pacht (nur Admin). Import: KML/GeoJSON (FLIK/Schlag/Nutzung aus Attributen geraten, MultiPolygon → mehrere Flächen) und Shapefile-ZIP (.shp/.dbf/.prj; WGS84 oder ETRS89/UTM 32/33 – Gauß-Krüger nicht unterstützt; nur Außenringe).
 
+## Freier Kreis und vorläufige Kreise (7h)
+
+- **Freier Kreis:** ein Kreis ohne Nadel.
+  - Handy: ＋-Menü → **◯ Kreis**, dann auf die Karte tippen.
+  - PC: Seitenleiste → **◯ Kreis** anklicken und in die Karte klicken, oder das Symbol auf die Karte ziehen.
+  - Die Stelle wird die Mitte. Danach Radius (Griff, Zahl oder 10/20/30/50/100), Farbe und optional „Standard-Radius“ wählen, dann **✓ Kreis setzen**. Antippen der Karte verschiebt dabei die Mitte.
+  - Tippen auf den Ring oder langes Drücken öffnet die Palette mit Farbe, **Radius …** und **✂️ Abgebaut** (Abgebaut entfernt den Kreis).
+  - In der Liste steht er im Reiter „Nadeln“ unter **◯ Freie Kreise**, mit Name, Notizen und Löschen wie bei anderen Einträgen.
+  - Export: Excel-Blatt „Einkreisungen“ (Art „Freier Kreis“), PDF und KML (Ordner „Einkreisungen“). Die JSON-Sicherung enthält alles.
+  - Offline und Sync funktionieren. Rechte wie bei Flächen: Anlegen dürfen alle mit Bearbeitungsrecht, ändern die Person, die ihn angelegt hat, oder ein Admin.
+  - Technisch ist ein freier Kreis eine Nadel mit `frei: true` (Mitte = Position). Ältere App-Versionen zeigen ihn als Nadel mit Kreis.
+- **Vorläufige Kreise beim Verschieben:** Wird eine Nadel aus ihrem festen Kreis („bleibt am Standort“) heraus verschoben, ändert sich zunächst nur die Position.
+  - Der neue Kreis erscheint **gestrichelt** mit Countdown, der alte bleibt, wo er war.
+  - Erst wenn der Rückgängig-Countdown (5/10/20 s) abläuft, wird der alte Kreis als „alter Standort“ zurückgelassen und der neue gespeichert.
+  - Erneutes Verschieben innerhalb des Countdowns ersetzt die Vorschau, es entsteht keine Kreis-Spur. Rückgängig verwirft alles.
+  - Geht die App in den Hintergrund oder wird geschlossen, wird sofort endgültig gespeichert.
+  - Gesendet und synchronisiert wird nur die Position und danach der endgültige Zustand.
+
 ## Bedienknöpfe: Handy und PC (7g)
 
 - **Handy (bis 600 px Breite):** Unten rechts ist nur noch ein runder **＋**-Knopf. Antippen öffnet das Menü mit Nadel, Standort, Fläche und Zaun; das ＋ wird zum ×. Das Menü schließt nach einer Auswahl, beim Tippen daneben oder bei einem zweiten Tipp auf ×. Tippen daneben setzt keine Nadel. Wer nur ansehen darf, sieht nur den Standort-Knopf.

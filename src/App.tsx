@@ -93,6 +93,8 @@ export default function App() {
   const [routeInfo, setRouteInfo] = useState<string>('')
   const [standort, setStandort] = useState<LatLng | null>(null)
   // Beschriftung (Namen auf der Karte) an/aus – pro Gerät gespeichert
+  const [rueckS, setRueckS] = useState(() => { const n = Number(localStorage.getItem('wt-rueckgaengig-s')); return [5, 10, 20].includes(n) ? n : 10 })
+  useEffect(() => { localStorage.setItem('wt-rueckgaengig-s', String(rueckS)) }, [rueckS])
   const [beschriftung, setBeschriftung] = useState(() => localStorage.getItem('wt-beschriftung') !== 'aus')
   useEffect(() => { localStorage.setItem('wt-beschriftung', beschriftung ? 'an' : 'aus') }, [beschriftung])
   // Farbe der Kopfleiste (rein optisch, pro Gerät); Textfarbe automatisch hell/dunkel
@@ -149,13 +151,15 @@ export default function App() {
   const faellig = useMemo(() => faelligAnzahl(k.weideplan), [k.weideplan]) + geraeteDran.length + fristenDran.length
   const planAn = planFarben && !!k.weideplan?.belegungen.length
   // Zuletzt verschobene Nadel (für „Rückgängig“)
-  const [verschoben, setVerschoben] = useState<{ id: string; alt: LatLng; nr: number; kreise?: Pick<Pin, 'kreis' | 'kreiseStehen'>; neuerKreis?: boolean } | null>(null)
+  const [verschoben, setVerschoben] = useState<{ id: string; alt: LatLng; nr: number; seit?: number; kreise?: Pick<Pin, 'kreis' | 'kreiseStehen'>; neuerKreis?: boolean } | null>(null)
+  const [neuGesetzt, setNeuGesetzt] = useState<{ id: string; n: number } | null>(null)
+  useEffect(() => { if (!neuGesetzt) return; const t = setTimeout(() => setNeuGesetzt(null), rueckS * 1000); return () => clearTimeout(t) }, [neuGesetzt, rueckS])
   const [kreisPop, setKreisPop] = useState<{ id: string; stehenId: string | null; x: number; y: number } | null>(null)
   useEffect(() => {
     if (!verschoben) return
-    const t = setTimeout(() => setVerschoben(null), 7000)
+    const t = setTimeout(() => setVerschoben(null), rueckS * 1000)
     return () => clearTimeout(t)
-  }, [verschoben])
+  }, [verschoben, rueckS])
   const mitteRef = useRef<LatLng>(START)
   const routeNr = useRef(0)
 
@@ -193,10 +197,16 @@ export default function App() {
     // Nur setzen, wenn der Setz-Modus noch aktiv ist (nicht inzwischen abgebrochen oder auf die Karte getippt)
     if (p && modusRef.current === 'pin') { fliege(p, 16); neuerPin(p) }
   }
+  // Nadel sofort genau an der angetippten Stelle setzen und speichern (sichtbar, verschiebbar); Name usw. danach über „Benennen“/„Bearbeiten“
   const neuerPin = (p: LatLng) => {
     const jetzt = new Date().toISOString()
-    setFormular({ neu: true, e: { id: neueId(), typ: 'pin', position: p, farbe: localStorage.getItem('wt-letzte-farbe') || STANDARD_FARBE, titel: '', notizen: [], ...(k.ich ? { erstelltVon: k.ich.id } : {}), erstellt: jetzt, geaendert: jetzt } })
+    const e: Eintrag = { id: neueId(), typ: 'pin', position: { lat: p.lat, lng: p.lng }, farbe: localStorage.getItem('wt-letzte-farbe') || STANDARD_FARBE, titel: '', notizen: [], einheiten: [], ...(k.ich ? { erstelltVon: k.ich.id } : {}), erstellt: jetzt, geaendert: jetzt }
+    k.speichern(e)
     setModus('ansicht')
+    setVerschoben(null)
+    setAusgewaehlt(e.id)
+    setNeuGesetzt({ id: e.id, n: Date.now() })
+    setFokus({ ...e.position, n: Date.now(), nurSichtbar: true })
   }
 
   const routeZu = useCallback(async (e: Eintrag) => {
@@ -225,7 +235,7 @@ export default function App() {
     k.speichern({ ...e, position: neu, ...(kr ?? {}), geaendert: new Date().toISOString() })
     setMeldung('')
     const vorher = { kreis: e.kreis ?? null, kreiseStehen: e.kreiseStehen ?? [] }
-    setVerschoben((v) => ({ id, alt: v?.id === id ? v.alt : e.position, nr: (v?.nr ?? 0) + 1, kreise: v?.id === id && v.kreise ? v.kreise : vorher, neuerKreis: !!kr || (v?.id === id && !!v.neuerKreis) }))
+    setVerschoben((v) => ({ id, alt: v?.id === id ? v.alt : e.position, nr: (v?.nr ?? 0) + 1, seit: Date.now(), kreise: v?.id === id && v.kreise ? v.kreise : vorher, neuerKreis: !!kr || (v?.id === id && !!v.neuerKreis) }))
   }
   const verschiebenRueckgaengig = () => {
     if (!verschoben) return
@@ -413,6 +423,15 @@ export default function App() {
           onPunktEinfuegen={(i, q) => setBearbeiten((b) => (b ? { ...b, punkte: [...b.punkte.slice(0, i), q, ...b.punkte.slice(i)], sel: i } : b))}
           kreisBearbeiten={modus === 'kreis' && kreisEdit ? (() => { const pe = k.eintraege.find((x) => x.id === kreisEdit.id); return { id: kreisEdit.id, mitte: kreisEdit.gebunden && pe?.typ === 'pin' ? pe.position : kreisEdit.mitte, radius: kreisEdit.radius, farbe: kreisEdit.farbe } })() : null}
           onKreisKlick={modus === 'ansicht' && !formular ? (id, sid, x, y) => { setAusgewaehlt(id); const e = k.eintraege.find((q) => q.id === id); if (e && k.darfBearbeiten && kannEintrag(e)) setKreisPop({ id, stehenId: sid, x, y }) } : undefined}
+          onLangDruck={modus === 'ansicht' && !formular ? (q, x, y) => {
+            // innerster eigener Kreis unter dem Finger → Farbpalette
+            let best: { id: string; sid: string | null; r: number } | null = null
+            for (const e of k.eintraege) {
+              if (e.typ !== 'pin' || !k.darfBearbeiten || !kannEintrag(e)) continue
+              for (const ak of FL.alleKreise(e)) if (FL.abstand(ak.mitte, q) <= ak.kreis.radius && (!best || ak.kreis.radius < best.r)) best = { id: e.id, sid: ak.stehenId, r: ak.kreis.radius }
+            }
+            if (best) { setAusgewaehlt(best.id); setKreisPop({ id: best.id, stehenId: best.sid, x, y }) }
+          } : undefined}
           onKreisRadius={(r) => setKreisEdit((x) => (x ? { ...x, radius: Math.min(FL.KREIS_MAX, r) } : x))}
           warnIds={geraeteDran.map((x) => x.eintrag.id)}
           route={route}
@@ -429,7 +448,6 @@ export default function App() {
           onMitte={(p) => (mitteRef.current = p)}
         />
 
-        {modus === 'pin' && <div className="fadenkreuz">＋</div>}
 
         {/* Kartenwerkzeuge oben links: Beschriftung an/aus + Farb-Schnellauswahl */}
         <div className="karten-werkzeug">
@@ -472,13 +490,12 @@ export default function App() {
 
         {modus === 'pin' && (() => {
           const handy = istHandy()
-          const standortKnopf = <button key="s" className={handy ? 'primaer' : ''} disabled={standortSucht} onClick={nadelAmStandort}>{standortSucht ? 'Standort wird bestimmt …' : '📍 An meinem Standort'}</button>
-          const mitteKnopf = <button key="m" className={handy ? '' : 'primaer'} onClick={() => neuerPin(mitteRef.current)}>⊕ Kartenmitte</button>
+          const standortKnopf = <button key="s" disabled={standortSucht} onClick={nadelAmStandort}>{standortSucht ? 'Standort wird bestimmt …' : '📍 An meinem Standort'}</button>
           return (
             <div className={`leiste setz-leiste${handy ? ' handy' : ' desktop'}`} role="dialog" aria-label="Nadel setzen">
-              <p className="setz-hinweis">👆 <strong>Tippe auf die Karte, wo die Nadel hin soll</strong>{handy ? '' : ' (Karte lässt sich weiter verschieben)'} – oder:</p>
+              <p className="setz-hinweis">👆 <strong>{handy ? 'Tippe' : 'Klicke'} auf die Karte – die Nadel erscheint genau dort</strong>{handy ? '' : ' (Karte lässt sich weiter verschieben)'}. Oder:</p>
               <div className="knoepfe">
-                {handy ? [standortKnopf, mitteKnopf] : [mitteKnopf, standortKnopf]}
+                {standortKnopf}
                 <button onClick={() => setModus('ansicht')}>Abbrechen</button>
               </div>
             </div>
@@ -630,7 +647,7 @@ export default function App() {
           </section>
         )}
         {panel === 'austausch' && <Austausch k={k} eintraege={anzeige.eintraege} filter={exportFilter} meldung={setMeldung} onSchliessen={() => setPanel(null)} />}
-        {panel === 'einstellungen' && <Einstellungen k={k} onMeineDaten={() => setPanel('meinedaten')} onAustausch={() => { setExportFilter(null); setPanel('austausch') }} onSchliessen={() => setPanel(null)} meldung={setMeldung} onNutzer={() => setPanel(k.hof?.rolle ? 'hof' : 'nutzer')} onHof={() => setPanel('hof')} onProfil={() => setPanel('profil')} kopfFarbe={kopfFarbe} setKopfFarbe={setKopfFarbe} />}
+        {panel === 'einstellungen' && <Einstellungen k={k} onMeineDaten={() => setPanel('meinedaten')} onAustausch={() => { setExportFilter(null); setPanel('austausch') }} onSchliessen={() => setPanel(null)} meldung={setMeldung} onNutzer={() => setPanel(k.hof?.rolle ? 'hof' : 'nutzer')} onHof={() => setPanel('hof')} onProfil={() => setPanel('profil')} kopfFarbe={kopfFarbe} setKopfFarbe={setKopfFarbe} rueckS={rueckS} setRueckS={setRueckS} />}
         {panel === 'weideplan' && <WeideplanPanel k={k} start={planStart} meldung={setMeldung} planFarben={planFarben} setPlanFarben={setPlanFarben} onSchliessen={() => { setPanel(null); setPlanStart(null) }}
           onZeigen={(id) => { const e = k.eintraege.find((x) => x.id === id); if (e) { fliege(mitte(e), e.typ === 'pin' ? 15 : undefined); waehle(e.id) } }} />}
         {panel === 'meinedaten' && <MeineDaten k={k} meldung={setMeldung} onSchliessen={() => setPanel(null)} />}
@@ -655,8 +672,14 @@ export default function App() {
             onAendern={kreisPop.stehenId == null ? () => { zu(); setKreisEdit(kreisStart(pe, k.karteId || 'lokal')); setModus('kreis') } : undefined}
             onAbgebaut={() => { k.speichern({ ...pe, ...kreisAendern(pe, kreisPop.stehenId, () => null), geaendert: new Date().toISOString() }); setMeldung('Kreis entfernt – abgebaut ✂️'); zu() }} />
         })()}
+        {!meldung && !verschoben && neuGesetzt && k.eintraege.some((x) => x.id === neuGesetzt.id) && (
+          <div className="toast mit-knopf" role="status">📍 Nadel gesetzt
+            <button onClick={() => { const e = k.eintraege.find((x) => x.id === neuGesetzt.id); if (e) setFormular({ neu: false, e }); setNeuGesetzt(null) }}>Benennen</button>
+            <button onClick={() => { k.loeschen(neuGesetzt.id); if (ausgewaehlt === neuGesetzt.id) abwaehlen(); setNeuGesetzt(null) }}>Rückgängig <Rest bis={neuGesetzt.n + rueckS * 1000} /></button>
+          </div>
+        )}
         {!meldung && verschoben && (
-          <div className={`toast mit-knopf${verschoben.neuerKreis ? ' lang' : ''}`} role="status">{verschoben.neuerKreis ? 'Nadel verschoben · alter Kreis bleibt stehen, neuer Kreis gesetzt' : 'Nadel verschoben'}<button onClick={verschiebenRueckgaengig}>Rückgängig</button></div>
+          <div className={`toast mit-knopf${verschoben.neuerKreis ? ' lang' : ''}`} role="status">{verschoben.neuerKreis ? 'Nadel verschoben · alter Kreis bleibt stehen, neuer Kreis gesetzt' : 'Nadel verschoben'}<button onClick={verschiebenRueckgaengig}>Rückgängig <Rest bis={(verschoben.seit ?? Date.now()) + rueckS * 1000} /></button></div>
         )}
       </main>
     </div>
@@ -1283,7 +1306,7 @@ function Liste(p: ListeProps) {
   )
 }
 
-function Einstellungen(p: { k: ReturnType<typeof useKarte>; onMeineDaten: () => void; onAustausch: () => void; onSchliessen: () => void; meldung: (s: string) => void; onNutzer: () => void; onHof: () => void; onProfil: () => void; kopfFarbe: string | null; setKopfFarbe: (f: string | null) => void }) {
+function Einstellungen(p: { k: ReturnType<typeof useKarte>; onMeineDaten: () => void; onAustausch: () => void; onSchliessen: () => void; meldung: (s: string) => void; onNutzer: () => void; onHof: () => void; onProfil: () => void; kopfFarbe: string | null; setKopfFarbe: (f: string | null) => void; rueckS: number; setRueckS: (n: number) => void }) {
   const { k } = p
   const [name, setName] = useState('Weidekarte Deichschäferei')
   const [kartenName, setKartenName] = useState(k.kartenName)
@@ -1369,6 +1392,11 @@ function Einstellungen(p: { k: ReturnType<typeof useKarte>; onMeineDaten: () => 
         <button onClick={() => p.setKopfFarbe(null)} disabled={!p.kopfFarbe}>Standard</button>
       </div>
       <p className="hinweis klein">Nur auf diesem Gerät, rein optisch.</p>
+      <div className="rueck-dauer" role="radiogroup" aria-label="Zeit für Rückgängig">
+        <span>„Rückgängig“ nach Setzen/Verschieben einer Nadel:</span>
+        <div className="knoepfe">{[5, 10, 20].map((n) => <button key={n} role="radio" aria-checked={p.rueckS === n} className={p.rueckS === n ? 'primaer' : ''} onClick={() => p.setRueckS(n)}>{n} s</button>)}</div>
+      </div>
+      <p className="hinweis klein">So lange zählt der Hinweis mit „Rückgängig“ herunter (Standard 10 s), nur auf diesem Gerät.</p>
 
       <h3>Daten: Export &amp; Import</h3>
       <button className="primaer" onClick={p.onAustausch}>⬇️⬆️ Export &amp; Import öffnen</button>
@@ -1552,4 +1580,12 @@ function NutzerVerwaltung(p: { k: ReturnType<typeof useKarte>; onSchliessen: () 
       <p className="hinweis klein">Mindestens ein Admin muss bleiben. Wer entfernt wird, kann die Karte nur noch über den Ansehen-Link lesen.</p>
     </section>
   )
+}
+
+// Sekunden-Countdown im Rückgängig-Knopf
+function Rest(p: { bis: number }) {
+  const [, setT] = useState(0)
+  useEffect(() => { const i = setInterval(() => setT((x) => x + 1), 250); return () => clearInterval(i) }, [])
+  const s = Math.max(0, Math.ceil((p.bis - Date.now()) / 1000))
+  return <span className="rest">({s} s)</span>
 }

@@ -89,6 +89,13 @@ Code: `server/flaechen.js` (gemeinsam für Server **und** App: Messen, Steckbrie
 - **Übersicht**: Liste → Flächen → „📊 Übersicht, Pacht & Summen“ (Summen gesamt/Pacht/€ je Jahr/je Art, sortierbare Tabelle, Excel/PDF „Flächenverzeichnis“).
 - **Export/Import**: Excel-Blätter „Flächenverzeichnis“, „Flächen-Summen“, „Fristen“; PDF-Kapitel; KML-ExtendedData `flockmap_steckbrief` (+ `flockmap_pacht` nur mit Admin-Option); JSON-Sicherung inkl. Pacht (nur Admin). Import: KML/GeoJSON (FLIK/Schlag/Nutzung aus Attributen geraten, MultiPolygon → mehrere Flächen) und Shapefile-ZIP (.shp/.dbf/.prj; WGS84 oder ETRS89/UTM 32/33 – Gauß-Krüger nicht unterstützt; nur Außenringe).
 
+## Nadel setzen (7e)
+
+- Tippen/Klicken auf die Karte (Ansicht ohne Auswahl oder nach „＋ Nadel“) setzt die Nadel **sofort genau an der Stelle** und speichert sie (Farbe = zuletzt benutzte, ohne Namen; offline in der Warteschlange). Kein Fadenkreuz/„Kartenmitte“ mehr; „📍 An meinem Standort“ bleibt als eigene Option im Setz-Modus.
+- Danach Hinweis „📍 Nadel gesetzt“ mit **Benennen** (öffnet das Formular) und **Rückgängig (n s)** – Countdown einstellbar unter Einstellungen → Darstellung: 5 / 10 / 20 s (Standard 10 s, `localStorage['wt-rueckgaengig-s']`, gilt auch für „Nadel verschoben“).
+- Die neue Nadel ist ausgewählt und sofort verschiebbar; ist sie unter der Leiste verdeckt, schiebt die Karte nur (kein Zoom).
+- Zeichnen (Fläche/Zaun), Kreis-Mitte setzen, Tor-Modus und offene Paletten haben Vorrang vor dem Nadel-Setzen.
+
 ## Kreis um Nadel („eingezäunt“)
 
 Code: `server/flaechen.js` (`kreisSauber`, `kreisMasse`, `kreisPolygon`, `kreisMitte`), `src/kreis/Kreis.tsx`, `src/austausch/kreise.ts`.
@@ -98,6 +105,7 @@ Code: `server/flaechen.js` (`kreisSauber`, `kreisMasse`, `kreisPolygon`, `kreisM
 - **Mehrere Kreise / alter Standort** (7c): `pin.kreiseStehen` = Liste {id, radius, farbe?, gebunden:false, mitte, seit?} (max. 50). Wird eine Nadel mit festem Kreis („bleibt am Standort“) aus ihrem Kreis heraus verschoben, wandert der alte Kreis nach `kreiseStehen` und um die neue Position entsteht ein neuer Kreis mit Standard-Radius und -Verhalten; die Farbe folgt der Nadel (neuer und alter Kreis behalten die Farbe des bisherigen Kreises, fest gespeichert). Rückgängig stellt beides wieder her. Fehlt das Feld (alte App), behält der Server die Liste. `FL.alleKreise(e)` liefert alle Kreise für Karte/Export.
 - **Vorgaben pro Karte und Gerät** (7c): `localStorage['wt-kreis-vorgaben:<kartenId>']` = {radius (Standard-Radius für neue Kreise), gebunden (zuletzt gewählt), farbe}. Leiste: Häkchen „Standard-Radius für alle neuen Kreise“ (bei neuen Kreisen an), Knopf „… auf alle anderen Kreise übernehmen“, zwei große Knöpfe „🔗 An Nadel gebunden“ / „📍 Bleibt am Standort“ = speichern mit einem Tipp. Beim Einkreisen wird nicht gezoomt (`Fokus.nurSichtbar`: nur verschieben, falls verdeckt).
 - **Farbe direkt am Kreis** (7c): Tipp auf einen Kreis (Ansicht, mit Bearbeitungsrecht) → kleine Palette (`KreisPop`): Farbe = sofort gespeichert; „Radius …“ (aktueller Kreis), „✂️ Abgebaut“.
+- **Antippen / Farbe** (7e): Die Kreisfläche ist nicht antippbar – Tippen in einen Kreis setzt eine Nadel genau dort. Farbpalette: Tipp auf den Kreisrand (unsichtbarer, ~22 px breiter Trefferring `path.kreis-ring`) oder langes Drücken (550 ms, eigene Pointer-Geste; PC: Rechtsklick) irgendwo im Kreis → innerster eigener Kreis. Google-Ansicht: nur langes Drücken/Rechtsklick. Füllung kräftiger (aktuell 0,38, alter Standort 0,28, ausgewählt 0,45).
 - **Export/Import**: Excel-Blatt „Einkreisungen“, PDF-Kapitel, KML-Ordner „Einkreisungen“ (Kreis als 48-Eck, `flockmap_kreis_fuer` + `flockmap_kreis` → beim Re-Import wieder an die Nadel gehängt), JSON-Sicherung enthält `kreis` und `kreiseStehen`; Kreise am alten Standort tragen in KML `flockmap_kreis_stehen=1`.
 
 ## Rechtliches & Datenschutz

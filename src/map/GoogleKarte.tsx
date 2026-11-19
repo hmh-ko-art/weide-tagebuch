@@ -22,7 +22,7 @@ function Overlays(p: KartenProps) {
       const aktiv = e.id === p.ausgewaehlt
       const f = pinFarbe(e), h = p.hervor.includes(f) && !aktiv
       const poly = new google.maps.Polygon({ map, paths: e.punkte, strokeColor: aktiv ? '#fff' : f, strokeWeight: aktiv ? 4 : h ? 3.5 : 2, fillColor: f, fillOpacity: aktiv ? 0.35 : h ? 0.38 : 0.25 })
-      poly.addListener('click', () => cb.current.onAuswahl(e.id))
+      poly.addListener('click', (ev: google.maps.MapMouseEvent) => cb.current.onAuswahl(e.id, ev.latLng ? { lat: ev.latLng.lat(), lng: ev.latLng.lng() } : undefined))
       return poly
     })
     // Zäune, Wege, Gräben (Tore als Lücken)
@@ -31,7 +31,7 @@ function Overlays(p: KartenProps) {
       const a = linienArt(e.linienArt), aktiv = e.id === p.ausgewaehlt
       for (const st of linienStuecke(e)) {
         const l = new google.maps.Polyline({ map, path: st, strokeColor: aktiv ? FARBE_AKTIV : pinFarbe(e), strokeWeight: a.breite + (aktiv ? 2 : 0), strokeOpacity: 0.95 })
-        l.addListener('click', () => cb.current.onAuswahl(e.id))
+        l.addListener('click', (ev: google.maps.MapMouseEvent) => cb.current.onAuswahl(e.id, ev.latLng ? { lat: ev.latLng.lat(), lng: ev.latLng.lng() } : undefined))
         polys.push(l as unknown as google.maps.Polygon)
       }
     }
@@ -41,17 +41,18 @@ function Overlays(p: KartenProps) {
       for (const ak of alleKreise(e)) {
         const kb = ak.stehenId == null && p.kreisBearbeiten?.id === e.id ? p.kreisBearbeiten : null
         const f = kb?.farbe ?? ak.kreis.farbe ?? pinFarbe(e)
-        const c = new google.maps.Circle({ map, center: kb?.mitte ?? ak.mitte, radius: kb?.radius ?? ak.kreis.radius, strokeColor: kb ? FARBE_AKTIV : f, strokeWeight: 2.5, fillColor: f, fillOpacity: ak.stehenId ? 0.08 : 0.15 })
+        // nicht antippbar: Tippen in den Kreis setzt eine Nadel; Farbe per langem Drücken (contextmenu)
+        const c = new google.maps.Circle({ map, center: kb?.mitte ?? ak.mitte, radius: kb?.radius ?? ak.kreis.radius, strokeColor: kb ? FARBE_AKTIV : f, strokeWeight: 2.5, fillColor: f, fillOpacity: ak.stehenId ? 0.28 : 0.38, clickable: false })
         c.addListener('click', (ev: google.maps.MapMouseEvent) => {
           const d = ev.domEvent as MouseEvent | undefined
           if (cb.current.onKreisKlick && !kb) cb.current.onKreisKlick(e.id, ak.stehenId, d?.clientX ?? window.innerWidth / 2, d?.clientY ?? window.innerHeight / 2)
-          else cb.current.onAuswahl(e.id)
+          else cb.current.onAuswahl(e.id, ev.latLng ? { lat: ev.latLng.lat(), lng: ev.latLng.lng() } : undefined)
         })
         polys.push(c as unknown as google.maps.Polygon)
       }
     }
     const kb = p.kreisBearbeiten
-    if (kb && !p.eintraege.some((e) => e.id === kb.id && e.typ === 'pin' && e.kreis)) polys.push(new google.maps.Circle({ map, center: kb.mitte, radius: kb.radius, strokeColor: FARBE_AKTIV, strokeWeight: 2.5, fillColor: kb.farbe, fillOpacity: 0.2, clickable: false }) as unknown as google.maps.Polygon)
+    if (kb && !p.eintraege.some((e) => e.id === kb.id && e.typ === 'pin' && e.kreis)) polys.push(new google.maps.Circle({ map, center: kb.mitte, radius: kb.radius, strokeColor: FARBE_AKTIV, strokeWeight: 2.5, fillColor: kb.farbe, fillOpacity: 0.38, clickable: false }) as unknown as google.maps.Polygon)
     return () => polys.forEach((x) => x.setMap(null))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [map, p.eintraege, p.ausgewaehlt, p.hervor.join(), p.kreisBearbeiten?.radius, p.kreisBearbeiten?.farbe, p.kreisBearbeiten?.mitte.lat, p.kreisBearbeiten?.mitte.lng])
@@ -96,6 +97,7 @@ export default function GoogleKarte(p: KartenProps) {
         disableDefaultUI={false}
         clickableIcons={false}
         onClick={(e) => e.detail.latLng && p.onKlick(e.detail.latLng)}
+        onContextmenu={(e) => { const d = e.domEvent as MouseEvent | undefined; if (e.detail.latLng) p.onLangDruck?.(e.detail.latLng, d?.clientX ?? window.innerWidth / 2, d?.clientY ?? window.innerHeight / 2) }}
         onCameraChanged={(e) => p.onMitte(e.detail.center)}
       >
         {p.eintraege.map((e) =>

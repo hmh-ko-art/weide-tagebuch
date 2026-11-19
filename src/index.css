@@ -688,3 +688,7 @@ button.klein { padding: 6px 10px; font-size: .88rem; flex: none; }
 .kreis-griff { background: var(--orange) !important; color: #fff; font-weight: 700; font-size: 16px; display: flex; align-items: center; justify-content: center; width: 30px !important; height: 30px !important; border: 3px solid #fff; box-shadow: 0 1px 6px rgba(0,0,0,.5); }
 .kreis-griff-mini { display: inline-block; background: var(--orange); color: #fff; border-radius: 50%; width: 1.4em; text-align: center; font-weight: 700; }
 .kreis-marke { margin-left: 6px; padding: 0 6px; border: 2px dashed #888; border-radius: 999px; font-size: .75rem; font-weight: 600; white-space: nowrap; }
+
+.rueck-dauer { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; font-size: .92rem; }
+.rueck-dauer .knoepfe button { min-width: 64px; }
+.toast .rest { font-weight: 400; font-size: .85em; opacity: .8; }

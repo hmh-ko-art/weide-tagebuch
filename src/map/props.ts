@@ -13,6 +13,7 @@ export interface KartenProps {
   onPunktEinfuegen?: (i: number, p: LatLng) => void // neuer Punkt an Stelle i
   kreisBearbeiten?: { id: string; mitte: LatLng; radius: number; farbe: string } | null // Kreis um Nadel: Griff zum Ziehen
   onKreisRadius?: (r: number) => void
+  onLangDruck?: (p: LatLng, x: number, y: number) => void // langes Drücken / Rechtsklick auf die Karte (Kreis-Farbe)
   onKreisKlick?: (id: string, stehenId: string | null, x: number, y: number) => void // Tipp auf einen Kreis (Farbe direkt wählen)
   warnIds?: string[] // Weidezaungeräte mit fälliger Prüfung (rot umrandet)
   route: Route | null

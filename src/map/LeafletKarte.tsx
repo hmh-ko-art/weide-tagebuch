@@ -67,7 +67,27 @@ export default function LeafletKarte(p: KartenProps) {
     eckEbene.current = L.layerGroup().addTo(m)
     routeEbene.current = L.layerGroup().addTo(m)
     standortEbene.current = L.layerGroup().addTo(m)
-    m.on('click', (e) => cb.current.onKlick({ lat: e.latlng.lat, lng: e.latlng.lng }))
+    // Langes Drücken (Handy) bzw. Rechtsklick (PC): eigene Geste, danach wird der folgende Klick verschluckt (keine Nadel)
+    let langBis = 0, langT: ReturnType<typeof setTimeout> | null = null, start: { x: number; y: number } | null = null
+    const lang = (x: number, y: number) => {
+      if (Date.now() < langBis) return
+      langBis = Date.now() + 700
+      const q = m.containerPointToLatLng(L.point(x - el.current!.getBoundingClientRect().left, y - el.current!.getBoundingClientRect().top))
+      cb.current.onLangDruck?.({ lat: q.lat, lng: q.lng }, x, y)
+    }
+    const c0 = m.getContainer()
+    const abbruch = () => { if (langT) clearTimeout(langT); langT = null; start = null }
+    c0.addEventListener('pointerdown', (ev) => {
+      if (!ev.isPrimary) { abbruch(); return } // zweiter Finger (Zoomen)
+      if (ev.button > 0 || (ev.target as Element).closest?.('.leaflet-marker-icon, .leaflet-control')) return
+      start = { x: ev.clientX, y: ev.clientY }
+      if (langT) clearTimeout(langT)
+      langT = setTimeout(() => { if (start) lang(start.x, start.y); langT = null }, 550)
+    })
+    c0.addEventListener('pointermove', (ev) => { if (start && Math.hypot(ev.clientX - start.x, ev.clientY - start.y) > 10) abbruch() })
+    c0.addEventListener('pointerup', abbruch); c0.addEventListener('pointercancel', abbruch)
+    c0.addEventListener('contextmenu', (ev) => { ev.preventDefault(); abbruch(); lang(ev.clientX, ev.clientY) })
+    m.on('click', (e) => { if (Date.now() < langBis) return; cb.current.onKlick({ lat: e.latlng.lat, lng: e.latlng.lng }) })
     let ebeneName = 'Satellit'
     const ansichtMerken = () => { const b = m.getBounds(), c = m.getCenter(); ansichtSetzen({ nord: b.getNorth(), sued: b.getSouth(), west: b.getWest(), ost: b.getEast(), zoom: m.getZoom(), ebene: ebeneName, lat: c.lat, lng: c.lng }) }
     m.on('baselayerchange', (e) => { ebeneName = e.name; ansichtMerken() })
@@ -99,11 +119,13 @@ export default function LeafletKarte(p: KartenProps) {
         if (ak.stehenId == null && e.id === p.kreisBearbeiten?.id) continue // beim Bearbeiten zeichnet die Bearbeiten-Ebene ihn
         const kr = ak.kreis, mi = ak.mitte, f = kr.farbe || pinFarbe(e), alt = ak.stehenId != null
         L.circle(ll(mi), { radius: kr.radius, color: '#000', weight: aktiv ? 6 : 4.5, opacity: alt ? 0.25 : 0.35, fill: false, interactive: false }).addTo(g)
-        L.circle(ll(mi), { radius: kr.radius, color: aktiv ? '#fff' : f, weight: aktiv ? 3.5 : 2.5, fillColor: f, fillOpacity: alt ? 0.08 : aktiv ? 0.22 : 0.12, dashArray: kr.gebunden === false ? undefined : '8 5', className: alt ? 'kreis-alt-linie' : undefined })
+        // Innenfläche nicht antippbar: Tippen in den Kreis setzt eine Nadel genau dort; Farbe über den Rand (Ring) oder langes Drücken
+        L.circle(ll(mi), { radius: kr.radius, color: aktiv ? '#fff' : f, weight: aktiv ? 3.5 : 2.5, fillColor: f, fillOpacity: alt ? 0.28 : aktiv ? 0.45 : 0.38, dashArray: kr.gebunden === false ? undefined : '8 5', className: alt ? 'kreis-alt-linie' : undefined, interactive: false }).addTo(g)
+        L.circle(ll(mi), { radius: kr.radius, color: '#000', opacity: 0, weight: 22, fill: false, className: 'kreis-ring' })
           .on('click', (ev: L.LeafletMouseEvent) => {
             L.DomEvent.stopPropagation(ev)
             if (cb.current.onKreisKlick) cb.current.onKreisKlick(e.id, ak.stehenId, ev.originalEvent?.clientX ?? 0, ev.originalEvent?.clientY ?? 0)
-            else cb.current.onAuswahl(e.id)
+            else cb.current.onAuswahl(e.id, { lat: ev.latlng.lat, lng: ev.latlng.lng }) // im Setz-Modus: Nadel genau hier
           }).addTo(g)
         // Fester Kreis und Nadel woanders: dünne Verbindungslinie, damit man sieht, wozu er gehört
         if (!alt && kr.gebunden === false && abstand(mi, e.position) > 2) L.polyline([ll(e.position), ll(mi)], { color: f, weight: 1.5, dashArray: '2 6', opacity: 0.9, interactive: false }).addTo(g)
@@ -211,7 +233,7 @@ export default function LeafletKarte(p: KartenProps) {
     const g = kreisEbene.current
     g.clearLayers()
     if (!kb) return
-    const c = L.circle(ll(kb.mitte), { radius: kb.radius, color: FARBE_AKTIV, weight: 3, fillColor: kb.farbe, fillOpacity: 0.25, interactive: false }).addTo(g)
+    const c = L.circle(ll(kb.mitte), { radius: kb.radius, color: FARBE_AKTIV, weight: 3, fillColor: kb.farbe, fillOpacity: 0.38, interactive: false }).addTo(g)
     L.circle(ll(kb.mitte), { radius: kb.radius, color: kb.farbe, weight: 2, dashArray: '6 6', fill: false, interactive: false }).addTo(g)
     // Griff östlich der Mitte
     const ost = (r: number) => ({ lat: kb.mitte.lat, lng: kb.mitte.lng + r / (111320 * Math.cos((kb.mitte.lat * Math.PI) / 180)) })

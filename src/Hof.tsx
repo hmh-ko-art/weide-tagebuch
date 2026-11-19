@@ -2,6 +2,8 @@
 // Jede Person hat EINEN persönlichen Link, der auf allen Karten des Hofs gilt. Optional PIN für ein neues Gerät.
 import { useCallback, useEffect, useState } from 'react'
 import { zugangKey, zugangsLink, NAME_MAX, type HofRolle, type useKarte } from './daten'
+import { RechtLinks } from './recht/Recht'
+import { LoeschBestaetigung, datumText } from './recht/Loeschen'
 
 type K = ReturnType<typeof useKarte>
 export const ROLLEN: Record<HofRolle, { name: string; text: string }> = {
@@ -12,7 +14,7 @@ export const ROLLEN: Record<HofRolle, { name: string; text: string }> = {
 }
 interface Mitglied { id: string; name: string; rolle: HofRolle; zugang: string; hatPin: boolean; erstellt: string }
 interface HofKarte { id: string; name: string; eintraege: number }
-interface HofDaten { id: string; name: string; karten: HofKarte[]; ich: { id: string; name: string; rolle: HofRolle; hatPin: boolean } | null }
+interface HofDaten { id: string; name: string; karten: HofKarte[]; geloescht?: { bis: string }; ich: { id: string; name: string; rolle: HofRolle; hatPin: boolean } | null }
 interface Einladung { code: string; rolle: HofRolle; name: string | null; bis: string }
 
 const basis = () => `${location.origin}${location.pathname}`
@@ -39,6 +41,7 @@ function hofApi(hid: string, zugang: string | null) {
     einladen: (rolle: HofRolle, name: string) => a<Einladung>('/einladungen', 'POST', { rolle, name: name || undefined }),
     einladungZurueck: (code: string) => a<Einladung[]>(`/einladungen/${code}`, 'DELETE'),
     pinSetzen: (pin: string | null) => a<{ hatPin: boolean }>('/ich/pin', 'PUT', { pin }),
+    loeschen: (name: string) => a<{ geloescht: { bis: string } }>('/loeschen', 'POST', { name }),
   }
 }
 // Zu einer anderen Karte des Hofs wechseln: derselbe persönliche Zugang gilt dort auch
@@ -70,6 +73,8 @@ export function HofPanel(p: { k: K; onSchliessen: () => void; meldung: (s: strin
   const [einName, setEinName] = useState('')
   const [neueEinladung, setNeueEinladung] = useState<Einladung | null>(null)
   const [pin, setPin] = useState('')
+  const [loeschOffen, setLoeschOffen] = useState(false)
+  const [loeschName, setLoeschName] = useState('')
   const fehler = (e: Error) => p.meldung(e.message)
   const verwalter = hof?.ich?.rolle === 'inhaber' || hof?.ich?.rolle === 'admin'
   const binInhaber = hof?.ich?.rolle === 'inhaber'
@@ -78,7 +83,7 @@ export function HofPanel(p: { k: K; onSchliessen: () => void; meldung: (s: strin
     try {
       const h = await api.laden()
       setHof(h); setHofName(h.name)
-      if (h.ich?.rolle === 'inhaber' || h.ich?.rolle === 'admin') {
+      if (!h.geloescht && (h.ich?.rolle === 'inhaber' || h.ich?.rolle === 'admin')) {
         const [m, e] = await Promise.all([api.mitglieder(), api.einladungen()])
         setMitglieder(m); setEinladungen(e)
       }
@@ -204,6 +209,22 @@ export function HofPanel(p: { k: K; onSchliessen: () => void; meldung: (s: strin
           <button onClick={() => teilen(`Anmeldung beim Hof „${hof.name}“ in FlockMap: ${hofAnmeldeLink(hid)}`, hofAnmeldeLink(hid), p.meldung)}>🔗 Anmelde-Seite des Hofs teilen</button>
         </>
       )}
+
+      {binInhaber && !hof.geloescht && (
+        <>
+          <h3 className="gefahr-titel">Ganzen Hof löschen</h3>
+          {!loeschOffen ? (
+            <>
+              <p className="hinweis klein">Löscht den Hof „{hof.name}“ mit <strong>allen {hof.karten.length} Karten</strong> ({hof.karten.reduce((n, x) => n + x.eintraege, 0)} Nadeln/Flächen), allen Personen, Einladungen und PINs. Alles liegt dann <strong>30 Tage im Papierkorb</strong> und kann so lange von dir wiederhergestellt werden; danach wird es endgültig gelöscht. Vorher am besten jede Karte unter „Export &amp; Import“ sichern.</p>
+              <button className="gefahr" onClick={() => setLoeschOffen(true)}>🗑️ Hof löschen …</button>
+            </>
+          ) : (
+            <LoeschBestaetigung name={hof.name} was="Hof" knopf="Hof löschen" eingabe={loeschName} setName={setLoeschName}
+              onAbbrechen={() => { setLoeschOffen(false); setLoeschName('') }} onFehler={p.meldung}
+              onLoeschen={() => api.loeschen(loeschName).then((j) => { p.meldung(`Hof gelöscht – wiederherstellbar bis ${datumText(j.geloescht.bis)}`); k.ichLaden(); p.onSchliessen() })} />
+          )}
+        </>
+      )}
     </section>
   )
 }
@@ -260,7 +281,7 @@ export function HofEinstieg(p: { hofId: string; einladung: string | null }) {
       <div className="einstieg-karte">
         <img src="/icon.svg" alt="" width="64" height="64" />
         <p className="einstieg-marke">FlockMap</p>
-        {nichtGefunden ? <p className="hinweis">Diesen Hof gibt es nicht (mehr). Bitte den Link prüfen.</p> : !info ? <p className="hinweis">Lade …</p> : p.einladung && !info.gueltig ? (
+        {nichtGefunden ? <p className="hinweis">Diesen Hof gibt es nicht (mehr) oder er wurde gelöscht. Bitte den Link prüfen.</p> : !info ? <p className="hinweis">Lade …</p> : p.einladung && !info.gueltig ? (
           <>
             <h1>{info.hof}</h1>
             <p className="hinweis">Diese Einladung ist abgelaufen, wurde schon benutzt oder zurückgezogen. Bitte frag nach einer neuen Einladung. Wenn du schon eine PIN hast, kannst du dich <a href={hofAnmeldeLink(p.hofId)}>hier anmelden</a>.</p>
@@ -275,8 +296,10 @@ export function HofEinstieg(p: { hofId: string; einladung: string | null }) {
             {!p.einladung && <label>PIN<input value={pin} inputMode="numeric" autoComplete="current-password" type="password" maxLength={8} onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))} placeholder="4–8 Ziffern" /></label>}
             {fehler && <p className="fehler gefahr">{fehler}</p>}
             <button type="submit" className="primaer" disabled={laeuft || !sauber(name) || (!p.einladung && pin.length < 4)}>{p.einladung ? 'Beitreten' : 'Anmelden'}</button>
+            <p className="hinweis klein">{p.einladung ? 'Mit dem Beitritt werden dein Name und deine Rolle gespeichert.' : 'Die PIN wird nur verschlüsselt geprüft.'} Kein Tracking, keine Cookies – siehe <a href="#recht/datenschutz">Datenschutz</a>.</p>
           </form>
         )}
+        <RechtLinks klein />
       </div>
     </div>
   )
@@ -285,7 +308,7 @@ export function HofEinstieg(p: { hofId: string; einladung: string | null }) {
 // ---------------------------------------------------------------------------------------
 // Betreiber-Seite (?betreiber): neuen Hof anlegen – später an die Bezahlung gekoppelt
 // ---------------------------------------------------------------------------------------
-interface HofZeile { id: string; name: string; erstellt: string; karten: number; mitglieder: number; inhaber: string[] }
+interface HofZeile { id: string; name: string; erstellt: string; karten: number; mitglieder: number; inhaber: string[]; geloescht?: { bis: string } }
 export function Betreiber() {
   const [schluessel, setSchluessel] = useState(() => sessionStorage.getItem('wt-betreiber') ?? '')
   const [eingabe, setEingabe] = useState('')
@@ -337,11 +360,12 @@ export function Betreiber() {
             )}
             <h3>Alle Höfe ({liste.length})</h3>
             <ul className="nutzer-liste">
-              {liste.map((h) => <li key={h.id}><strong>{h.name}</strong> <span className="hinweis">· {h.inhaber.join(', ') || '–'} · {h.karten} Karte{h.karten === 1 ? '' : 'n'} · {h.mitglieder} Person{h.mitglieder === 1 ? '' : 'en'} · seit {new Date(h.erstellt).toLocaleDateString('de-DE')}</span></li>)}
+              {liste.map((h) => <li key={h.id}><strong>{h.name}</strong> <span className="hinweis">· {h.inhaber.join(', ') || '–'} · {h.karten} Karte{h.karten === 1 ? '' : 'n'} · {h.mitglieder} Person{h.mitglieder === 1 ? '' : 'en'} · seit {new Date(h.erstellt).toLocaleDateString('de-DE')}{h.geloescht ? ` · im Papierkorb bis ${datumText(h.geloescht.bis)}` : ''}</span></li>)}
             </ul>
             <button onClick={() => { sessionStorage.removeItem('wt-betreiber'); setSchluessel(''); setListe(null) }}>Abmelden</button>
           </>
         )}
+        <RechtLinks klein />
       </div>
     </div>
   )

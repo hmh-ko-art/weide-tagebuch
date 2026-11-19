@@ -418,3 +418,46 @@ select { font: inherit; border: 1px solid #c9d3c4; border-radius: 10px; padding:
 .vorschau-tabelle .roh { color: #7a7466; }
 .vorschau-tabelle .doppelt { color: #b04a14; }
 .vorschau-tabelle .farbpunkt { display: inline-block; width: 10px; height: 10px; border-radius: 50%; border: 1px solid rgba(0,0,0,.3); vertical-align: middle; }
+
+/* ---- Rechtliches: Overlay-Seiten, Fußzeilen-Links, erster Start, Löschen ---- */
+.recht { position: fixed; inset: 0; z-index: 2000; background: #fff; display: flex; flex-direction: column; }
+.recht-kopf { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px 8px 16px; padding-top: max(10px, env(safe-area-inset-top)); background: #1e4d2b; color: #f4ecd8; }
+.recht-kopf h2 { margin: 0; font-size: 1.15rem; }
+.recht-zu { background: transparent; color: inherit; border: 1px solid rgba(244,236,216,.5); padding: 6px 12px; font-size: 1rem; }
+.recht-reiter { display: flex; gap: 4px; overflow-x: auto; padding: 8px 12px; border-bottom: 1px solid #e3e8df; background: #f5f7f2; scrollbar-width: none; }
+.recht-reiter a { flex: none; padding: 6px 10px; border-radius: 16px; color: #1b5e20; text-decoration: none; font-size: .85rem; font-weight: 600; border: 1px solid #c9d3c4; background: #fff; }
+.recht-reiter a.aktiv { background: var(--gruen); color: #fff; border-color: var(--gruen); }
+.recht-inhalt { flex: 1; overflow: auto; padding: 8px 16px 32px; max-width: 760px; width: 100%; margin: 0 auto; box-sizing: border-box; line-height: 1.45; font-size: .95rem; overflow-wrap: anywhere; }
+.recht-inhalt h3 { font-size: 1rem; color: var(--gruen-dunkel); margin: 18px 0 4px; }
+.recht-inhalt p { margin: 6px 0; }
+.recht-inhalt ul { padding-left: 20px; margin: 6px 0; }
+.recht-inhalt li { margin: 4px 0; }
+.recht-kurz { background: #e8f5e9; border-radius: 10px; padding: 10px 12px; }
+.recht-entwurf { background: #fff3e0; border: 1px solid #f5c48a; color: #8a4b00; border-radius: 10px; padding: 8px 12px; font-weight: 600; font-size: .85rem; }
+.recht-liste dt { font-weight: 700; margin-top: 10px; }
+.recht-liste dd { margin: 2px 0 0; }
+.recht-stand { color: #667; font-size: .8rem; margin-top: 24px !important; }
+.recht-links { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: .85rem; margin-top: 4px; }
+.recht-links a { color: #1b5e20; }
+.recht-links.klein { font-size: .75rem; justify-content: center; margin-top: 12px; }
+.recht-links.klein a { color: #556; }
+.erster-start { position: fixed; z-index: 1900; left: 50%; transform: translateX(-50%); bottom: calc(12px + env(safe-area-inset-bottom)); width: min(460px, calc(100% - 20px)); box-sizing: border-box; background: #263238; color: #fff; border-radius: 14px; padding: 12px 14px; box-shadow: 0 6px 22px rgba(0,0,0,.35); font-size: .88rem; line-height: 1.4; }
+.erster-start p { margin: 0; }
+.erster-start-knoepfe { display: flex; justify-content: flex-end; align-items: center; gap: 14px; margin-top: 10px; }
+.erster-start-knoepfe a { color: #c8e6c9; }
+.erster-start-knoepfe button { padding: 8px 18px; }
+.gefahr-titel { color: var(--rot) !important; }
+.gefahr-voll { background: var(--rot) !important; color: #fff !important; border-color: var(--rot) !important; font-weight: 600; }
+.loesch-box { border: 1px solid #e7b4b4; background: #fff7f7; border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+.loesch-box input:not([type]) { padding: 8px 10px; border: 1px solid #c9d3c4; border-radius: 8px; font-weight: 400; }
+.loesch-box .knoepfe { justify-content: flex-end; }
+label.haken { flex-direction: row; align-items: flex-start; gap: 10px; font-weight: 400; }
+label.haken input { width: 20px; height: 20px; flex: none; margin: 1px 0 0; }
+.link-knopf { border: 0; background: none; padding: 0; color: #1b5e20; text-decoration: underline; font-size: inherit; display: inline; }
+.geloescht-hinweis { position: absolute; z-index: 1150; top: 72px; left: 50%; transform: translateX(-50%); width: min(440px, calc(100% - 20px)); box-sizing: border-box; background: #fff; border: 2px solid var(--rot); border-radius: 14px; padding: 12px 14px; box-shadow: 0 6px 22px rgba(0,0,0,.3); }
+.geloescht-hinweis h2 { margin: 0 0 4px; font-size: 1.05rem; color: var(--rot); }
+.geloescht-hinweis p { margin: 4px 0; font-size: .9rem; }
+.daten-liste { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 4px 0; font-size: .9rem; }
+.daten-liste dt { font-weight: 600; color: #445; }
+.daten-liste dd { margin: 0; }
+.mit-hinweis .einstieg { padding-bottom: 230px; }

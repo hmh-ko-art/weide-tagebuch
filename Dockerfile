@@ -8,6 +8,8 @@ COPY . .
 # Optional zur Build-Zeit (wird in die App eingebacken)
 ARG VITE_GOOGLE_MAPS_API_KEY=
 ARG VITE_GOOGLE_MAP_ID=
+# Hoster für Impressum/Datenschutz (src/recht/betreiber.ts): eigener Server = hetzner
+ARG VITE_HOSTER=hetzner
 RUN npm run build && npm prune --omit=dev
 
 FROM node:24-alpine

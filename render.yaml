@@ -18,6 +18,7 @@ services:
       # Optional: Google Maps statt OpenStreetMap (Key im Dashboard eintragen, dann neu bauen)
       - key: VITE_GOOGLE_MAPS_API_KEY
         sync: false
+      # Datenschutz-Text: Hoster ist Render (Standard). Nach Umzug auf Hetzner: siehe docs/RECHTLICHES.md
       # Betreiber-Schlüssel für /?betreiber (neuen Hof anlegen); leer = abgeschaltet
       - key: FLOCKMAP_ADMIN_TOKEN
         sync: false

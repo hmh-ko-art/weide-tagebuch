@@ -195,10 +195,15 @@ const darfNotiz = (n, notiz) => istAdmin(n) || (!!n && notiz.autorId === n.id)
 function nutzerGeaendert(k) { k.nutzerVersion = (k.nutzerVersion ?? 1) + 1; speichern(k) }
 
 // Middleware: Karte laden + Nutzer bestimmen
-function mitKarte(rolle) {
+// Gelöschte Karten (Papierkorb, 30 Tage): nur ausdrücklich markierte Routen (Lesen für Admins, Wiederherstellen,
+// endgültig löschen, Meine Daten) sind erreichbar, alles andere antwortet mit 410 „gelöscht“.
+const geloeschtInfo = (x) => ({ am: x.geloescht.am, bis: x.geloescht.bis, ...(x.geloescht.hof ? { hof: true } : {}) })
+const GELOESCHT = (x) => ({ fehler: `${x.mitglieder ? 'Dieser Hof' : 'Diese Karte'} wurde gelöscht und wird am ${new Date(x.geloescht.bis).toLocaleDateString('de-DE', { timeZone: 'Europe/Berlin' })} endgültig entfernt.`, geloescht: geloeschtInfo(x) })
+function mitKarte(rolle, papierkorb = false) {
   return (req, res, next) => {
     const k = laden(req.params.id)
     if (!k) return res.status(404).json({ fehler: 'Karte nicht gefunden' })
+    if (k.geloescht && !papierkorb) return res.status(410).json(GELOESCHT(k))
     const n = wer(req, k)
     if (rolle === 'nutzer' && !n) return res.status(403).json({ fehler: 'Nur Lesezugriff – kein gültiger Zugang' })
     if (rolle === 'nutzer' && n.rolle === 'ansehen') return res.status(403).json({ fehler: 'Nur ansehen – keine Bearbeitungsrechte' })
@@ -232,11 +237,12 @@ app.post('/api/karten', (req, res) => {
   res.status(201).json({ ...oeffentlich(k), zugang: admin.zugang, ich: ichInfo(admin) })
 })
 
-app.get('/api/karten/:id', mitKarte(), (req, res) => {
+app.get('/api/karten/:id', mitKarte(undefined, true), (req, res) => {
   const k = req.karte, n = req.nutzer
+  if (k.geloescht && !darfLoeschen(k, n)) return res.status(410).json(GELOESCHT(k))
   const h = k.hof ? hofCache.get(k.hof) : null
   const m = h && n ? h.mitglieder.find((x) => x.id === n.id) : null
-  res.json({ ...oeffentlich(k), ich: ichInfo(n), darfBearbeiten: !!n && n.rolle !== 'ansehen', ...(h ? { hof: { id: h.id, name: h.name, ...(m ? { rolle: m.rolle } : {}) } } : {}) })
+  res.json({ ...oeffentlich(k), ich: ichInfo(n), darfBearbeiten: !!n && n.rolle !== 'ansehen' && !k.geloescht, ...(k.geloescht ? { geloescht: geloeschtInfo(k) } : {}), ...(n ? { darfLoeschen: darfLoeschen(k, n) } : {}), ...(h ? { hof: { id: h.id, name: h.name, ...(m ? { rolle: m.rolle } : {}) } } : {}) })
 })
 
 // ---- Gleichzeitige Änderungen (Offline-Modus) ----
@@ -704,10 +710,11 @@ function hofWer(req, h) {
   if (!z) return null
   return h.mitglieder.find((m) => gleich(m.zugang, z)) ?? null
 }
-function mitHof(stufe) {
+function mitHof(stufe, papierkorb = false) {
   return (req, res, next) => {
     const h = idOk(req.params.hid) ? hofCache.get(req.params.hid) : null
     if (!h) return res.status(404).json({ fehler: 'Hof nicht gefunden' })
+    if (h.geloescht && !papierkorb) return res.status(410).json(GELOESCHT(h))
     const m = hofWer(req, h)
     if (stufe === 'mitglied' && !m) return res.status(403).json({ fehler: 'Kein gültiger Zugang zu diesem Hof' })
     if (stufe === 'verwalter' && !hofVerwalter(m)) return res.status(403).json({ fehler: 'Nur für Inhaber und Admins des Hofs' })
@@ -718,7 +725,7 @@ function mitHof(stufe) {
 }
 const kartenInfo = (h) => h.karten.map((id) => cache.get(id)).filter(Boolean).map((k) => ({ id: k.id, name: k.name, eintraege: k.eintraege.length, geaendert: k.geaendert }))
 const mitgliedInfo = (m) => ({ id: m.id, name: m.name, rolle: m.rolle, erstellt: m.erstellt })
-const hofInfo = (h, m) => ({ id: h.id, name: h.name, erstellt: h.erstellt, karten: kartenInfo(h), ich: m ? { ...mitgliedInfo(m), hatPin: !!m.pin } : null })
+const hofInfo = (h, m) => ({ id: h.id, name: h.name, erstellt: h.erstellt, karten: kartenInfo(h), ich: m ? { ...mitgliedInfo(m), hatPin: !!m.pin } : null, ...(h.geloescht ? { geloescht: geloeschtInfo(h) } : {}) })
 const einladungOffen = (e) => e && !e.eingeloest && Date.parse(e.bis) > Date.now()
 const pinHash = (pin, salz) => crypto.scryptSync(String(pin), salz, 32).toString('base64')
 
@@ -748,7 +755,7 @@ function betreiber(req, res, next) {
   next()
 }
 app.get('/api/betreiber/hoefe', betreiber, (_req, res) => {
-  res.json([...hofCache.values()].map((h) => ({ id: h.id, name: h.name, erstellt: h.erstellt, karten: h.karten.length, mitglieder: h.mitglieder.length, inhaber: h.mitglieder.filter((m) => m.rolle === 'inhaber').map((m) => m.name) })))
+  res.json([...hofCache.values()].map((h) => ({ id: h.id, name: h.name, erstellt: h.erstellt, karten: h.karten.length, mitglieder: h.mitglieder.length, inhaber: h.mitglieder.filter((m) => m.rolle === 'inhaber').map((m) => m.name), ...(h.geloescht ? { geloescht: geloeschtInfo(h) } : {}) })))
 })
 app.post('/api/betreiber/hoefe', betreiber, (req, res) => {
   const hn = hofNameOk(req.body?.name)
@@ -810,7 +817,10 @@ app.post('/api/karten/:id/hof', mitKarte('admin'), (req, res) => {
 })
 
 // -- Hof lesen / umbenennen --
-app.get('/api/hoefe/:hid', mitHof('mitglied'), (req, res) => res.json(hofInfo(req.hof, req.mitglied)))
+app.get('/api/hoefe/:hid', mitHof('mitglied', true), (req, res) => {
+  if (req.hof.geloescht && req.mitglied?.rolle !== 'inhaber') return res.status(410).json(GELOESCHT(req.hof))
+  res.json(hofInfo(req.hof, req.mitglied))
+})
 app.patch('/api/hoefe/:hid', mitHof('verwalter'), (req, res) => {
   const { name, fehler } = hofNameOk(req.body?.name)
   if (fehler) return res.status(400).json({ fehler })
@@ -955,10 +965,176 @@ app.post('/api/hoefe/:hid/anmelden', mitHof(), (req, res) => {
   res.json({ zugang: m.zugang, karte: h.karten[0] ?? null, ich: mitgliedInfo(m) })
 })
 
+// ---------------------------------------------------------------------------------------
+// Datenschutz: „Meine Daten“ (Auskunft/Export), eigenen Zugang löschen, Karte/Hof löschen (30 Tage Papierkorb)
+// ---------------------------------------------------------------------------------------
+const EHEMALIG = 'ehemaliger Nutzer'
+const PAPIERKORB_TAGE = 30
+const hofVon = (k) => (k.hof ? hofCache.get(k.hof) ?? null : null)
+// Wer darf löschen? Einzelkarte: Admin. Hof-Karte: Inhaber des Hofs.
+function darfLoeschen(k, n) {
+  if (!n) return false
+  const h = hofVon(k)
+  if (h) return h.mitglieder.some((m) => m.id === n.id && m.rolle === 'inhaber')
+  return istAdmin(n)
+}
+// Person aus den Inhalten einer Karte entfernen (pseudonymisieren): Einträge, Gruppen und Notizen bleiben als
+// Betriebsdaten erhalten, tragen aber keinen Namen und keine Personen-ID mehr.
+function personAnonymisieren(k, id, name) {
+  const muster = name ? new RegExp(`von ${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\(`, 'g') : null
+  for (const e of k.eintraege) {
+    if (e.erstelltVon === id) e.erstelltVon = 'ehemalig'
+    if (e.geaendertVon === id) e.geaendertVon = 'ehemalig'
+    for (const n of e.notizen ?? []) {
+      if (n.autorId === id) { n.autor = EHEMALIG; delete n.autorId }
+      if (muster && n.autor === 'FlockMap') n.text = n.text.replace(muster, `von ${EHEMALIG} (`)
+    }
+  }
+  for (const g of k.gruppen ?? []) if (g.von === id) delete g.von
+  if (k.einladung?.von === id) delete k.einladung.von
+}
+
+// Auskunft: was ist über mich gespeichert? (Art. 15/20 DSGVO)
+app.get('/api/karten/:id/ich/daten', mitKarte('angemeldet', true), (req, res) => {
+  const k = req.karte, n = req.nutzer
+  const h = hofVon(k)
+  const m = h?.mitglieder.find((x) => x.id === n.id)
+  const karten = h ? h.karten.map((id) => cache.get(id)).filter(Boolean) : [k]
+  const eintraege = [], notizen = [], gruppen = []
+  for (const kk of karten) {
+    for (const e of kk.eintraege) {
+      if (e.erstelltVon === n.id) eintraege.push({ karte: kk.name, id: e.id, titel: e.titel || '', typ: e.typ, erstellt: e.erstellt })
+      for (const x of e.notizen ?? []) if (x.autorId === n.id) notizen.push({ karte: kk.name, eintrag: e.titel || '', text: x.text, zeitpunkt: x.zeitpunkt })
+    }
+    for (const g of kk.gruppen ?? []) if (g.von === n.id) gruppen.push({ karte: kk.name, name: g.name })
+  }
+  res.json({
+    erstellt: new Date().toISOString(),
+    person: { id: n.id, name: n.name, rolle: n.rolle, seit: n.erstellt ?? null },
+    hof: h ? { name: h.name, rolle: m?.rolle ?? null, pinEingerichtet: !!m?.pin, perEinladung: !!m?.perEinladung, karten: karten.map((x) => x.name) } : null,
+    karte: { name: k.name },
+    zugang: 'Dein persönlicher Link (Zugangsschlüssel) ist gespeichert, wird hier aber nicht angezeigt.',
+    eintraege, notizen, gruppen,
+    technisch: 'IP-Adressen werden nur kurzzeitig (höchstens 1 Stunde, nur im Arbeitsspeicher) für den Schutz vor Missbrauch gezählt. Der Hoster speichert Zugriffsprotokolle (siehe Datenschutzerklärung).',
+  })
+})
+
+// Eigenen Zugang löschen („Konto löschen“)
+app.delete('/api/karten/:id/ich', mitKarte('angemeldet'), (req, res) => {
+  const k = req.karte, n = req.nutzer
+  const h = hofVon(k)
+  if (h) {
+    const m = h.mitglieder.find((x) => x.id === n.id)
+    if (m?.rolle === 'inhaber' && inhaberAnzahl(h) <= 1) return res.status(409).json({ fehler: 'Du bist der einzige Inhaber. Mach erst eine andere Person zum Inhaber – oder lösche den ganzen Hof.' })
+    h.mitglieder = h.mitglieder.filter((x) => x.id !== n.id)
+    for (const e of h.einladungen) if (e.von === n.id) delete e.von
+    for (const kid of h.karten) { const kk = cache.get(kid); if (kk) personAnonymisieren(kk, n.id, n.name) }
+    hofSpeichern(h) // entfernt die Person aus allen Hof-Karten und speichert sie
+    return res.json({ ok: true, hof: true })
+  }
+  const admins = k.nutzer.filter((x) => x.rolle === 'admin')
+  if (k.nutzer.length === 1) return res.status(409).json({ fehler: 'Du bist die einzige Person auf dieser Karte. Lösche stattdessen die ganze Karte.' })
+  if (istAdmin(n) && admins.length <= 1) return res.status(409).json({ fehler: 'Du bist der einzige Admin. Mach erst eine andere Person zum Admin – oder lösche die ganze Karte.' })
+  k.nutzer = k.nutzer.filter((x) => x.id !== n.id)
+  personAnonymisieren(k, n.id, n.name)
+  nutzerGeaendert(k)
+  res.json({ ok: true })
+})
+
+// Karte löschen (Papierkorb). Bestätigung: genauer Kartenname.
+function sseBeenden(kid) { for (const r of clients.get(kid) ?? []) r.end(); clients.delete(kid) }
+function inPapierkorb(x, von, hof = false) {
+  const am = new Date()
+  x.geloescht = { am: am.toISOString(), bis: new Date(am.getTime() + PAPIERKORB_TAGE * 86400_000).toISOString(), von, ...(hof ? { hof: true } : {}) }
+}
+const nameGleich = (a, b) => String(a ?? '').replace(/\s+/g, ' ').trim() === String(b ?? '').replace(/\s+/g, ' ').trim()
+app.post('/api/karten/:id/loeschen', mitKarte('angemeldet'), (req, res) => {
+  const k = req.karte, n = req.nutzer
+  if (!darfLoeschen(k, n)) return res.status(403).json({ fehler: k.hof ? 'Nur der Inhaber des Hofs kann Karten löschen' : 'Nur Admins können die Karte löschen' })
+  if (!nameGleich(req.body?.name, k.name)) return res.status(400).json({ fehler: 'Zur Bestätigung bitte den Namen der Karte genau eintippen' })
+  const h = hofVon(k)
+  if (h && h.karten.filter((id) => cache.get(id) && !cache.get(id).geloescht).length <= 1) return res.status(409).json({ fehler: 'Das ist die letzte Karte des Hofs – lösche stattdessen den ganzen Hof.' })
+  inPapierkorb(k, n.id)
+  speichern(k)
+  sseBeenden(k.id)
+  res.json({ ok: true, geloescht: geloeschtInfo(k) })
+})
+app.post('/api/karten/:id/wiederherstellen', mitKarte('angemeldet', true), (req, res) => {
+  const k = req.karte
+  if (!k.geloescht) return res.json({ ok: true })
+  if (!darfLoeschen(k, req.nutzer)) return res.status(403).json({ fehler: 'Nur Admins bzw. der Inhaber können wiederherstellen' })
+  if (k.geloescht.hof) return res.status(409).json({ fehler: 'Der ganze Hof wurde gelöscht – bitte im Hof wiederherstellen.' })
+  delete k.geloescht
+  speichern(k)
+  res.json({ ok: true })
+})
+async function karteEndgueltig(kid) {
+  const k = cache.get(kid)
+  cache.delete(kid)
+  sseBeenden(kid)
+  if (pg) await pgKette.then(() => pg.query('DELETE FROM karten WHERE id = $1', [kid]))
+  else fs.rmSync(datei(kid), { force: true })
+  const h = k?.hof ? hofCache.get(k.hof) : null
+  if (h && !h.geloescht) { h.karten = h.karten.filter((x) => x !== kid); hofSpeichern(h, false) }
+}
+async function hofEndgueltig(hid) {
+  const h = hofCache.get(hid)
+  if (!h) return
+  for (const kid of h.karten) if (laden(kid)?.hof === hid) await karteEndgueltig(kid)
+  hofCache.delete(hid)
+  if (pg) await hofKette.then(() => pg.query('DELETE FROM hoefe WHERE id = $1', [hid]))
+  else fs.rmSync(hofDatei(hid), { force: true })
+}
+app.post('/api/karten/:id/endgueltig', mitKarte('angemeldet', true), async (req, res) => {
+  const k = req.karte
+  if (!k.geloescht || k.geloescht.hof) return res.status(409).json({ fehler: 'Die Karte muss zuerst gelöscht werden (Papierkorb).' })
+  if (!darfLoeschen(k, req.nutzer)) return res.status(403).json({ fehler: 'Nur Admins bzw. der Inhaber' })
+  if (!nameGleich(req.body?.name, k.name)) return res.status(400).json({ fehler: 'Zur Bestätigung bitte den Namen der Karte genau eintippen' })
+  await karteEndgueltig(k.id)
+  res.json({ ok: true })
+})
+// Ganzen Hof löschen (nur Inhaber): Hof und alle seine Karten in den Papierkorb
+app.post('/api/hoefe/:hid/loeschen', mitHof('mitglied'), (req, res) => {
+  const h = req.hof
+  if (req.mitglied.rolle !== 'inhaber') return res.status(403).json({ fehler: 'Nur der Inhaber kann den Hof löschen' })
+  if (!nameGleich(req.body?.name, h.name)) return res.status(400).json({ fehler: 'Zur Bestätigung bitte den Namen des Hofs genau eintippen' })
+  inPapierkorb(h, req.mitglied.id)
+  for (const kid of h.karten) { const k = cache.get(kid); if (k && !k.geloescht) { inPapierkorb(k, req.mitglied.id, true); speichern(k); sseBeenden(kid) } }
+  hofSpeichern(h, false)
+  res.json({ ok: true, geloescht: geloeschtInfo(h) })
+})
+app.post('/api/hoefe/:hid/wiederherstellen', mitHof('mitglied', true), (req, res) => {
+  const h = req.hof
+  if (req.mitglied?.rolle !== 'inhaber') return res.status(403).json({ fehler: 'Nur der Inhaber' })
+  if (!h.geloescht) return res.json({ ok: true })
+  delete h.geloescht
+  for (const kid of h.karten) { const k = cache.get(kid); if (k?.geloescht?.hof) { delete k.geloescht; speichern(k) } }
+  hofSpeichern(h, false)
+  res.json({ ok: true })
+})
+app.post('/api/hoefe/:hid/endgueltig', mitHof('mitglied', true), async (req, res) => {
+  const h = req.hof
+  if (req.mitglied?.rolle !== 'inhaber') return res.status(403).json({ fehler: 'Nur der Inhaber' })
+  if (!h.geloescht) return res.status(409).json({ fehler: 'Der Hof muss zuerst gelöscht werden (Papierkorb).' })
+  if (!nameGleich(req.body?.name, h.name)) return res.status(400).json({ fehler: 'Zur Bestätigung bitte den Namen des Hofs genau eintippen' })
+  await hofEndgueltig(h.id)
+  res.json({ ok: true })
+})
+// Abgelaufene Papierkorb-Einträge endgültig entfernen (beim Start und stündlich)
+async function papierkorbLeeren() {
+  const jetzt = Date.now()
+  // Datei-Ablage lädt Karten erst bei Bedarf -> für die Prüfung einmal alle einlesen
+  if (!pg) for (const f of fs.readdirSync(DATA_DIR)) { const m = /^([a-z0-9]{6,32})\.json$/i.exec(f); if (m) laden(m[1]) }
+  for (const h of [...hofCache.values()]) if (h.geloescht && Date.parse(h.geloescht.bis) <= jetzt) await hofEndgueltig(h.id).catch((e) => console.error('Papierkorb (Hof):', e.message))
+  for (const k of [...cache.values()]) if (k.geloescht && Date.parse(k.geloescht.bis) <= jetzt) await karteEndgueltig(k.id).catch((e) => console.error('Papierkorb (Karte):', e.message))
+}
+setInterval(() => papierkorbLeeren(), 3600_000).unref()
+
 // Live-Updates per Server-Sent Events
 app.get('/api/karten/:id/live', (req, res) => {
   const k = laden(req.params.id)
   if (!k) return res.status(404).end()
+  if (k.geloescht) return res.status(410).end()
   res.set({ 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' })
   res.flushHeaders()
   res.write(`event: karte\ndata: ${JSON.stringify(oeffentlich(k))}\n\n`)
@@ -982,5 +1158,6 @@ if (fs.existsSync(DIST_DIR)) {
 app.get('/healthz', (_req, res) => res.json({ ok: true, ablage: pg ? 'postgres' : 'datei' }))
 
 ablageStarten()
+  .then(() => papierkorbLeeren())
   .then(() => app.listen(PORT, () => console.log(`FlockMap-Server läuft auf http://localhost:${PORT}`)))
   .catch((e) => { console.error('Ablage konnte nicht gestartet werden:', e); process.exit(1) })

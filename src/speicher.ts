@@ -66,3 +66,37 @@ export function schreibenJetzt() {
   for (const [k, v] of ausstehend) tx.objectStore(STORE).put(v, k)
   ausstehend.clear()
 }
+export function entfernen(key: string) {
+  mem.delete(key)
+  ausstehend.delete(key)
+  try { localStorage.removeItem(key) } catch { /* egal */ }
+  if (db) db.transaction(STORE, 'readwrite').objectStore(STORE).delete(key)
+}
+
+// „Daten auf diesem Gerät löschen“: alles, was FlockMap im Browser abgelegt hat (Zugänge, Einstellungen,
+// Offline-Kopien, Postausgang, gespeicherte Kartenbilder und App-Dateien). Daten auf dem Server bleiben unberührt.
+export async function geraetLeeren() {
+  if (timer) { clearTimeout(timer); timer = null }
+  ausstehend.clear()
+  mem.clear()
+  const ls: string[] = []
+  for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i)!; if (k.startsWith('wt-')) ls.push(k) }
+  ls.forEach((k) => localStorage.removeItem(k))
+  try { sessionStorage.removeItem('wt-betreiber') } catch { /* egal */ }
+  if (db) { db.close(); db = null }
+  await new Promise((ok) => { try { const r = indexedDB.deleteDatabase(DB_NAME); r.onsuccess = r.onerror = r.onblocked = () => ok(null) } catch { ok(null) } })
+  if ('caches' in window) for (const n of await caches.keys()) if (n.startsWith('flockmap')) await caches.delete(n)
+}
+
+// Was liegt auf diesem Gerät? (für „Meine Daten“)
+export async function geraetUebersicht() {
+  let karten = 0, kacheln = 0
+  for (const k of mem.keys()) if (k.startsWith('wt-karte-')) karten++
+  const zugaenge = Object.keys(localStorage).filter((k) => k.startsWith('wt-zugang-')).length
+  const einstellungen = Object.keys(localStorage).filter((k) => k.startsWith('wt-') && !k.startsWith('wt-zugang-') && !k.startsWith('wt-queue-')).length
+  const ausgang = Object.keys(localStorage).filter((k) => k.startsWith('wt-queue-')).reduce((n, k) => { try { return n + (JSON.parse(localStorage.getItem(k)!) as unknown[]).length } catch { return n } }, 0)
+  try { if ('caches' in window) for (const n of await caches.keys()) if (n === 'flockmap-kacheln' || n === 'flockmap-gebiete') kacheln += (await (await caches.open(n)).keys()).length } catch { /* egal */ }
+  let belegt: number | null = null
+  try { belegt = (await navigator.storage?.estimate?.())?.usage ?? null } catch { /* egal */ }
+  return { zugaenge, karten, einstellungen, ausgang, kacheln, belegt }
+}

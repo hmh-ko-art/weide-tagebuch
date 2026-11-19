@@ -23,6 +23,7 @@ services:
       context: ..
       args:
         VITE_GOOGLE_MAPS_API_KEY: ${VITE_GOOGLE_MAPS_API_KEY:-}
+        VITE_HOSTER: ${VITE_HOSTER:-hetzner}
     image: flockmap-app:latest
     restart: unless-stopped
     depends_on:

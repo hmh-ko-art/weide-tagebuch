@@ -54,3 +54,13 @@ Panel „Export & Import“ (Liste → „⬇️ Export“ oder Einstellungen �
 - **Sicherung (JSON, nur Admin)**: ganze Karte ohne Zugänge/Links. Wiederherstellen: in diese Karte (nur Fehlendes ergänzen) oder als neue Karte.
 - **Import (nur Admin)**: KML/KMZ (Google My Maps: Ebenen → Gruppen, Stilfarben, Beschreibung + Zusatzfelder → Notiz, Tierzahlen aus Namen wie „50 + 1“, „+12 L“, „80 Schafe“), GeoJSON, CSV. Vorschau mit Häkchen je Eintrag, Duplikaterkennung (gleicher Name < 15 m).
 - Geschrieben wird über `POST /api/karten/:id/stapel` (Admin): ergänzt nur neue IDs, ändert nie Vorhandenes → idempotent, läuft über den Offline-Postausgang.
+
+## Rechtliches & Datenschutz
+
+**Entwurf – vor Verkauf anwaltlich prüfen lassen.** Details, Entscheidungen und Prüfliste: [`docs/RECHTLICHES.md`](docs/RECHTLICHES.md).
+
+- In-App-Seiten Impressum, Datenschutz, Nutzungsbedingungen (AGB-Entwurf), Kartenquellen (`src/recht/`), offline verfügbar, erreichbar über Einstellungen, Einladungs-/PIN-Seite und `#recht/<seite>`.
+- Alle Betreiber- und Hoster-Angaben zentral in `src/recht/betreiber.ts`; Hoster per `VITE_HOSTER=render|hetzner`.
+- „Meine Daten“: Auskunft + Export (`GET /api/karten/:id/ich/daten`), Gerät leeren, eigenen Zugang löschen (`DELETE /api/karten/:id/ich`, Einträge bleiben pseudonymisiert als „ehemaliger Nutzer“).
+- Karte/Hof löschen mit 30 Tagen Papierkorb: `POST /api/karten/:id/loeschen|wiederherstellen|endgueltig`, `POST /api/hoefe/:hid/loeschen|wiederherstellen|endgueltig`; automatische Endlöschung stündlich.
+- Einmaliger Hinweis beim ersten Start (kein Tracking, keine Cookies).

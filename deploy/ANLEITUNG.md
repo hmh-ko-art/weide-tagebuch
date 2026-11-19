@@ -46,3 +46,7 @@ Update einspielen: `cd /opt/flockmap && git pull && cd deploy && docker compose 
 ## Hof-Konten (ab Version mit „Mein Hof“)
 - Neue Tabelle `hoefe` (neben `karten`). Beim Umzug **beide Tabellen** übernehmen – `pg_dump` der ganzen Datenbank macht das automatisch; bei einem Export per SQL-Abfrage auch `SELECT id, daten FROM hoefe` sichern.
 - `FLOCKMAP_ADMIN_TOKEN` (in `.env`, von `setup.sh` zufällig erzeugt) schützt die Betreiber-Seite `/?betreiber` zum Anlegen neuer Höfe. Denselben Wert wie auf Render übernehmen, wenn er weiter gelten soll.
+
+## Datenschutztext nach dem Umzug
+
+Das Docker-Image baut die App mit `VITE_HOSTER=hetzner` – Impressum/Datenschutz nennen dann automatisch Hetzner (Deutschland) statt Render. Danach in `src/recht/betreiber.ts` das Datum `STAND` anpassen und den AVV mit Hetzner abschließen (siehe `docs/RECHTLICHES.md`).

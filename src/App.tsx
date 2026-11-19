@@ -4,11 +4,14 @@ import { useKarte, zugangsLink, einladungsLink, NAME_MAX, type Ich, type Nutzer 
 import { HofPanel, HofEinrichten, ROLLEN } from './Hof'
 import { OfflineAbschnitt } from './OfflineAbschnitt'
 import { Austausch, type ExportFilter } from './Austausch'
+import { RechtLinks } from './recht/Recht'
+import { MeineDaten } from './recht/MeineDaten'
+import { KarteLoeschenAbschnitt, GeloeschtHinweis } from './recht/Loeschen'
 import { googleNaviLink, routeBerechnen, routeText } from './route'
 import { eintragDatum, tagText, monatText, istAusblendbar, TIERARTEN, tierText, tierSymbolHtml, tierSummen, type Einheit, type Tierart, FARBEN, FLAECHEN_FARBEN, FLAECHE_STANDARD, START, STANDARD_FARBE, datum, farbName, hektar, mitte, neueId, notizenSortiert, pinFarbe, gruppenVorschlag, gruppenFarbe, gruppenOrdnung, naechsteGruppenFarbe, tierKurz, GRUPPEN_FARBEN, type Gruppe, type Eintrag, type Notiz, type Fokus, type LatLng, type Route } from './types'
 
 type Modus = 'ansicht' | 'pin' | 'flaeche'
-type Panel = null | 'liste' | 'einstellungen' | 'nutzer' | 'profil' | 'hof' | 'austausch'
+type Panel = null | 'liste' | 'einstellungen' | 'nutzer' | 'profil' | 'hof' | 'austausch' | 'meinedaten'
 
 // Aktuell angemeldeter Nutzer (geteilte Karte) – für Autor neuer Notizen
 let aktuellerNutzer: Ich | null = null
@@ -293,6 +296,7 @@ export default function App() {
   // Status: offline / X Änderungen warten / synchronisiert
   const aend = (n: number) => `${n} ${n === 1 ? 'Änderung wartet' : 'Änderungen warten'}`
   const statusText = k.status === 'lokal' ? 'Nur auf diesem Gerät'
+    : k.geloescht ? 'Im Papierkorb (gelöscht)'
     : k.status === 'offline' ? (k.wartend ? `Offline · ${aend(k.wartend)}` : 'Offline · alles gespeichert')
     : k.wartend ? `Sende ${aend(k.wartend).replace(' wartet', '').replace(' warten', '')} …`
     : k.status === 'verbinde' ? 'Verbinde …' : 'Live · synchronisiert'
@@ -424,7 +428,9 @@ export default function App() {
             onExport={(f) => { setExportFilter(f); setPanel('austausch') }} />
         )}
         {panel === 'austausch' && <Austausch k={k} eintraege={anzeige.eintraege} filter={exportFilter} meldung={setMeldung} onSchliessen={() => setPanel(null)} />}
-        {panel === 'einstellungen' && <Einstellungen k={k} onAustausch={() => { setExportFilter(null); setPanel('austausch') }} onSchliessen={() => setPanel(null)} meldung={setMeldung} onNutzer={() => setPanel(k.hof?.rolle ? 'hof' : 'nutzer')} onHof={() => setPanel('hof')} onProfil={() => setPanel('profil')} kopfFarbe={kopfFarbe} setKopfFarbe={setKopfFarbe} />}
+        {panel === 'einstellungen' && <Einstellungen k={k} onMeineDaten={() => setPanel('meinedaten')} onAustausch={() => { setExportFilter(null); setPanel('austausch') }} onSchliessen={() => setPanel(null)} meldung={setMeldung} onNutzer={() => setPanel(k.hof?.rolle ? 'hof' : 'nutzer')} onHof={() => setPanel('hof')} onProfil={() => setPanel('profil')} kopfFarbe={kopfFarbe} setKopfFarbe={setKopfFarbe} />}
+        {panel === 'meinedaten' && <MeineDaten k={k} meldung={setMeldung} onSchliessen={() => setPanel(null)} />}
+        {k.geloescht && panel !== 'austausch' && <GeloeschtHinweis k={k} meldung={setMeldung} onExport={() => { setExportFilter(null); setPanel('austausch') }} />}
         {k.einladung && !k.ich && k.status !== 'verbinde' && <Beitreten k={k} />}
         {panel === 'profil' && k.ich && <Profil k={k} onSchliessen={() => setPanel(null)} meldung={setMeldung} />}
         {panel === 'hof' && k.hof && <HofPanel k={k} onSchliessen={() => setPanel(null)} meldung={setMeldung} />}
@@ -1039,7 +1045,7 @@ function Liste(p: ListeProps) {
   )
 }
 
-function Einstellungen(p: { k: ReturnType<typeof useKarte>; onAustausch: () => void; onSchliessen: () => void; meldung: (s: string) => void; onNutzer: () => void; onHof: () => void; onProfil: () => void; kopfFarbe: string | null; setKopfFarbe: (f: string | null) => void }) {
+function Einstellungen(p: { k: ReturnType<typeof useKarte>; onMeineDaten: () => void; onAustausch: () => void; onSchliessen: () => void; meldung: (s: string) => void; onNutzer: () => void; onHof: () => void; onProfil: () => void; kopfFarbe: string | null; setKopfFarbe: (f: string | null) => void }) {
   const { k } = p
   const [name, setName] = useState('Weidekarte Deichschäferei')
   const [kartenName, setKartenName] = useState(k.kartenName)
@@ -1130,6 +1136,12 @@ function Einstellungen(p: { k: ReturnType<typeof useKarte>; onAustausch: () => v
       <button className="primaer" onClick={p.onAustausch}>⬇️⬆️ Export &amp; Import öffnen</button>
       <p className="hinweis klein">Excel-Liste, PDF-Bericht, KML für Google Earth/My Maps{k.istAdmin ? ', vollständige Sicherung und Import aus Google My Maps' : ''}.</p>
 
+      <h3>Datenschutz &amp; Rechtliches</h3>
+      <button onClick={p.onMeineDaten}>🛡️ Meine Daten ansehen, herunterladen oder löschen</button>
+      <RechtLinks />
+
+      <KarteLoeschenAbschnitt k={k} meldung={p.meldung} onExport={p.onAustausch} />
+
       <h3>Karte</h3>
       <p className="hinweis">Kartendienst: {HAT_GOOGLE_KEY ? 'Google Maps (Satellit)' : 'Esri-Satellit / OpenStreetMap (kostenlos) – für Google Maps einen API-Key in VITE_GOOGLE_MAPS_API_KEY eintragen'}.<br />Routen: {HAT_GOOGLE_KEY ? 'Google Directions' : 'OSRM (kostenloser Demo-Server)'}.</p>
       <p className="hinweis klein">FlockMap · Prototyp v0.1</p>
@@ -1163,8 +1175,10 @@ function Beitreten(p: { k: ReturnType<typeof useKarte> }) {
           <label>Dein Name<input autoFocus value={name} maxLength={NAME_MAX} onChange={(e) => setName(e.target.value)} placeholder="z. B. Jan (Schäfer)" /></label>
           {fehler && <p className="fehler gefahr">{fehler}</p>}
           <div className="knoepfe"><button type="submit" className="primaer" disabled={laeuft || !sauber}>Beitreten</button></div>
+          <p className="hinweis klein">Mit dem Beitritt werden dein Name und deine Rolle gespeichert. Mehr dazu in der <a href="#recht/datenschutz">Datenschutzerklärung</a>.</p>
         </form>
       )}
+      <RechtLinks klein />
     </section>
   )
 }

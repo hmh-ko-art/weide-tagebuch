@@ -42,13 +42,13 @@ export default function LeafletKarte(p: KartenProps) {
     // Ohne Netz dort starten, wo zuletzt geschaut wurde – dort liegen die gespeicherten Kartenkacheln
     const zuletzt = navigator.onLine === false ? letzteAnsicht() : null
     if (zuletzt?.lat != null && zuletzt.lng != null) m.setView([zuletzt.lat, zuletzt.lng], zuletzt.zoom)
-    const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap', crossOrigin: true })
-    const sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: '© Esri', crossOrigin: true })
+    const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© <a href="#recht/quellen">OpenStreetMap-Mitwirkende</a>', crossOrigin: true })
+    const sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: '<a href="#recht/quellen">Esri, Maxar, Earthstar Geographics, GIS User Community</a>', crossOrigin: true })
     // Beschriftungen (Orte, Grenzen, Straßen) über dem Satellitenbild
     const orte = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, crossOrigin: true })
     const strassen = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, crossOrigin: true })
     const satellit = L.layerGroup([sat, strassen, orte])
-    const satPur = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: '© Esri', crossOrigin: true })
+    const satPur = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: '<a href="#recht/quellen">Esri, Maxar, Earthstar Geographics, GIS User Community</a>', crossOrigin: true })
     satellit.addTo(m) // Standard: Satellit mit Beschriftung
     L.control.layers({ 'Satellit': satellit, 'Satellit ohne Beschriftung': satPur, 'Karte': osm }, undefined, { position: 'topright' }).addTo(m)
     L.control.zoom({ position: 'topright' }).addTo(m)

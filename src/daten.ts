@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { migrieren, type Einheit, type Eintrag, type Gruppe, type Notiz } from './types'
-import { lesen, schreiben, schreibenJetzt } from './speicher'
+import { lesen, schreiben, schreibenJetzt, entfernen } from './speicher'
 
 // Geteilte Karte: ?karte=ID (ansehen) bzw. ?karte=ID&zugang=KEY (persönlicher Zugang; alt: &schluessel=KEY).
 // Der Zugang wird am Gerät gespeichert und aus der Adresszeile entfernt.
@@ -138,6 +138,15 @@ export function konfliktText(k: Konflikt): string {
     : `${t}: ${wer} hat den Eintrag später als du geändert. Diese Fassung gilt – deine steht als Notiz am Eintrag.`
 }
 
+export interface Geloescht { am: string; bis: string; hof?: boolean }
+
+// Alles, was dieses Gerät zu einer Karte gespeichert hat, entfernen (Zugang, Kopie, Postausgang)
+export async function geraetVergessen(id: string) {
+  for (const key of [zugangKey(id), queueKey(id)]) localStorage.removeItem(key)
+  for (const key of [cacheKey(id), gruppenKey(id), metaKey(id), ausgangKey(id)]) entfernen(key)
+  await schreibenJetzt()
+}
+
 export function useKarte() {
   const { karteId, zugang, einladung } = PARAMS
   const meta0 = karteId ? lesen<Meta>(metaKey(karteId), {}) : {}
@@ -151,9 +160,12 @@ export function useKarte() {
   const [hof, setHof] = useState<HofKurz | null>(meta0.hof ?? null)
   const [letzteSync, setLetzteSync] = useState<string | null>(meta0.sync ?? null)
   const [konflikte, setKonflikte] = useState<Konflikt[]>([])
+  // Karte im Papierkorb (gelöscht, 30 Tage wiederherstellbar) – dann ist nichts mehr bearbeitbar
+  const [geloescht, setGeloescht] = useState<Geloescht | null>(null)
+  const [darfLoeschen, setDarfLoeschen] = useState(false)
   const nutzerVersion = useRef<number | null>(null)
   const [nutzerStand, setNutzerStand] = useState(0) // ändert sich bei jeder Nutzerlisten-Änderung (z. B. Beitritt per Einladung)
-  const darfBearbeiten = !karteId || (!!ich && ich.rolle !== 'ansehen')
+  const darfBearbeiten = !karteId || (!!ich && ich.rolle !== 'ansehen' && !geloescht)
   const istAdmin = !karteId || ich?.rolle === 'admin'
   const queue = useRef<Ausstehend[]>(karteId ? queueLaden(karteId) : [])
   const [wartend, setWartend] = useState(queue.current.length) // Anzahl Änderungen im Postausgang
@@ -165,8 +177,11 @@ export function useKarte() {
     if (!karteId) return
     try {
       const r = await mitZeitlimit(`/api/karten/${karteId}`, { headers })
+      if (r.status === 410) { const j = await r.json().catch(() => ({})); setGeloescht(j.geloescht ?? { am: '', bis: '' }); setDarfLoeschen(false); return }
       if (!r.ok) return
       const k = await r.json()
+      setGeloescht(k.geloescht ?? null)
+      setDarfLoeschen(!!k.darfLoeschen)
       setKartenName(k.name)
       setHof(k.hof ?? null)
       schreiben(metaKey(karteId), { ...lesen<Meta>(metaKey(karteId), {}), name: k.name, ich: k.ich ?? null, hof: k.hof ?? null })
@@ -220,6 +235,8 @@ export function useKarte() {
     const j = await r.json().catch(() => ({}))
     // Löschen abgelehnt, weil inzwischen von jemand anderem geändert -> nichts geht verloren, Nutzer wird informiert
     if (r.status === 409 && j.konflikt) throw Object.assign(new Error('Konflikt'), { endgueltig: true, konflikt: j.konflikt as Konflikt })
+    // Karte gelöscht: Änderung bleibt im Postausgang (falls die Karte wiederhergestellt wird, geht nichts verloren)
+    if (r.status === 410) { setGeloescht(j.geloescht ?? { am: '', bis: '' }); throw new Error('Karte gelöscht') }
     if (r.status === 403 || r.status === 404) throw Object.assign(new Error('Nur Lesezugriff'), { endgueltig: true })
     if (!r.ok) throw new Error('Serverfehler ' + r.status)
     if (j.konflikt) konfliktMelden(j.konflikt as Konflikt)
@@ -273,7 +290,8 @@ export function useKarte() {
       setGruppen(gl)
       if (queue.current.length) queueAbarbeiten()
     })
-    es.onerror = () => setStatus('offline')
+    // Verbindung endgültig abgelehnt (z. B. Karte gelöscht) -> Stand vom Server holen
+    es.onerror = () => { setStatus('offline'); if (es.readyState === EventSource.CLOSED) ichLaden() }
     const online = () => { setStatus((s) => (s === 'offline' ? 'verbinde' : s)); queueAbarbeiten(); ichLaden() }
     const offline = () => setStatus('offline')
     window.addEventListener('online', online)
@@ -378,6 +396,31 @@ export function useKarte() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [karteId, zugang])
 
+  // ---- Datenschutz: Meine Daten, eigener Zugang, Karte löschen ----
+  const ichApi = async <T,>(pfad: string, method = 'GET', body?: unknown): Promise<T> => {
+    const r = await fetch(`/api/karten/${karteId}${pfad}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) })
+    const j = await r.json().catch(() => ({}))
+    if (!r.ok) throw new Error(j.fehler || (r.status >= 500 ? 'Server nicht erreichbar – bitte gleich nochmal.' : `Fehler ${r.status}`))
+    return j as T
+  }
+  const datenschutz = {
+    meineDaten: () => ichApi<Record<string, unknown>>('/ich/daten'),
+    // Eigenen Zugang löschen: danach Zugang und Kartenkopie von diesem Gerät entfernen
+    zugangLoeschen: async () => { await ichApi('/ich', 'DELETE'); await geraetVergessen(karteId!) },
+    karteLoeschen: async (name: string) => { const j = await ichApi<{ geloescht: Geloescht }>('/loeschen', 'POST', { name }); setGeloescht(j.geloescht); return j },
+    wiederherstellen: async () => {
+      if (geloescht?.hof && hof?.id) await fetch(`/api/hoefe/${hof.id}/wiederherstellen`, { method: 'POST', headers }).then(async (r) => { if (!r.ok) throw new Error((await r.json().catch(() => ({}))).fehler || 'Fehler') })
+      else await ichApi('/wiederherstellen', 'POST')
+      setGeloescht(null)
+      location.reload()
+    },
+    endgueltig: async (name: string) => {
+      if (geloescht?.hof && hof?.id) await fetch(`/api/hoefe/${hof.id}/endgueltig`, { method: 'POST', headers, body: JSON.stringify({ name }) }).then(async (r) => { if (!r.ok) throw new Error((await r.json().catch(() => ({}))).fehler || 'Fehler') })
+      else await ichApi('/endgueltig', 'POST', { name })
+      await geraetVergessen(karteId!)
+    },
+  }
+
   // ---- Nutzerverwaltung (Admin) ----
   const api = useCallback(async <T,>(pfad: string, method = 'GET', body?: unknown): Promise<T> => {
     const r = await fetch(`/api/karten/${karteId}/nutzer${pfad}`, { method, headers, body: body ? JSON.stringify(body) : undefined })
@@ -400,5 +443,5 @@ export function useKarte() {
   }
   const einladungVerwalten = { laden: () => einladungApi('GET'), erzeugen: () => einladungApi('POST'), deaktivieren: () => einladungApi('DELETE') }
 
-  return { stapel, alsNeueKarte, jetztSenden: queueAbarbeiten, wartend, letzteSync, konflikte, hof, setHof, eintraege, gruppen, gruppeSpeichern, gruppeLoeschen, zuordnen, reihenfolge, speichern, loeschen, notizSpeichern, notizLoeschen, alleErsetzen, teilen, abmelden, nameAendern, einladung, einladungPruefen, beitreten, kartenNameAendern, einladungVerwalten, nutzerStand, status, darfBearbeiten, istAdmin, ich, ichLaden, hinweis, setHinweis, nutzer, karteId, zugang, kartenName }
+  return { geloescht, darfLoeschen, datenschutz, stapel, alsNeueKarte, jetztSenden: queueAbarbeiten, wartend, letzteSync, konflikte, hof, setHof, eintraege, gruppen, gruppeSpeichern, gruppeLoeschen, zuordnen, reihenfolge, speichern, loeschen, notizSpeichern, notizLoeschen, alleErsetzen, teilen, abmelden, nameAendern, einladung, einladungPruefen, beitreten, kartenNameAendern, einladungVerwalten, nutzerStand, status, darfBearbeiten, istAdmin, ich, ichLaden, hinweis, setHinweis, nutzer, karteId, zugang, kartenName }
 }

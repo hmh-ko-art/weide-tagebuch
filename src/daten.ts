@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { migrieren, type Einheit, type Eintrag, type Gruppe, type Notiz } from './types'
 import { lesen, schreiben, schreibenJetzt, entfernen } from './speicher'
 import * as WP from '../server/weideplan.js'
+import * as IS from '../server/infrastruktur.js'
+import type { Pruefung } from '../server/infrastruktur.js'
 import type { Weideplan, Herde, Belegung, UmtriebOp } from '../server/weideplan.js'
 
 // Geteilte Karte: ?karte=ID (ansehen) bzw. ?karte=ID&zugang=KEY (persönlicher Zugang; alt: &schluessel=KEY).
@@ -42,6 +44,8 @@ type Ausstehend =
   | { art: 'gruppe-delete'; id: string }
   | { art: 'zuordnen'; gruppe: string | null; ids: string[] }
   | { art: 'reihenfolge'; gruppe: string; ids: string[] }
+  // Weidezaungerät geprüft (ein Tipp; auch an fremden Geräten erlaubt)
+  | { art: 'geprueft'; eintragId: string; pruefung: Pruefung }
   // Import/Wiederherstellen: viele Einträge + Gruppen in EINER Änderung (nur Neues wird ergänzt, Vorhandenes bleibt unverändert)
   | { art: 'stapel'; eintraege: Eintrag[]; gruppen: Gruppe[]; weideplan?: Weideplan }
   // Weideplan (gemeinsame Logik mit dem Server: server/weideplan.js)
@@ -96,6 +100,8 @@ function anwenden(liste: Eintrag[], a: Ausstehend): Eintrag[] {
       return liste.map((x) => (x.id === a.eintragId ? { ...x, notizen: [...x.notizen.filter((n) => n.id !== a.notiz.id), a.notiz] } : x))
     case 'notiz-delete':
       return liste.map((x) => (x.id === a.eintragId ? { ...x, notizen: x.notizen.filter((n) => n.id !== a.notizId) } : x))
+    case 'geprueft':
+      return liste.map((x) => (x.id === a.eintragId ? IS.pruefungEintragen(x, a.pruefung) : x))
     case 'gruppe-put':
     case 'reihenfolge':
       return liste
@@ -166,7 +172,7 @@ async function mitZeitlimit(url: string, init: RequestInit, ms = 15000) {
   const t = setTimeout(() => ac.abort(), ms)
   try { return await fetch(url, { ...init, signal: ac.signal }) } finally { clearTimeout(t) }
 }
-export interface Konflikt { art: 'geaendert' | 'wiederhergestellt' | 'nicht-geloescht' | 'plan-geaendert' | 'umtrieb-doppelt' | 'umtrieb-weg' | 'umtrieb-zurueck'; titel: string; mit?: string; gewonnen?: boolean }
+export interface Konflikt { art: 'geaendert' | 'wiederhergestellt' | 'nicht-geloescht' | 'plan-geaendert' | 'umtrieb-doppelt' | 'umtrieb-weg' | 'umtrieb-zurueck' | 'geprueft-weg'; titel: string; mit?: string; gewonnen?: boolean }
 export function konfliktText(k: Konflikt): string {
   const wer = k.mit ? k.mit : 'jemand anderes'
   const t = k.titel ? `„${k.titel}“` : 'Ein Eintrag'
@@ -174,6 +180,7 @@ export function konfliktText(k: Konflikt): string {
   if (k.art === 'umtrieb-weg') return 'Ein Umtrieb wurde nicht gespeichert, weil die Belegung inzwischen gelöscht wurde.'
   if (k.art === 'umtrieb-zurueck') return `Umtrieb von „${k.titel}“ kann nicht mehr rückgängig gemacht werden – die Herde wurde inzwischen weiter umgetrieben.`
   if (k.art === 'plan-geaendert') return k.gewonnen ? `Weideplan „${k.titel}“: ${wer} hatte gleichzeitig geändert – deine Fassung ist neuer und gilt.` : `Weideplan „${k.titel}“: ${wer} hat später geändert – diese Fassung gilt, deine Änderung wurde verworfen.`
+  if (k.art === 'geprueft-weg') return 'Eine Geräte-Prüfung wurde nicht gespeichert, weil das Weidezaungerät inzwischen gelöscht wurde.'
   if (k.art === 'nicht-geloescht') return `${t} wurde nicht gelöscht, weil ${wer} den Eintrag inzwischen geändert hat.`
   if (k.art === 'wiederhergestellt') return `${t} war inzwischen gelöscht worden – deine Änderung hat den Eintrag wiederhergestellt.`
   return k.gewonnen
@@ -281,6 +288,7 @@ export function useKarte() {
       : a.art === 'delete' ? [basis + a.id + (a.basisGeaendert ? `?basis=${encodeURIComponent(a.basisGeaendert)}` : ''), 'DELETE', undefined]
       : a.art === 'notiz-put' ? [`${basis}${a.eintragId}/notizen/${a.notiz.id}`, 'PUT', a.notiz]
       : a.art === 'notiz-delete' ? [`${basis}${a.eintragId}/notizen/${a.notizId}`, 'DELETE', undefined]
+      : a.art === 'geprueft' ? [`${basis}${a.eintragId}/geprueft`, 'POST', { id: a.pruefung.id, datum: a.pruefung.datum, kv: a.pruefung.kv, stand: a.pruefung.stand }]
       : a.art === 'gruppe-put' ? [`/api/karten/${karteId}/gruppen/${a.gruppe.id}`, 'PUT', { name: a.gruppe.name, ...(a.gruppe.farbe ? { farbe: a.gruppe.farbe } : {}) }]
       : a.art === 'reihenfolge' ? [`/api/karten/${karteId}/gruppen/${a.gruppe}/reihenfolge`, 'PUT', { ids: a.ids }]
       : a.art === 'gruppe-delete' ? [`/api/karten/${karteId}/gruppen/${a.id}`, 'DELETE', undefined]
@@ -395,6 +403,10 @@ export function useKarte() {
   }, [ausfuehren])
   const notizSpeichern = useCallback((eintragId: string, notiz: Notiz) => ausfuehren({ art: 'notiz-put', eintragId, notiz }), [ausfuehren])
   const notizLoeschen = useCallback((eintragId: string, notizId: string) => ausfuehren({ art: 'notiz-delete', eintragId, notizId }), [ausfuehren])
+  const geprueft = useCallback((eintragId: string, p: Omit<Pruefung, 'id' | 'autor' | 'autorId' | 'zeitpunkt'>) => {
+    const ich = ichRef.current
+    ausfuehren({ art: 'geprueft', eintragId, pruefung: { ...p, id: Date.now().toString(36) + Math.random().toString(36).slice(2, 8), zeitpunkt: new Date().toISOString(), ...(ich?.name ? { autor: ich.name } : {}), ...(ich?.id ? { autorId: ich.id } : {}) } })
+  }, [ausfuehren])
 
   // Eigene Gruppen: anlegen/umbenennen, löschen (Nadeln bleiben, werden ungruppiert), Nadeln zuordnen
   const gruppeSpeichern = useCallback((g: Gruppe) => ausfuehren({ art: 'gruppe-put', gruppe: g }), [ausfuehren])
@@ -532,5 +544,5 @@ export function useKarte() {
   }
   const einladungVerwalten = { laden: () => einladungApi('GET'), erzeugen: () => einladungApi('POST'), deaktivieren: () => einladungApi('DELETE') }
 
-  return { weideplan, plan, geloescht, darfLoeschen, datenschutz, stapel, alsNeueKarte, jetztSenden: queueAbarbeiten, wartend, letzteSync, konflikte, hof, setHof, eintraege, gruppen, gruppeSpeichern, gruppeLoeschen, zuordnen, reihenfolge, speichern, loeschen, notizSpeichern, notizLoeschen, alleErsetzen, teilen, abmelden, nameAendern, einladung, einladungPruefen, beitreten, kartenNameAendern, einladungVerwalten, nutzerStand, status, darfBearbeiten, istAdmin, ich, ichLaden, hinweis, setHinweis, nutzer, karteId, zugang, kartenName }
+  return { geprueft, weideplan, plan, geloescht, darfLoeschen, datenschutz, stapel, alsNeueKarte, jetztSenden: queueAbarbeiten, wartend, letzteSync, konflikte, hof, setHof, eintraege, gruppen, gruppeSpeichern, gruppeLoeschen, zuordnen, reihenfolge, speichern, loeschen, notizSpeichern, notizLoeschen, alleErsetzen, teilen, abmelden, nameAendern, einladung, einladungPruefen, beitreten, kartenNameAendern, einladungVerwalten, nutzerStand, status, darfBearbeiten, istAdmin, ich, ichLaden, hinweis, setHinweis, nutzer, karteId, zugang, kartenName }
 }

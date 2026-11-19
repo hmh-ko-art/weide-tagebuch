@@ -1,9 +1,17 @@
 import type { Eintrag, Fokus, LatLng, Route } from '../types'
 
+export interface PunkteBearbeiten { punkte: LatLng[]; geschlossen: boolean; sel: number | null; linie: boolean }
+
 export interface KartenProps {
   eintraege: Eintrag[]
   ausgewaehlt: string | null
   zeichenPunkte: LatLng[]
+  zeichenLinie?: boolean // Zeichnen einer Linie (Zaun/Weg/Graben) statt Fläche
+  bearbeiten?: PunkteBearbeiten | null // Eckpunkte einer Linie/Fläche verschieben, einfügen, löschen
+  onPunktZiehen?: (i: number, p: LatLng) => void
+  onPunktWahl?: (i: number) => void
+  onPunktEinfuegen?: (i: number, p: LatLng) => void // neuer Punkt an Stelle i
+  warnIds?: string[] // Weidezaungeräte mit fälliger Prüfung (rot umrandet)
   route: Route | null
   standort: LatLng | null
   fokus: Fokus | null
@@ -15,7 +23,7 @@ export interface KartenProps {
   verschiebbar: string[] // IDs der Nadeln, die dieser Nutzer verschieben darf (Drag-and-drop)
   onVerschieben: (id: string, p: LatLng) => void
   onKlick: (p: LatLng) => void
-  onAuswahl: (id: string) => void
+  onAuswahl: (id: string, p?: LatLng) => void // p: angetippte Stelle (Linien/Tore)
   onMitte: (p: LatLng) => void
 }
 

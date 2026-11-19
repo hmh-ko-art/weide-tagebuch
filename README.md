@@ -66,6 +66,17 @@ Kalender-Knopf in der Kopfleiste (rotes Badge = heute fällige/überfällige Umt
 - **Erinnerungen** nur in der App (Badge + Liste „Fällig“). Kein Web-Push: Render-Free schläft (kein verlässlicher Zeitgeber), Push braucht VAPID + gespeicherte Abos (neue personenbezogene Daten), unter iOS nur als installierte App. Auf Hetzner mit `web-push` kostenlos nachrüstbar.
 - **Export**: JSON-Sicherung inkl. Plan (ohne Personen-IDs), Excel-Blätter „Weideplan“ und „Umtriebe“, PDF-Abschnitt „Weideplan“.
 
+## Zäune & Wasser
+
+Code: `server/infrastruktur.js` (gemeinsam für Server **und** App: Arten, Längen, Tore, Geräte-Fälligkeit, Prüfen der Daten; Typen in `infrastruktur.d.ts`), `src/infra/Infra.tsx`, `src/map/symbole.ts`.
+
+- **Linien** (`typ: 'linie'`): `punkte[]` (2–2000), `linienArt` (elektronetz, festzaun, litze, weg, graben, sonstiges – Farbe/Strich je Art, eigene Farbe möglich), `geschlossen` (Ring), `flaeche` (Zaun um Fläche), `tore[]` ({id, pos = Meter ab Anfang, breite 1–20 m}, Lücke wird von der Länge abgezogen). Länge per Haversine, Netze = ⌈m / 50⌉.
+- **Technik-Punkte**: normale Nadeln mit `infra` (traenke, geraet, tor, unterstand, salz); Weidezaungerät mit `geraet` {strom, stand, kv, intervall (Standard 7 Tage), geprueft, pruefungen[≤30]}. Keine Tiere, keine Gruppe.
+- **Bedienung**: „〰 Zaun“ zeichnen (Live-Länge + Netze), „Punkte bearbeiten“ (ziehen, ＋ einfügen, löschen; auch für Flächen), „Tore setzen“, Fläche → „Zaun um Fläche erzeugen“. Liste: Reiter „Zäune & Wasser“ mit Ein-/Ausblenden je Art (pro Gerät, `wt-infra-aus`), Kartenknopf blendet alles aus.
+- **Geräte-Prüfung**: `POST /api/karten/:id/eintraege/:eid/geprueft` {id, datum, kv?, stand?} – jede Person mit Schreibrecht (auch Mitarbeiter, auch fremde Geräte), idempotent über die Prüf-ID, offline über den Postausgang. Fällige/überfällige Prüfungen und leere Akkus zählen im Weideplan-Badge und stehen unter „Jetzt“.
+- **Alte App-Versionen**: sehen Linien als Umriss, Technik als normale Nadel; speichern sie eine Technik-Nadel, behält der Server `infra`/`geraet` (Feld fehlt ≠ `infra: null`). Prüfungen werden beim Speichern zusammengeführt, nie überschrieben.
+- **Export/Import**: Excel-Blätter „Zäune & Wasser“ und „Geräte-Prüfungen“, PDF-Kapitel, KML-Ordner „Zäune & Wege“ (LineStrings mit Stil) und „Wasser & Technik“ (ExtendedData `flockmap_technik` für die exakte Rundreise). Import: KML/GeoJSON-LineString/MultiLineString → Linie (Art aus Name/Ebene geraten, Farbe aus dem Linienstil), Technik-Punkte optional am Namen erkannt.
+
 ## Rechtliches & Datenschutz
 
 **Entwurf – vor Verkauf anwaltlich prüfen lassen.** Details, Entscheidungen und Prüfliste: [`docs/RECHTLICHES.md`](docs/RECHTLICHES.md).

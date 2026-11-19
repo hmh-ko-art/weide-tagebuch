@@ -5,6 +5,13 @@ import { START, START_ZOOM, istAusblendbar, pinFarbe, tierSummen, tierSymbolHtml
 import { NADEL_BREITE, NADEL_HOEHE, nadelHtml } from './nadel'
 import { FARBE_AKTIV, ROUTE_FARBE, type KartenProps } from './props'
 import { ansichtSetzen, letzteAnsicht } from '../offline'
+import { infraSvg } from './symbole'
+import { gesamtLaenge, laengeText, linienArt, linienLaenge, linienStuecke, punktBei } from '../../server/infrastruktur.js'
+
+const ll = (q: { lat: number; lng: number }) => [q.lat, q.lng] as [number, number]
+const infraIcon = (html: string, label: string) => L.divIcon({ className: 'infra-icon', html: `${html}${label}`, iconSize: [30, 30], iconAnchor: [15, 15] })
+const punktIcon = (sel: boolean) => L.divIcon({ className: 'eck-icon', html: `<span class="eck${sel ? ' sel' : ''}"></span>`, iconSize: [28, 28], iconAnchor: [14, 14] })
+const mitteIcon = L.divIcon({ className: 'eck-icon', html: '<span class="eck mitte">+</span>', iconSize: [26, 26], iconAnchor: [13, 13] })
 
 // Beschriftung: Name und – falls gesetzt – dezent Symbol + Tierzahl
 // Tierliste 'ausblendbar': kleiner Knopf ▾/▸ im Schild klappt sie ein/aus (Zustand pro Gerät)
@@ -31,6 +38,7 @@ export default function LeafletKarte(p: KartenProps) {
   const map = useRef<L.Map | null>(null)
   const ebene = useRef<L.LayerGroup | null>(null)
   const zeichnen = useRef<L.LayerGroup | null>(null)
+  const eckEbene = useRef<L.LayerGroup | null>(null)
   const routeEbene = useRef<L.LayerGroup | null>(null)
   const standortEbene = useRef<L.LayerGroup | null>(null)
   const cb = useRef(p)
@@ -54,6 +62,7 @@ export default function LeafletKarte(p: KartenProps) {
     L.control.zoom({ position: 'topright' }).addTo(m)
     ebene.current = L.layerGroup().addTo(m)
     zeichnen.current = L.layerGroup().addTo(m)
+    eckEbene.current = L.layerGroup().addTo(m)
     routeEbene.current = L.layerGroup().addTo(m)
     standortEbene.current = L.layerGroup().addTo(m)
     m.on('click', (e) => cb.current.onKlick({ lat: e.latlng.lat, lng: e.latlng.lng }))
@@ -74,6 +83,7 @@ export default function LeafletKarte(p: KartenProps) {
     const hervor = new Set(p.hervor)
     const verschiebbar = new Set(p.verschiebbar)
     const tiereZu = new Set(p.tiereZu)
+    const warn = new Set(p.warnIds ?? [])
     for (const e of p.eintraege) {
       const aktiv = e.id === p.ausgewaehlt
       const klick = (ev: L.LeafletMouseEvent) => {
@@ -82,7 +92,38 @@ export default function LeafletKarte(p: KartenProps) {
         if ((ev.originalEvent?.target as Element | null)?.closest?.('.tiere-knopf')) cb.current.onTiereUmschalten(e.id)
         else cb.current.onAuswahl(e.id)
       }
-      if (e.typ === 'pin') {
+      if (e.typ === 'pin' && e.infra) {
+        // Weide-Technik: eigenes rundes Symbol (Gerät mit fälliger Prüfung rot umrandet)
+        const ziehbar = verschiebbar.has(e.id)
+        const name = e.titel.trim().replace(/[<>&"]/g, '')
+        const m = L.marker(ll(e.position), { icon: infraIcon(infraSvg(e.infra, 30, aktiv, warn.has(e.id)), p.beschriftung && name ? `<div class="pin-label infra-label">${name}</div>` : ''), zIndexOffset: aktiv ? 1000 : 300, draggable: ziehbar, autoPan: true, title: e.titel || undefined })
+        m.on('click', klick)
+        if (ziehbar) {
+          m.on('dragstart', () => { zieht.current = true; navigator.vibrate?.(15) })
+          m.on('dragend', () => { zieht.current = false; const q = m.getLatLng(); cb.current.onVerschieben(e.id, { lat: q.lat, lng: q.lng }) })
+        }
+        m.addTo(g)
+      } else if (e.typ === 'linie') {
+        // Zaun/Weg/Graben: Linie im Stil der Art, dunkler Schatten für Kontrast auf dem Satellitenbild, Tore als Lücken
+        const a = linienArt(e.linienArt), f = pinFarbe(e)
+        const linienKlick = (ev: L.LeafletMouseEvent) => { L.DomEvent.stopPropagation(ev); cb.current.onAuswahl(e.id, { lat: ev.latlng.lat, lng: ev.latlng.lng }) }
+        for (const st of linienStuecke(e)) {
+          const pts = st.map(ll)
+          L.polyline(pts, { color: aktiv ? '#fff' : '#000', weight: a.breite + (aktiv ? 5 : 3), opacity: aktiv ? 0.9 : 0.35, interactive: false }).addTo(g)
+          L.polyline(pts, { color: aktiv ? FARBE_AKTIV : f, weight: a.breite, opacity: 1, dashArray: a.strich || undefined, lineCap: a.strich ? 'butt' : 'round', interactive: false }).addTo(g)
+          // breite unsichtbare Tippfläche (leicht mit dem Finger zu treffen)
+          L.polyline(pts, { color: '#000', weight: 22, opacity: 0 }).on('click', linienKlick).addTo(g)
+        }
+        // Tore: kleine Pfosten an beiden Enden der Lücke
+        for (const t of e.tore ?? []) {
+          for (const d of [-t.breite / 2, t.breite / 2]) L.circleMarker(ll(punktBei(e, t.pos + d)), { radius: 4, color: '#3e2723', weight: 2, fillColor: '#fff', fillOpacity: 1, interactive: false }).addTo(g)
+          L.circleMarker(ll(punktBei(e, t.pos)), { radius: 11, opacity: 0, fillOpacity: 0 }).on('click', (ev) => { L.DomEvent.stopPropagation(ev); cb.current.onAuswahl(e.id, punktBei(e, t.pos)) }).addTo(g)
+        }
+        if (p.beschriftung || aktiv) {
+          const txt = `${e.titel.trim().replace(/[<>&"]/g, '')}${e.titel.trim() ? ' · ' : ''}${laengeText(linienLaenge(e))}`
+          L.tooltip({ permanent: true, direction: 'center', className: 'linie-label', interactive: false }).setLatLng(ll(punktBei(e, gesamtLaenge(e) / 2))).setContent(txt).addTo(g)
+        }
+      } else if (e.typ === 'pin') {
         const ziehbar = verschiebbar.has(e.id)
         const m = L.marker([e.position.lat, e.position.lng], { icon: pinIcon(aktiv, p.beschriftung ? labelHtml(e, tiereZu.has(e.id)) : '', pinFarbe(e), hervor.has(pinFarbe(e)), p.nummern[e.id]), zIndexOffset: aktiv ? 1000 : hervor.has(pinFarbe(e)) ? 500 : 0, draggable: ziehbar, autoPan: true })
         m.on('click', klick)
@@ -103,20 +144,47 @@ export default function LeafletKarte(p: KartenProps) {
         const poly = L.polygon(e.punkte.map((q) => [q.lat, q.lng] as [number, number]), { color: aktiv ? '#fff' : f, fillColor: f, weight: aktiv ? 4 : h ? 3.5 : 2, opacity: 1, fillOpacity: aktiv ? 0.35 : h ? 0.38 : 0.25 })
         // Nur beschriften, wenn die Fläche einen Namen hat
         if (p.beschriftung && e.titel.trim()) poly.bindTooltip(e.titel, { permanent: true, direction: 'center', className: 'flaeche-label' })
-        poly.on('click', klick).addTo(g)
+        // Tipp auf eine Fläche: Stelle mitgeben (im Setz-Modus kommt die Nadel genau dorthin, z. B. eine Tränke in der Weide)
+        poly.on('click', (ev: L.LeafletMouseEvent) => { L.DomEvent.stopPropagation(ev); cb.current.onAuswahl(e.id, { lat: ev.latlng.lat, lng: ev.latlng.lng }) }).addTo(g)
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [p.eintraege, p.ausgewaehlt, p.beschriftung, p.hervor.join(), p.verschiebbar.join(), p.tiereZu.join(), p.nummern])
+  }, [p.eintraege, p.ausgewaehlt, p.beschriftung, p.hervor.join(), p.verschiebbar.join(), p.tiereZu.join(), p.nummern, (p.warnIds ?? []).join()])
 
-  // Zeichnen einer Fläche
+  // Zeichnen einer Fläche oder Linie
   useEffect(() => {
     const g = zeichnen.current!
     g.clearLayers()
-    const pts = p.zeichenPunkte.map((q) => [q.lat, q.lng] as [number, number])
-    if (pts.length >= 2) L.polygon(pts, { color: FARBE_AKTIV, dashArray: '6 6', fillOpacity: 0.15 }).addTo(g)
+    const pts = p.zeichenPunkte.map(ll)
+    if (pts.length >= 2) (p.zeichenLinie ? L.polyline(pts, { color: FARBE_AKTIV, weight: 4 }) : L.polygon(pts, { color: FARBE_AKTIV, dashArray: '6 6', fillOpacity: 0.15 })).addTo(g)
     pts.forEach((q) => L.circleMarker(q, { radius: 6, color: FARBE_AKTIV, fillColor: '#fff', fillOpacity: 1 }).addTo(g))
-  }, [p.zeichenPunkte])
+  }, [p.zeichenPunkte, p.zeichenLinie])
+
+  // Eckpunkte bearbeiten: Punkte ziehen, „+“ in der Mitte fügt einen Punkt ein, Tippen wählt einen Punkt (zum Löschen)
+  useEffect(() => {
+    const g = eckEbene.current!
+    g.clearLayers()
+    const b = p.bearbeiten
+    if (!b) return
+    const pts = b.punkte.map(ll)
+    if (pts.length >= 2) (b.linie ? L.polyline(pts.concat(b.geschlossen ? [pts[0]] : []), { color: FARBE_AKTIV, weight: 4, interactive: false }) : L.polygon(pts, { color: FARBE_AKTIV, weight: 3, fillOpacity: 0.15, interactive: false })).addTo(g)
+    const ring = !b.linie || b.geschlossen
+    const n = pts.length
+    for (let i = 0; i < (ring ? n : n - 1); i++) {
+      const a = b.punkte[i], c = b.punkte[(i + 1) % n]
+      const m = L.marker([(a.lat + c.lat) / 2, (a.lng + c.lng) / 2], { icon: mitteIcon, draggable: true, zIndexOffset: 900 })
+      m.on('click', (ev) => { L.DomEvent.stopPropagation(ev); const q = m.getLatLng(); cb.current.onPunktEinfuegen?.(i + 1, { lat: q.lat, lng: q.lng }) })
+      m.on('dragend', () => { const q = m.getLatLng(); cb.current.onPunktEinfuegen?.(i + 1, { lat: q.lat, lng: q.lng }) })
+      m.addTo(g)
+    }
+    b.punkte.forEach((q, i) => {
+      const m = L.marker(ll(q), { icon: punktIcon(b.sel === i), draggable: true, zIndexOffset: 1000, autoPan: true })
+      m.on('click', (ev) => { L.DomEvent.stopPropagation(ev); cb.current.onPunktWahl?.(i) })
+      m.on('dragstart', () => cb.current.onPunktWahl?.(i))
+      m.on('dragend', () => { const z = m.getLatLng(); cb.current.onPunktZiehen?.(i, { lat: z.lat, lng: z.lng }) })
+      m.addTo(g)
+    })
+  }, [p.bearbeiten])
 
   // Route
   useEffect(() => {

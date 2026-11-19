@@ -4,6 +4,7 @@ import express from 'express'
 import fs from 'node:fs'
 import path from 'node:path'
 import * as WP from './weideplan.js'
+import * as IS from './infrastruktur.js'
 import crypto from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 
@@ -173,6 +174,7 @@ function autorNamen(k) {
   const ids = new Set()
   for (const e of k.eintraege) for (const n of e.notizen ?? []) if (n.autorId) ids.add(n.autorId)
   for (const b of k.weideplan?.bewegungen ?? []) if (b.autorId) ids.add(b.autorId)
+  for (const e of k.eintraege) for (const p of e.geraet?.pruefungen ?? []) if (p.autorId) ids.add(p.autorId)
   return Object.fromEntries(k.nutzer.filter((n) => ids.has(n.id)).map((n) => [n.id, n.name]))
 }
 const oeffentlich = (k) => ({ id: k.id, name: k.name, version: k.version, nutzerVersion: k.nutzerVersion, namen: autorNamen(k), eintraege: k.eintraege, gruppen: (k.gruppen ?? []).map((g) => ({ id: g.id, name: g.name, farbe: g.farbe, reihenfolge: g.reihenfolge ?? [], von: g.von, erstellt: g.erstellt })), geaendert: k.geaendert, ...(k.weideplan ? { weideplan: k.weideplan } : {}), ...(k.hof && hofCache.has(k.hof) ? { hof: { id: k.hof, name: hofCache.get(k.hof).name } } : {}) })
@@ -253,7 +255,8 @@ app.get('/api/karten/:id', mitKarte(undefined, true), (req, res) => {
 // Weicht der Serverstand davon ab und der Inhalt ist verschieden, gilt die NEUERE Änderung (nach Änderungszeitpunkt),
 // die andere Fassung wird als Notiz am Eintrag gesichert – so geht nichts still verloren.
 const TIER_WORT = { schaf: ['Schaf', 'Schafe'], bock: ['Bock', 'Böcke'], lamm: ['Lamm', 'Lämmer'] }
-const inhalt = (e) => JSON.stringify([e.titel ?? '', e.farbe ?? '', e.herde ?? '', e.datum ?? '', e.tierlisteModus ?? '', e.position ?? null, e.punkte ?? null, (e.einheiten ?? []).map((x) => [x.art, x.anzahl])])
+// Inhalt für die Konflikt-Erkennung (Prüfungen des Weidezaungeräts nicht – die werden zusammengeführt)
+const inhalt = (e) => JSON.stringify([e.titel ?? '', e.farbe ?? '', e.herde ?? '', e.datum ?? '', e.tierlisteModus ?? '', e.position ?? null, e.punkte ?? null, (e.einheiten ?? []).map((x) => [x.art, x.anzahl]), e.linienArt ?? '', !!e.geschlossen, e.tore ?? null, e.infra ?? '', e.geraet ? { ...e.geraet, pruefungen: undefined, geprueft: undefined, kv: undefined, stand: undefined } : null])
 function fassungText(e) {
   const teile = [`Name „${e.titel || '(ohne Namen)'}“`]
   const tiere = TIERARTEN.map((t) => [t, (e.einheiten ?? []).filter((x) => x.art === t).reduce((a, x) => a + x.anzahl, 0)]).filter(([, n]) => n > 0).map(([t, n]) => `${n} ${TIER_WORT[t][n === 1 ? 0 : 1]}`)
@@ -263,6 +266,8 @@ function fassungText(e) {
   if (e.datum) teile.push(`Datum ${e.datum}`)
   if (e.typ === 'pin' && e.position) teile.push(`Position ${Number(e.position.lat).toFixed(5)}, ${Number(e.position.lng).toFixed(5)}`)
   if (e.typ === 'flaeche' && Array.isArray(e.punkte)) teile.push(`${e.punkte.length} Eckpunkte`)
+  if (e.typ === 'linie' && Array.isArray(e.punkte)) teile.push(`${IS.linienArt(e.linienArt).name}, ${e.punkte.length} Punkte, ${IS.laengeText(IS.linienLaenge(e))}`)
+  if (e.infra) teile.push(IS.infraArt(e.infra)?.name ?? '')
   return teile.join(' · ')
 }
 const nutzerName = (k, id) => k.nutzer.find((n) => n.id === id)?.name
@@ -274,8 +279,26 @@ function konfliktNotiz(von, zeit, e, gewonnen) {
 app.put('/api/karten/:id/eintraege/:eid', mitKarte('nutzer'), (req, res) => {
   const k = req.karte, ich = req.nutzer
   const body = req.body
-  if (!body || body.id !== req.params.eid || !['pin', 'flaeche'].includes(body.typ)) return res.status(400).json({ fehler: 'Ungültiger Eintrag' })
+  if (!body || body.id !== req.params.eid || !['pin', 'flaeche', 'linie'].includes(body.typ)) return res.status(400).json({ fehler: 'Ungültiger Eintrag' })
   const e = migrieren(body)
+  {
+    // Alte App-Versionen kennen Weide-Technik nicht -> Art/Gerätedaten behalten, wenn das Feld fehlt
+    const alt0 = k.eintraege.find((x) => x.id === e.id)
+    if (alt0?.infra && body.typ === 'pin' && !('infra' in body)) { e.infra = alt0.infra; if (alt0.geraet) e.geraet = alt0.geraet }
+    const f = IS.eintragSauber(e)
+    if (f) return res.status(400).json({ fehler: f })
+    // Prüfungen: bekannte bleiben so, wie der Server sie hat (Autor nicht fälschbar), neue bekommen den Absender als Autor,
+    // Prüfungen anderer Geräte werden nie überschrieben (zusammenführen, neueste zählt)
+    if (e.infra === 'geraet') {
+      const alte = new Map((alt0?.geraet?.pruefungen ?? []).map((x) => [x.id, x]))
+      const neue = (e.geraet.pruefungen ?? []).filter((x) => !alte.has(x.id)).map((x) => ({ ...x, autor: req.nutzer.name, autorId: req.nutzer.id }))
+      const alle = [...alte.values(), ...neue].sort((a, b) => b.datum.localeCompare(a.datum) || (b.zeitpunkt ?? '').localeCompare(a.zeitpunkt ?? ''))
+      let z = { ...e, geraet: { ...e.geraet, pruefungen: alle.slice(1) } }
+      if (alle.length) z = IS.pruefungEintragen(z, alle[0])
+      else { delete z.geraet.geprueft; delete z.geraet.pruefungen }
+      e.geraet = z.geraet
+    }
+  }
   // Alte (noch gecachte) App-Versionen schicken keine Einheiten -> bestehende Einheiten nicht anfassen
   const ohneEinheiten = !Array.isArray(body.einheiten)
   const i = k.eintraege.findIndex((x) => x.id === e.id)
@@ -305,7 +328,7 @@ app.put('/api/karten/:id/eintraege/:eid', mitKarte('nutzer'), (req, res) => {
     if (body.datum === undefined && alt.datum) modus.datum = alt.datum
     // Gruppe wird nur über /gruppe-zuordnen geändert (Merge-sicher: Bearbeiten überschreibt keine gleichzeitige Gruppierung)
     k.eintraege[i] = { ...e, ...modus, einheiten, erstelltVon: alt.erstelltVon, geaendertVon: ich.id, notizen: alt.notizen ?? [] }
-    if (alt.gruppe) k.eintraege[i].gruppe = alt.gruppe; else delete k.eintraege[i].gruppe
+    if (alt.gruppe && IS.istNormal(k.eintraege[i])) k.eintraege[i].gruppe = alt.gruppe; else delete k.eintraege[i].gruppe
   } else {
     // neue Notizen beim Anlegen bekommen den Nutzer als Autor
     const notizen = e.notizen.filter(notizOk).map((n) => ({ id: n.id, text: n.text.slice(0, 5000), zeitpunkt: n.zeitpunkt, autor: ich.name, autorId: ich.id }))
@@ -336,7 +359,7 @@ app.delete('/api/karten/:id/eintraege/:eid', mitKarte('nutzer'), (req, res) => {
 app.put('/api/karten/:id/eintraege', mitKarte('admin'), (req, res) => {
   const k = req.karte
   if (!Array.isArray(req.body)) return res.status(400).json({ fehler: 'Liste erwartet' })
-  k.eintraege = req.body.map((e) => gruppeGueltig(k, { erstelltVon: req.nutzer.id, ...migrieren(e) }))
+  k.eintraege = req.body.map((e) => gruppeGueltig(k, { erstelltVon: req.nutzer.id, ...migrieren(e) })).filter((e) => !IS.eintragSauber(e))
   speichern(k)
   res.json({ ok: true, version: k.version })
 })
@@ -366,11 +389,13 @@ app.post('/api/karten/:id/stapel', mitKarte('admin'), (req, res) => {
   let neu = 0, schon = 0, ungueltig = 0
   const neueIds = []
   for (const r of roh) {
-    if (!r || typeof r.id !== 'string' || !/^[\w-]{1,64}$/.test(r.id) || !['pin', 'flaeche'].includes(r.typ)) { ungueltig++; continue }
+    if (!r || typeof r.id !== 'string' || !/^[\w-]{1,64}$/.test(r.id) || !['pin', 'flaeche', 'linie'].includes(r.typ)) { ungueltig++; continue }
     if (r.typ === 'pin' && !(r.position && Number.isFinite(r.position.lat) && Number.isFinite(r.position.lng))) { ungueltig++; continue }
     if (r.typ === 'flaeche' && !(Array.isArray(r.punkte) && r.punkte.length >= 3 && r.punkte.every((p) => p && Number.isFinite(p.lat) && Number.isFinite(p.lng)))) { ungueltig++; continue }
     if (vorhanden.has(r.id)) { schon++; continue }
     const e = migrieren(r)
+    if (IS.eintragSauber(e)) { ungueltig++; continue }
+    for (const p of e.geraet?.pruefungen ?? []) if (p.autorId && !nutzerIds.has(p.autorId)) delete p.autorId
     // Notizen behalten ihren Autor-Namen (z. B. aus einer Sicherung); Nutzer-ID nur, wenn es die Person auf dieser Karte gibt
     e.notizen = e.notizen.filter(notizOk).slice(0, 500).map((n) => ({ id: n.id, text: n.text.slice(0, 5000), zeitpunkt: n.zeitpunkt, ...(typeof n.autor === 'string' && n.autor ? { autor: n.autor.slice(0, 60) } : {}), ...(n.autorId && nutzerIds.has(n.autorId) ? { autorId: n.autorId } : {}) }))
     e.titel = typeof e.titel === 'string' ? e.titel.slice(0, 200) : ''
@@ -449,6 +474,21 @@ app.delete('/api/karten/:id/weideplan/bewegungen/:bid', mitKarte('admin'), (req,
 })
 app.put('/api/karten/:id/weideplan/einstellungen', mitKarte('nutzer'), (req, res) => {
   planAntwort(req.karte, res, WP.einstellungenSetzen(req.karte, req.body ?? {}))
+})
+
+// Weidezaungerät geprüft (ein Tipp): darf jede Person mit Schreibrecht – auch an fremden Geräten. Idempotent über die Prüf-ID.
+app.post('/api/karten/:id/eintraege/:eid/geprueft', mitKarte('nutzer'), (req, res) => {
+  const k = req.karte, ich = req.nutzer
+  const i = k.eintraege.findIndex((x) => x.id === req.params.eid)
+  if (i < 0) return res.status(409).json({ fehler: 'Gerät gibt es nicht mehr', konflikt: { art: 'geprueft-weg', titel: '' } })
+  const alt = k.eintraege[i]
+  if (alt.infra !== 'geraet') return res.status(400).json({ fehler: 'Das ist kein Weidezaungerät' })
+  const b = req.body ?? {}
+  if (typeof b.id !== 'string' || !/^[\w-]{4,64}$/.test(b.id) || !WP.tagOk(b.datum) || b.datum > WP.tagPlus(WP.heute(), 1)) return res.status(400).json({ fehler: 'Ungültige Prüfung' })
+  if (alt.geraet?.pruefungen?.some((x) => x.id === b.id)) return res.json({ ok: true, version: k.version })
+  k.eintraege[i] = IS.pruefungEintragen(alt, { id: b.id, datum: b.datum, kv: b.kv, stand: b.stand, autor: ich.name, autorId: ich.id, zeitpunkt: new Date().toISOString() })
+  speichern(k)
+  res.json({ ok: true, version: k.version })
 })
 
 // Notiz anlegen/ändern (per Notiz-ID zusammengeführt -> gleichzeitige Notizen gehen nicht verloren)
@@ -1051,6 +1091,7 @@ function personAnonymisieren(k, id, name) {
     }
   }
   for (const g of k.gruppen ?? []) if (g.von === id) delete g.von
+  for (const e of k.eintraege) for (const p of e.geraet?.pruefungen ?? []) if (p.autorId === id) { p.autor = EHEMALIG; delete p.autorId }
   if (k.einladung?.von === id) delete k.einladung.von
   WP.planAnonymisieren(k, id, EHEMALIG)
 }
@@ -1061,11 +1102,12 @@ app.get('/api/karten/:id/ich/daten', mitKarte('angemeldet', true), (req, res) =>
   const h = hofVon(k)
   const m = h?.mitglieder.find((x) => x.id === n.id)
   const karten = h ? h.karten.map((id) => cache.get(id)).filter(Boolean) : [k]
-  const eintraege = [], notizen = [], gruppen = [], umtriebe = []
+  const eintraege = [], notizen = [], gruppen = [], umtriebe = [], pruefungen = []
   for (const kk of karten) {
     for (const e of kk.eintraege) {
       if (e.erstelltVon === n.id) eintraege.push({ karte: kk.name, id: e.id, titel: e.titel || '', typ: e.typ, erstellt: e.erstellt })
       for (const x of e.notizen ?? []) if (x.autorId === n.id) notizen.push({ karte: kk.name, eintrag: e.titel || '', text: x.text, zeitpunkt: x.zeitpunkt })
+      for (const x of e.geraet?.pruefungen ?? []) if (x.autorId === n.id) pruefungen.push({ karte: kk.name, geraet: e.titel || '', datum: x.datum, kv: x.kv ?? null, stand: x.stand ?? null })
     }
     for (const g of kk.gruppen ?? []) if (g.von === n.id) gruppen.push({ karte: kk.name, name: g.name })
     for (const b of kk.weideplan?.bewegungen ?? []) if (b.autorId === n.id) umtriebe.push({ karte: kk.name, art: b.art, datum: b.datum, herde: b.herdeName, von: b.von?.name ?? null, nach: b.nach?.name ?? null })
@@ -1076,7 +1118,7 @@ app.get('/api/karten/:id/ich/daten', mitKarte('angemeldet', true), (req, res) =>
     hof: h ? { name: h.name, rolle: m?.rolle ?? null, pinEingerichtet: !!m?.pin, perEinladung: !!m?.perEinladung, karten: karten.map((x) => x.name) } : null,
     karte: { name: k.name },
     zugang: 'Dein persönlicher Link (Zugangsschlüssel) ist gespeichert, wird hier aber nicht angezeigt.',
-    eintraege, notizen, gruppen, umtriebe,
+    eintraege, notizen, gruppen, umtriebe, pruefungen,
     technisch: 'IP-Adressen werden nur kurzzeitig (höchstens 1 Stunde, nur im Arbeitsspeicher) für den Schutz vor Missbrauch gezählt. Der Hoster speichert Zugriffsprotokolle (siehe Datenschutzerklärung).',
   })
 })

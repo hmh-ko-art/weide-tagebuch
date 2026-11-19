@@ -3,7 +3,9 @@
 import { useMemo, useState } from 'react'
 import type { useKarte } from './daten'
 import { FLAECHE_STANDARD, STANDARD_FARBE, isoTag, tierText, mitte, neueId, type Einheit, type Eintrag, type Gruppe, type LatLng } from './types'
-import { dateiName, herunterladen, summenBauen, zahl, zeilenBauen } from './austausch/zeilen'
+import { dateiName, herunterladen, summenBauen, technikBauen, zahl, zeilenBauen } from './austausch/zeilen'
+import { istNormal, linienArt, linienLaenge, laengeText } from '../server/infrastruktur.js'
+import { LinienSymbol, InfraSymbol } from './infra/Infra'
 import { sicherungErzeugen, sicherungLesen } from './austausch/sicherung'
 import type { ImportErgebnis, Vorschlag } from './austausch/kml'
 import * as WP from '../server/weideplan.js'
@@ -49,8 +51,11 @@ export function Austausch(p: { k: K; eintraege: Eintrag[]; filter: ExportFilter;
   const [laeuft, setLaeuft] = useState<string | null>(null)
   const auswahl = useMemo(() => (nurGefiltert && p.filter ? p.eintraege.filter((e) => p.filter!.ids.includes(e.id)) : p.eintraege), [nurGefiltert, p.filter, p.eintraege])
   const zeilen = useMemo(() => zeilenBauen(auswahl, k.gruppen), [auswahl, k.gruppen])
+  // Zäune & Wasser (eigenes Blatt / Kapitel / KML-Ordner)
+  const technikE = useMemo(() => auswahl.filter((e) => !istNormal(e)), [auswahl])
+  const technik = useMemo(() => technikBauen(technikE), [technikE])
   const name = k.kartenName || 'FlockMap'
-  const leer = !zeilen.length
+  const leer = !zeilen.length && !technik.length
   const filterText = nurGefiltert && p.filter ? p.filter.text : undefined
 
   const mit = async (was: string, f: () => Promise<void>) => {
@@ -84,14 +89,27 @@ export function Austausch(p: { k: K; eintraege: Eintrag[]; filter: ExportFilter;
         zeilen: zeilen.flatMap((z) => [...z.e.notizen].sort((a, b) => b.zeitpunkt.localeCompare(a.zeitpunkt)).map((n) => [z.name, z.gruppe, new Date(n.zeitpunkt).toLocaleString('de-DE'), n.autor ?? '', n.text])),
       },
       ...(hatPlan ? planBlaetter(k.weideplan!, k.eintraege) : []),
+      ...(technik.length ? [{
+        name: 'Zäune & Wasser',
+        kopf: ['Art', 'Name', 'Länge (m)', 'Netze à 50 m', 'Tore', 'Zuletzt geprüft', 'Nächste Prüfung', 'Spannung (kV)', 'Strom', 'Ladestand', 'Prüfen alle (Tage)', 'Breite', 'Länge', 'Notizen', 'ID'],
+        breiten: [16, 26, 10, 10, 6, 13, 13, 11, 14, 10, 10, 12, 12, 50, 16],
+        zeilen: technik.map((t) => [t.art + (t.geschlossen ? ' (Ring)' : ''), t.name, t.laenge != null ? Math.round(t.laenge) : null, t.netze, t.tore || null, t.geprueft ? { datum: t.geprueft } : t.artWert === 'geraet' ? 'nie' : null, /^\d{4}/.test(t.faelligAb) ? { datum: t.faelligAb } : t.faelligAb || null, t.kv, t.strom, t.stand, t.intervall, { zahl: t.lat, format: 'koord' as const }, { zahl: t.lng, format: 'koord' as const }, t.notizen, t.e.id]),
+        summenZeile: [null, 'Summe Zäune (ohne Wege/Gräben)', Math.round(technik.filter((t) => t.gattung === 'Linie' && !['weg', 'graben'].includes(t.artWert)).reduce((x, t) => x + (t.laenge ?? 0), 0)), technik.reduce((x, t) => x + (t.netze ?? 0), 0) || null],
+      } satisfies Blatt] : []),
+      ...(technik.some((t) => t.e.typ === 'pin' && t.e.geraet?.pruefungen?.length) ? [{
+        name: 'Geräte-Prüfungen',
+        kopf: ['Gerät', 'Datum', 'Spannung (kV)', 'Ladestand', 'Geprüft von'],
+        breiten: [26, 12, 12, 12, 18],
+        zeilen: technik.flatMap((t) => (t.e.typ === 'pin' ? [...(t.e.geraet?.pruefungen ?? [])].sort((a, b) => b.datum.localeCompare(a.datum)).map((x) => [t.name || 'Weidezaungerät', { datum: x.datum }, x.kv ?? null, x.stand ?? '', x.autor ?? '']) : [])),
+      } satisfies Blatt] : []),
     ])
     herunterladen(new Blob([daten as BlobPart], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), dateiName(name, 'xlsx'))
-    p.meldung(`Excel-Liste mit ${zeilen.length} Einträgen erstellt`)
+    p.meldung(`Excel-Liste mit ${zeilen.length} Einträgen${technik.length ? ` und ${technik.length} Zäunen/Technik-Punkten` : ''} erstellt`)
   })
 
   const pdf = () => mit('PDF-Bericht', async () => {
     const { pdfErzeugen } = await import('./austausch/pdf')
-    const blob = await pdfErzeugen(zeilen, k.gruppen, { karte: name, hof: k.hof?.name, autor: k.ich?.name, filterText, gesamtAnzahl: p.eintraege.length, jeGruppe, mitKarte, ...(mitPlan && hatPlan ? { weideplan: { plan: k.weideplan!, eintraege: k.eintraege } } : {}) })
+    const blob = await pdfErzeugen(zeilen, k.gruppen, { karte: name, hof: k.hof?.name, autor: k.ich?.name, filterText, gesamtAnzahl: p.eintraege.length, jeGruppe, mitKarte, technik: technikE, ...(mitPlan && hatPlan ? { weideplan: { plan: k.weideplan!, eintraege: k.eintraege } } : {}) })
     herunterladen(blob, dateiName(name, 'pdf'))
     p.meldung('PDF-Bericht erstellt')
   })
@@ -104,8 +122,8 @@ export function Austausch(p: { k: K; eintraege: Eintrag[]; filter: ExportFilter;
       { id: null, name: k.gruppen.length ? 'Ohne Gruppe' : 'Nadeln', farbe: '#9e9e9e' },
       { id: '__flaechen', name: 'Flächen', farbe: FLAECHE_STANDARD },
     ]
-    herunterladen(new Blob([kmlErzeugen(name, zeilen, reihe)], { type: 'application/vnd.google-earth.kml+xml' }), dateiName(name, 'kml'))
-    p.meldung(`KML mit ${zeilen.length} Einträgen erstellt`)
+    herunterladen(new Blob([kmlErzeugen(name, zeilen, reihe, technik)], { type: 'application/vnd.google-earth.kml+xml' }), dateiName(name, 'kml'))
+    p.meldung(`KML mit ${zeilen.length + technik.length} Einträgen erstellt`)
   })
 
   const sicherung = () => {
@@ -132,18 +150,18 @@ export function Austausch(p: { k: K; eintraege: Eintrag[]; filter: ExportFilter;
 
       <div className="export-karte">
         <button className="primaer" disabled={leer || !!laeuft} onClick={excel}>📊 {laeuft === 'Excel-Export' ? 'Erstelle …' : 'Excel-Liste (.xlsx)'}</button>
-        <p className="hinweis klein">Alle Nadeln und Flächen mit Gruppe, Nummer, Schafen, Böcken, Lämmern, Farbe, Koordinaten, Datum und Notizen. Dazu ein Blatt „Summen je Gruppe“, ein Blatt mit allen Notizen und – falls genutzt – die Blätter „Weideplan“ und „Umtriebe“. Öffnet sich in Excel, Numbers und LibreOffice.</p>
+        <p className="hinweis klein">Alle Nadeln und Flächen mit Gruppe, Nummer, Schafen, Böcken, Lämmern, Farbe, Koordinaten, Datum und Notizen. Dazu ein Blatt „Summen je Gruppe“, ein Blatt mit allen Notizen und – falls genutzt – die Blätter „Weideplan“, „Umtriebe“, „Zäune &amp; Wasser“ (Längen, Netze, Gerätestatus) und „Geräte-Prüfungen“. Öffnet sich in Excel, Numbers und LibreOffice.</p>
       </div>
       <div className="export-karte">
         <button className="primaer" disabled={leer || !!laeuft} onClick={pdf}>📄 {laeuft === 'PDF-Bericht' ? 'Erstelle … (Karte wird gezeichnet)' : 'PDF-Bericht'}</button>
         <label className="frei klein-option"><input type="checkbox" checked={mitKarte} onChange={(e) => setMitKarte(e.target.checked)} /> Übersichtskarte (Satellitenbild)</label>
         {hatPlan && <label className="frei klein-option"><input type="checkbox" checked={mitPlan} onChange={(e) => setMitPlan(e.target.checked)} /> Weideplan (aktuelle Belegung, Flächenstatus, letzte Umtriebe)</label>}
         <label className="frei klein-option"><input type="checkbox" checked={jeGruppe} onChange={(e) => setJeGruppe(e.target.checked)} /> Je Gruppe eine eigene Seite (mit Karte und allen Notizen)</label>
-        <p className="hinweis klein">Zum Ausdrucken oder Weitergeben (Deichverband, Tierarzt, Kontrolle): Hof- und Kartenname, Datum, Kennzahlen, Karte, Summen je Gruppe und eine Tabelle aller Einträge.</p>
+        <p className="hinweis klein">Zum Ausdrucken oder Weitergeben (Deichverband, Tierarzt, Kontrolle): Hof- und Kartenname, Datum, Kennzahlen, Karte, Summen je Gruppe, eine Tabelle aller Einträge und – falls eingetragen – Zäune &amp; Wasser (Längen, Netze, Weidezaungeräte mit Prüfstand).</p>
       </div>
       <div className="export-karte">
         <button className="primaer" disabled={leer || !!laeuft} onClick={kml}>🌍 {laeuft === 'KML-Export' ? 'Erstelle …' : 'KML für Google Earth / My Maps'}</button>
-        <p className="hinweis klein">Jede Gruppe wird ein eigener Ordner (in My Maps: eine Ebene), mit Farben. Flächen werden als Flächen (Polygone) übertragen. In My Maps: „Importieren“ in einer neuen Ebene.</p>
+        <p className="hinweis klein">Jede Gruppe wird ein eigener Ordner (in My Maps: eine Ebene), mit Farben. Flächen werden als Flächen (Polygone) übertragen, Zäune/Wege/Gräben als Linien (Ordner „Zäune &amp; Wege“), Tränken, Geräte usw. im Ordner „Wasser &amp; Technik“. In My Maps: „Importieren“ in einer neuen Ebene.</p>
       </div>
 
       {k.istAdmin ? (
@@ -151,7 +169,7 @@ export function Austausch(p: { k: K; eintraege: Eintrag[]; filter: ExportFilter;
           <h3>Sicherung</h3>
           <div className="export-karte">
             <button onClick={sicherung} disabled={!k.eintraege.length && !k.gruppen.length && !k.weideplan?.belegungen.length}>💾 Vollständige Sicherung herunterladen (JSON)</button>
-            <p className="hinweis klein">Die ganze Karte in einer Datei: alle Einträge, Notizen mit Autor, Tierzahlen, Gruppen mit Farben und Nummernfolge sowie der Weideplan (Herden, Belegungen, Umtriebs-Protokoll). Ohne persönliche Links – die Datei kann gefahrlos aufbewahrt werden. Tipp: einmal im Monat sichern.</p>
+            <p className="hinweis klein">Die ganze Karte in einer Datei: alle Einträge, Notizen mit Autor, Tierzahlen, Gruppen mit Farben und Nummernfolge, Zäune &amp; Wasser (inkl. Geräte-Prüfungen) sowie der Weideplan (Herden, Belegungen, Umtriebs-Protokoll). Ohne persönliche Links – die Datei kann gefahrlos aufbewahrt werden. Tipp: einmal im Monat sichern.</p>
           </div>
           <Wiederherstellen k={k} meldung={p.meldung} />
           <h3>Importieren</h3>
@@ -215,6 +233,7 @@ function Importieren(p: { k: K; meldung: (s: string) => void; onFertig: () => vo
   const [fehler, setFehler] = useState('')
   const [ebenenAlsGruppen, setEbenenAlsGruppen] = useState(true)
   const [ausNamen, setAusNamen] = useState(true)
+  const [technikErkennen, setTechnikErkennen] = useState(true)
   const [doppelteWeg, setDoppelteWeg] = useState(true)
   const [aus, setAus] = useState<Set<number>>(new Set())
   const [kml, setKml] = useState<typeof import('./austausch/kml') | null>(null)
@@ -224,21 +243,21 @@ function Importieren(p: { k: K; meldung: (s: string) => void; onFertig: () => vo
       const m = await import('./austausch/kml'); setKml(m)
       const r = await m.dateiLesen(f)
       if (r.vorschlaege.length > 3000) throw new Error(`Zu viele Einträge (${r.vorschlaege.length}) – höchstens 3.000 auf einmal`)
-      if (!r.vorschlaege.length) throw new Error(`In der Datei wurden keine Nadeln oder Flächen gefunden${r.uebersprungen.length ? ` (${r.uebersprungen.length} übersprungen: ${r.uebersprungen[0].grund})` : ''}`)
+      if (!r.vorschlaege.length) throw new Error(`In der Datei wurden keine Nadeln, Flächen oder Linien gefunden${r.uebersprungen.length ? ` (${r.uebersprungen.length} übersprungen: ${r.uebersprungen[0].grund})` : ''}`)
       setErg({ ...r, datei: f.name })
     } catch (e) { setFehler((e as Error).message) }
   }
   const zeilen: Zeile[] = useMemo(() => {
     if (!erg || !kml) return []
     return erg.vorschlaege.map((roh, i) => {
-      const v = kml.namenAuswerten(roh, ausNamen)
-      const pos = v.position ?? (v.punkte ? mitte({ typ: 'flaeche', punkte: v.punkte } as Eintrag) : null)
+      const v = kml.namenAuswerten(kml.technikAusName(roh, technikErkennen), ausNamen)
+      const pos = v.position ?? (v.punkte ? mitte({ typ: v.typ, punkte: v.punkte } as Eintrag) : null)
       const doppelt = (!!v.flockmapId && k.eintraege.some((e) => e.id === v.flockmapId)) || (!!pos && k.eintraege.some((e) => e.typ === v.typ && abstandM(mitte(e), pos) < 15 && (norm(e.titel) === norm(v.titel) || norm(e.titel) === norm(v.rohName))))
       return { v, doppelt, an: !aus.has(i) && !(doppelt && doppelteWeg) }
     })
-  }, [erg, kml, ausNamen, doppelteWeg, aus, k.eintraege])
+  }, [erg, kml, ausNamen, technikErkennen, doppelteWeg, aus, k.eintraege])
   const gewaehlt = zeilen.filter((z) => z.an)
-  const ebenen = [...new Set(gewaehlt.filter((z) => z.v.typ === 'pin' && z.v.ebene).map((z) => z.v.ebene.replace(/\s+/g, ' ').trim().slice(0, 40)))]
+  const ebenen = [...new Set(gewaehlt.filter((z) => z.v.typ === 'pin' && !z.v.infra && z.v.ebene).map((z) => z.v.ebene.replace(/\s+/g, ' ').trim().slice(0, 40)))]
   const neueEbenen = ebenen.filter((n) => !k.gruppen.some((g) => norm(g.name) === norm(n)))
 
   const importieren = () => {
@@ -260,14 +279,16 @@ function Importieren(p: { k: K; meldung: (s: string) => void; onFertig: () => vo
     }
     const eintraege: Eintrag[] = gewaehlt.map(({ v }) => {
       const id = v.flockmapId && !k.eintraege.some((e) => e.id === v.flockmapId) && /^[\w-]{1,64}$/.test(v.flockmapId) ? v.flockmapId : neueId()
-      const einheiten: Einheit[] = [['schaf', v.schafe], ['bock', v.boecke], ['lamm', v.laemmer]].filter(([, n]) => (n as number) > 0).map(([art, n]) => ({ id: `${id}-${art}`, art: art as Einheit['art'], anzahl: Math.round(n as number) }))
+      const einheiten: Einheit[] = v.typ === 'linie' || v.infra ? [] : [['schaf', v.schafe], ['bock', v.boecke], ['lamm', v.laemmer]].filter(([, n]) => (n as number) > 0).map(([art, n]) => ({ id: `${id}-${art}`, art: art as Einheit['art'], anzahl: Math.round(n as number) }))
       const notiz = v.notiz.trim()
       const basis = {
-        id, titel: v.titel.slice(0, 200), einheiten, farbe: v.farbe ?? (v.typ === 'pin' ? STANDARD_FARBE : FLAECHE_STANDARD), datum: v.datum ?? isoTag(new Date()),
+        id, titel: v.titel.slice(0, 200), einheiten, ...(v.typ === 'linie' ? (v.farbe ? { farbe: v.farbe } : {}) : { farbe: v.farbe ?? (v.typ === 'pin' ? STANDARD_FARBE : FLAECHE_STANDARD) }), datum: v.datum ?? isoTag(new Date()),
         ...(v.herde ? { herde: v.herde } : {}),
         notizen: notiz ? [{ id: `${id}-imp`, text: `${v.flockmapId ? '' : `Aus ${erg!.format}-Import („${erg!.datei}“${v.ebene ? `, Ebene „${v.ebene}“` : ''}):\n`}${notiz}`.slice(0, 5000), zeitpunkt: jetzt, ...(k.ich ? { autor: k.ich.name, autorId: k.ich.id } : {}) }] : [],
         erstellt: jetzt, geaendert: jetzt,
       }
+      if (v.typ === 'linie') return { ...basis, typ: 'linie', punkte: v.punkte!, linienArt: linienArt(v.linienArt).wert, ...(v.geschlossen && v.punkte!.length >= 3 ? { geschlossen: true } : {}), ...(v.tore?.length ? { tore: v.tore } : {}), ...(v.flaeche ? { flaeche: v.flaeche } : {}) }
+      if (v.typ === 'pin' && v.infra) return { ...basis, typ: 'pin', position: v.position!, infra: v.infra, ...(v.geraet ? { geraet: v.geraet } : {}) }
       return v.typ === 'pin' ? { ...basis, typ: 'pin', position: v.position!, ...(gruppeFuer(v.ebene) ? { gruppe: gruppeFuer(v.ebene) } : {}) } : { ...basis, typ: 'flaeche', punkte: v.punkte! }
     })
     // Reihenfolge in der Gruppe wie in der Datei
@@ -286,9 +307,10 @@ function Importieren(p: { k: K; meldung: (s: string) => void; onFertig: () => vo
       {fehler && <p className="fehler gefahr">{fehler}</p>}
       {erg && (
         <div className="vorschau-box" role="region" aria-label="Import – Vorschau">
-          <p><strong>{erg.datei}</strong> ({erg.format}{erg.titel ? `, „${erg.titel}“` : ''}): {(() => { const n = erg.vorschlaege.filter((v) => v.typ === 'pin').length, f = erg.vorschlaege.length - n; return `${n} ${n === 1 ? 'Nadel' : 'Nadeln'}, ${f} ${f === 1 ? 'Fläche' : 'Flächen'}` })()}{ebenen.length ? ` in ${ebenen.length} ${ebenen.length === 1 ? 'Ebene' : 'Ebenen'}` : ''}.</p>
+          <p><strong>{erg.datei}</strong> ({erg.format}{erg.titel ? `, „${erg.titel}“` : ''}): {(() => { const n = erg.vorschlaege.filter((v) => v.typ === 'pin').length, f = erg.vorschlaege.filter((v) => v.typ === 'flaeche').length, l = erg.vorschlaege.length - n - f; return `${n} ${n === 1 ? 'Nadel' : 'Nadeln'}, ${f} ${f === 1 ? 'Fläche' : 'Flächen'}${l ? `, ${l} ${l === 1 ? 'Linie' : 'Linien'} (als Zaun/Weg/Graben)` : ''}` })()}{ebenen.length ? ` in ${ebenen.length} ${ebenen.length === 1 ? 'Ebene' : 'Ebenen'}` : ''}.</p>
           {erg.uebersprungen.length > 0 && <p className="hinweis klein">Nicht übernommen: {erg.uebersprungen.slice(0, 5).map((u) => `„${u.name}“ (${u.grund})`).join(', ')}{erg.uebersprungen.length > 5 ? ` und ${erg.uebersprungen.length - 5} weitere` : ''}.</p>}
           <label className="frei klein-option"><input type="checkbox" checked={ebenenAlsGruppen} onChange={(e) => setEbenenAlsGruppen(e.target.checked)} /> Ebenen/Ordner als Gruppen anlegen{neueEbenen.length ? ` (neu: ${neueEbenen.join(', ')})` : ebenen.length ? ' (gibt es schon – werden ergänzt)' : ''}</label>
+          <label className="frei klein-option"><input type="checkbox" checked={technikErkennen} onChange={(e) => setTechnikErkennen(e.target.checked)} /> Tränken, Weidezaungeräte, Tore, Unterstände und Salzlecksteine am Namen erkennen (z. B. „Tränke Siel“)</label>
           <label className="frei klein-option"><input type="checkbox" checked={ausNamen} onChange={(e) => setAusNamen(e.target.checked)} /> Tierzahlen aus den Namen lesen („50 + 1“ = 50 Schafe + 1 Bock, „+12 L“ = 12 Lämmer)</label>
           {zeilen.some((z) => z.doppelt) && <label className="frei klein-option"><input type="checkbox" checked={doppelteWeg} onChange={(e) => setDoppelteWeg(e.target.checked)} /> {zeilen.filter((z) => z.doppelt).length} schon vorhandene überspringen (gleicher Name an gleicher Stelle)</label>}
           <div className="vorschau-tabelle" tabIndex={0}>
@@ -298,11 +320,12 @@ function Importieren(p: { k: K; meldung: (s: string) => void; onFertig: () => vo
                 {zeilen.slice(0, 400).map((z, i) => (
                   <tr key={i} className={z.an ? '' : 'aus'}>
                     <td><input type="checkbox" checked={z.an} aria-label={`${z.v.titel || z.v.rohName} übernehmen`} onChange={() => setAus((s) => { const n = new Set(s); if (z.an) n.add(i); else { n.delete(i); if (z.doppelt) setDoppelteWeg(false) } return n })} /></td>
-                    <td><span className={z.v.typ === 'pin' ? 'farbpunkt' : 'flaechen-symbol'} style={z.v.typ === 'pin' ? { background: z.v.farbe ?? STANDARD_FARBE } : { color: z.v.farbe ?? FLAECHE_STANDARD }}>{z.v.typ === 'flaeche' ? '⬠' : ''}</span> {z.v.titel || <span className="ohne-name">ohne Namen</span>}
+                    <td>{z.v.typ === 'linie' ? <LinienSymbol art={linienArt(z.v.linienArt).wert} farbe={z.v.farbe ?? undefined} /> : z.v.infra ? <InfraSymbol art={z.v.infra} groesse={16} /> : <span className={z.v.typ === 'pin' ? 'farbpunkt' : 'flaechen-symbol'} style={z.v.typ === 'pin' ? { background: z.v.farbe ?? STANDARD_FARBE } : { color: z.v.farbe ?? FLAECHE_STANDARD }}>{z.v.typ === 'flaeche' ? '⬠' : ''}</span>} {z.v.titel || (z.v.typ === 'linie' ? linienArt(z.v.linienArt).name : <span className="ohne-name">ohne Namen</span>)}
+                      {z.v.typ === 'linie' && z.v.punkte && <small className="roh"> · {linienArt(z.v.linienArt).name}, {laengeText(linienLaenge({ punkte: z.v.punkte, geschlossen: z.v.geschlossen }))}</small>}
                       {z.v.ausName && z.v.titel !== z.v.rohName && <small className="roh"> ← „{z.v.rohName}“</small>}
                       {z.doppelt && <small className="doppelt"> · schon vorhanden</small>}
                       {z.v.notiz && <small className="roh" title={z.v.notiz}> · 📝</small>}</td>
-                    <td>{z.v.typ === 'pin' && ebenenAlsGruppen ? z.v.ebene : ''}</td>
+                    <td>{z.v.typ === 'pin' && !z.v.infra && ebenenAlsGruppen ? z.v.ebene : ''}</td>
                     <td className="zahl">{z.v.schafe || ''}</td><td className="zahl">{z.v.boecke || ''}</td><td className="zahl">{z.v.laemmer || ''}</td>
                   </tr>
                 ))}

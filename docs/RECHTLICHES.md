@@ -54,6 +54,10 @@ Nach dem Umzug: `STAND` in `betreiber.ts` aktualisieren, AVV mit Hetzner abschli
   Tierzahl, `autor`/`autorId`, Zeitpunkt). Beim Zugang-Löschen: `autorId` entfernt, `autor` → „ehemaliger Nutzer“, `erstelltVon` → `ehemalig`.
   JSON-Sicherungen enthalten den Plan ohne interne Personen-IDs (nur Namen als Text). Keine Web-Push-Benachrichtigungen
   (würde Push-Abos = Geräte-Kennungen speichern, VAPID-Schlüssel und einen dauerhaft laufenden Server erfordern) – Erinnerungen nur in der App.
+- **Zäune & Wasser:** Linien (`typ: 'linie'`: punkte, linienArt, geschlossen, tore, flaeche) und Technik-Punkte (`pin.infra`,
+  `pin.geraet`). Neue personenbezogene Angabe: Prüfprotokoll der Weidezaungeräte (`geraet.pruefungen[]`, max. 30: Datum, kV,
+  Ladestand, `autor`/`autorId`, Zeitpunkt). Beim Zugang-Löschen: `autorId` entfernt, `autor` → „ehemaliger Nutzer“.
+  JSON-Sicherung und KML-Export ohne `autorId`; „Meine Daten“ listet eigene Prüfungen. Erinnerungen nur in der App.
 - **Server-Protokolle:** FlockMap schreibt keine Zugriffsprotokolle. IP-Adressen nur im Arbeitsspeicher (max. 1 Stunde)
   für die Begrenzung von Fehlversuchen. Plattform-Logs des Hosters siehe Datenschutzerklärung.
 

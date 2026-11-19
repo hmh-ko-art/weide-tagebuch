@@ -1,6 +1,11 @@
 // Übersichtskarte für den PDF-Bericht: Satellitenbild (Esri, dieselben Kacheln wie in der App – offline aus dem
 // Kartenspeicher, sofern schon angesehen) + Flächen + Nadeln mit Gruppennummer. Quellenangabe wird eingezeichnet.
 import type { Zeile } from './zeilen'
+import type { Eintrag } from '../types'
+import { pinFarbe } from '../types'
+import { INFRA_ARTEN, istInfra, istLinie, linienArt, linienStuecke } from '../../server/infrastruktur.js'
+
+const INFRA_BUCHSTABE: Record<string, string> = { traenke: 'W', geraet: 'Z', tor: 'T', unterstand: 'U', salz: 'S' }
 
 const KACHEL = (z: number, x: number, y: number) => `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`
 const px = (lng: number, z: number) => ((lng + 180) / 360) * 256 * 2 ** z
@@ -17,8 +22,8 @@ async function kachelLaden(url: string, ms = 8000): Promise<ImageBitmap | null> 
   } catch { return null } finally { clearTimeout(t) }
 }
 
-export async function kartenbild(zeilen: Zeile[], W = 1500, H = 1000): Promise<{ bild: string; kacheln: number; fehlend: number } | null> {
-  const punkte = zeilen.flatMap((z) => (z.e.typ === 'pin' ? [z.e.position] : z.e.punkte))
+export async function kartenbild(zeilen: Zeile[], W = 1500, H = 1000, technik: Eintrag[] = []): Promise<{ bild: string; kacheln: number; fehlend: number } | null> {
+  const punkte = [...zeilen, ...technik.map((e) => ({ e }))].flatMap((z) => (z.e.typ === 'pin' ? [z.e.position] : z.e.punkte))
   if (!punkte.length) return null
   const nord = Math.max(...punkte.map((p) => p.lat)), sued = Math.min(...punkte.map((p) => p.lat))
   const west = Math.min(...punkte.map((p) => p.lng)), ost = Math.max(...punkte.map((p) => p.lng))
@@ -50,6 +55,28 @@ export async function kartenbild(zeilen: Zeile[], W = 1500, H = 1000): Promise<{
     g.closePath()
     g.globalAlpha = 0.35; g.fillStyle = zl.farbe; g.fill()
     g.globalAlpha = 1; g.lineWidth = 3; g.strokeStyle = zl.farbe; g.stroke()
+  }
+  // Zäune, Wege, Gräben (Tore als Lücken), Stil wie auf der Karte
+  for (const e of technik) {
+    if (!istLinie(e)) continue
+    const a = linienArt(e.linienArt)
+    for (const st of linienStuecke(e)) {
+      const pfad = () => { g.beginPath(); st.forEach((p, i) => { const [x, y] = xy(p); if (i) g.lineTo(x, y); else g.moveTo(x, y) }) }
+      g.setLineDash([]); g.lineCap = 'round'; g.lineWidth = a.breite * 1.6 + 3; g.strokeStyle = 'rgba(0,0,0,.45)'; pfad(); g.stroke()
+      g.setLineDash(a.strich ? a.strich.split(' ').map((x) => Number(x) * 1.6) : []); g.lineCap = a.strich ? 'butt' : 'round'; g.lineWidth = a.breite * 1.6; g.strokeStyle = pinFarbe(e); pfad(); g.stroke()
+    }
+  }
+  g.setLineDash([])
+  // Weide-Technik: runde Marke mit Buchstabe (W Tränke, Z Weidezaungerät, T Tor, U Unterstand, S Salz)
+  const ri = Math.round(W / 95)
+  for (const e of technik) {
+    if (!istInfra(e)) continue
+    const [x, y] = xy(e.position)
+    const f = INFRA_ARTEN.find((a) => a.wert === e.infra)!.farbe
+    g.beginPath(); g.arc(x, y, ri, 0, Math.PI * 2); g.fillStyle = f; g.fill(); g.lineWidth = 3; g.strokeStyle = '#fff'; g.stroke()
+    const hell = parseInt(f.slice(1, 3), 16) * 0.299 + parseInt(f.slice(3, 5), 16) * 0.587 + parseInt(f.slice(5, 7), 16) * 0.114 > 160
+    g.fillStyle = hell ? '#1d2a1d' : '#fff'; g.font = `bold ${Math.round(ri * 1.15)}px sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle'
+    g.fillText(INFRA_BUCHSTABE[e.infra], x, y + 1)
   }
   // Nadeln (mit Nummer innerhalb der Gruppe)
   const r = Math.round(W / 70)

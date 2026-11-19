@@ -2,6 +2,8 @@ import { useEffect, useRef } from 'react'
 import { APIProvider, AdvancedMarker, Map, useMap } from '@vis.gl/react-google-maps'
 import { START, START_ZOOM, pinFarbe, type Eintrag } from '../types'
 import { nadelHtml } from './nadel'
+import { infraSvg } from './symbole'
+import { linienArt, linienStuecke } from '../../server/infrastruktur.js'
 import { FARBE_AKTIV, ROUTE_FARBE, type KartenProps } from './props'
 
 const KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string
@@ -22,15 +24,27 @@ function Overlays(p: KartenProps) {
       poly.addListener('click', () => cb.current.onAuswahl(e.id))
       return poly
     })
+    // Zäune, Wege, Gräben (Tore als Lücken)
+    for (const e of p.eintraege) {
+      if (e.typ !== 'linie') continue
+      const a = linienArt(e.linienArt), aktiv = e.id === p.ausgewaehlt
+      for (const st of linienStuecke(e)) {
+        const l = new google.maps.Polyline({ map, path: st, strokeColor: aktiv ? FARBE_AKTIV : pinFarbe(e), strokeWeight: a.breite + (aktiv ? 2 : 0), strokeOpacity: 0.95 })
+        l.addListener('click', () => cb.current.onAuswahl(e.id))
+        polys.push(l as unknown as google.maps.Polygon)
+      }
+    }
     return () => polys.forEach((x) => x.setMap(null))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [map, p.eintraege, p.ausgewaehlt, p.hervor.join()])
 
   useEffect(() => {
     if (!map || !p.zeichenPunkte.length) return
-    const poly = new google.maps.Polygon({ map, paths: p.zeichenPunkte, strokeColor: FARBE_AKTIV, fillOpacity: 0.15, clickable: false })
+    const poly = p.zeichenLinie
+      ? new google.maps.Polyline({ map, path: p.zeichenPunkte, strokeColor: FARBE_AKTIV, strokeWeight: 4, clickable: false })
+      : new google.maps.Polygon({ map, paths: p.zeichenPunkte, strokeColor: FARBE_AKTIV, fillOpacity: 0.15, clickable: false })
     return () => poly.setMap(null)
-  }, [map, p.zeichenPunkte])
+  }, [map, p.zeichenPunkte, p.zeichenLinie])
 
   useEffect(() => {
     if (!map || !p.route) return
@@ -68,7 +82,7 @@ export default function GoogleKarte(p: KartenProps) {
           e.typ === 'pin' ? (
             <AdvancedMarker key={e.id} position={e.position} title={e.titel || undefined} onClick={() => p.onAuswahl(e.id)}
               draggable={p.verschiebbar.includes(e.id)} onDragEnd={(ev) => { const ll = ev.latLng; if (ll) p.onVerschieben(e.id, { lat: ll.lat(), lng: ll.lng() }) }}>
-              <div dangerouslySetInnerHTML={{ __html: nadelHtml(pinFarbe(e), e.id === p.ausgewaehlt, p.hervor.includes(pinFarbe(e)), p.nummern[e.id]) }} />
+              <div dangerouslySetInnerHTML={{ __html: e.infra ? infraSvg(e.infra, 30, e.id === p.ausgewaehlt, !!p.warnIds?.includes(e.id)) : nadelHtml(pinFarbe(e), e.id === p.ausgewaehlt, p.hervor.includes(pinFarbe(e)), p.nummern[e.id]) }} />
             </AdvancedMarker>
           ) : null,
         )}

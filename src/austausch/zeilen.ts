@@ -1,4 +1,6 @@
 // Gemeinsames Zeilenmodell für alle Exporte (Excel, PDF, KML): eine Zeile je Nadel/Fläche
+import { INFRA_ARTEN, LINIEN_ARTEN, STAENDE, STROM_ARTEN, PRUEF_STANDARD, istInfra, istLinie, istNormal, linienArt, linienLaenge, netzAnzahl } from '../../server/infrastruktur.js'
+import { tagPlus } from '../../server/weideplan.js'
 import { eintragDatum, farbName, gruppenFarbe, gruppenOrdnung, hektar, mitte, notizenSortiert, pinFarbe, tagText, tierKurz, type Eintrag, type Gruppe } from '../types'
 
 export interface Zeile {
@@ -27,6 +29,7 @@ export const notizText = (n: { text: string; zeitpunkt: string; autor?: string }
 
 // Reihenfolge wie in der Liste: Gruppen in ihrer Reihenfolge (Nummern 1..n), dann Nadeln ohne Gruppe, dann Flächen (je neueste zuerst)
 export function zeilenBauen(eintraege: Eintrag[], gruppen: Gruppe[]): Zeile[] {
+  eintraege = eintraege.filter(istNormal) // Zäune & Wasser haben ein eigenes Blatt/Kapitel
   const gIds = new Set(gruppen.map((g) => g.id))
   const nummern = new Map<string, number>()
   for (const g of gruppen) gruppenOrdnung(g, eintraege).forEach((e, i) => nummern.set(e.id, i + 1))
@@ -74,3 +77,44 @@ export function herunterladen(daten: Blob, name: string) {
   setTimeout(() => URL.revokeObjectURL(a.href), 60000)
 }
 export const zahl = (n: number, stellen = 0) => n.toLocaleString('de-DE', { maximumFractionDigits: stellen, minimumFractionDigits: stellen })
+
+// ---- Zäune & Wasser: eine Zeile je Linie bzw. Technik-Punkt ----
+export interface TechnikZeile {
+  e: Eintrag
+  gattung: 'Linie' | 'Punkt'
+  art: string // z. B. „Elektronetz“, „Tränke“
+  artWert: string
+  name: string
+  farbe: string
+  laenge: number | null // Meter (Linien, ohne Tor-Lücken)
+  netze: number | null // nur Elektronetz
+  tore: number
+  geschlossen: boolean
+  // nur Weidezaungerät
+  strom: string; stand: string; kv: number | null; geprueft: string; faelligAb: string; intervall: number | null
+  lat: number; lng: number
+  notizen: string
+}
+export function technikBauen(eintraege: Eintrag[]): TechnikZeile[] {
+  const rangL = (w: string) => LINIEN_ARTEN.findIndex((a) => a.wert === w)
+  const rangI = (w: string) => INFRA_ARTEN.findIndex((a) => a.wert === w)
+  const linien = eintraege.filter(istLinie).sort((a, b) => rangL(linienArt(a.linienArt).wert) - rangL(linienArt(b.linienArt).wert) || (a.titel || '').localeCompare(b.titel || '', 'de'))
+  const punkte = eintraege.filter(istInfra).sort((a, b) => rangI(a.infra) - rangI(b.infra) || (a.titel || '').localeCompare(b.titel || '', 'de'))
+  const leer = { strom: '', stand: '', kv: null, geprueft: '', faelligAb: '', intervall: null }
+  return [
+    ...linien.map((e): TechnikZeile => {
+      const a = linienArt(e.linienArt), m = linienLaenge(e), c = mitte(e)
+      return { e, gattung: 'Linie', art: a.name, artWert: a.wert, name: e.titel || '', farbe: pinFarbe(e), laenge: m, netze: a.wert === 'elektronetz' ? netzAnzahl(m) : null, tore: e.tore?.length ?? 0, geschlossen: !!e.geschlossen, ...leer, lat: c.lat, lng: c.lng, notizen: notizenSortiert(e).map(notizText).join('\n') }
+    }),
+    ...punkte.map((e): TechnikZeile => {
+      const a = INFRA_ARTEN.find((x) => x.wert === e.infra)!, g = e.geraet
+      const intervall = e.infra === 'geraet' ? g?.intervall ?? PRUEF_STANDARD : null
+      return {
+        e, gattung: 'Punkt', art: a.name, artWert: a.wert, name: e.titel || '', farbe: a.farbe, laenge: null, netze: null, tore: 0, geschlossen: false,
+        strom: STROM_ARTEN.find((x) => x.wert === g?.strom)?.name ?? '', stand: STAENDE.find((x) => x.wert === g?.stand)?.name ?? '', kv: g?.kv ?? null,
+        geprueft: g?.geprueft ?? '', faelligAb: intervall ? (g?.geprueft ? tagPlus(g.geprueft, intervall) : 'sofort') : '', intervall,
+        lat: e.position.lat, lng: e.position.lng, notizen: notizenSortiert(e).map(notizText).join('\n'),
+      }
+    }),
+  ]
+}

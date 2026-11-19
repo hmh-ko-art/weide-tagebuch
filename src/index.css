@@ -532,3 +532,56 @@ label.haken input { width: 20px; height: 20px; flex: none; margin: 1px 0 0; }
 .wp-karten-legende .link-knopf { font-size: .72rem; }
 @media (max-width: 359px) { .wp-zp-namen { flex-basis: 74px; } .weideplan-panel .tabs button { font-size: .8rem; } .wp-tiere-felder { gap: 4px; } }
 .wp-zeile { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; } .wp-zeile label { flex: 1 1 160px; } .wp-zeile button { flex: none; }
+
+/* ---- Zäune & Wasser ---- */
+.infra-icon { background: none; border: 0; }
+.infra-icon svg { display: block; filter: drop-shadow(0 1px 2px rgba(0,0,0,.5)); }
+.infra-icon .infra-label { top: 32px; }
+.linie-label { background: rgba(255,255,255,.9); border: 0; box-shadow: 0 1px 3px rgba(0,0,0,.3); font-weight: 600; font-size: 12px; padding: 1px 6px; border-radius: 6px; }
+.linie-label::before { display: none; }
+.eck-icon { background: none; border: 0; display: flex; align-items: center; justify-content: center; }
+.eck { display: block; width: 16px; height: 16px; border-radius: 50%; background: #fff; border: 3px solid var(--orange); box-shadow: 0 1px 4px rgba(0,0,0,.5); box-sizing: border-box; }
+.eck.sel { width: 22px; height: 22px; background: var(--orange); border-color: #fff; }
+.eck.mitte { width: 20px; height: 20px; border: 2px solid var(--orange); background: rgba(255,255,255,.85); color: var(--orange); font: 700 15px/16px sans-serif; text-align: center; opacity: .9; }
+.infra-symbol { display: inline-flex; vertical-align: middle; }
+.infra-symbol svg { display: block; }
+.linien-symbol { vertical-align: middle; flex: none; }
+.sheet-kopf h2 .infra-symbol, .sheet-kopf h2 .linien-symbol { margin-right: 2px; }
+.infra-detail { margin: 8px 0; padding: 8px 10px; background: var(--bg); border-radius: 10px; display: flex; flex-direction: column; gap: 6px; }
+.infra-detail .knoepfe { margin: 0; }
+.infra-werte { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.geraet-status { margin: 0; font-size: .92rem; }
+.st-ueberfaellig .geraet-status, .geraet-status.st-ueberfaellig { color: var(--rot); }
+.geraet-status.st-heute { color: #b45309; }
+.geraet-ueberfaellig { background: #fdecea; }
+.geraet-heute { background: #fff4e5; }
+.pruef-knopf .knoepfe { align-items: center; }
+.pruef-werte label { margin-top: 4px; }
+.pruef-verlauf { font-size: .85rem; color: #556; }
+.pruef-verlauf ul { margin: 4px 0 0; padding-left: 18px; }
+.punkte-link { margin: 4px 0; font-size: .9rem; }
+.infra-form { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+.infra-form .hinweis { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 2px 0; }
+.infra-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.infra-chips button { padding: 6px 10px; border-radius: 18px; display: inline-flex; align-items: center; gap: 4px; font-size: .9rem; }
+.infra-chips button.aktiv { background: #e8f5e9; border-color: var(--gruen); box-shadow: inset 0 0 0 1px var(--gruen); font-weight: 600; }
+label.check { flex-direction: row; align-items: center; gap: 8px; font-weight: 400; margin-top: 6px; }
+label.check input { width: 20px; height: 20px; flex: none; margin: 0; }
+label.check small { color: #667; }
+.infra-filter { display: flex; flex-direction: column; padding-left: 4px; }
+.infra-filter label.check { margin-top: 4px; }
+.infra-filter.aus { opacity: .5; }
+.infra-alle { font-weight: 600 !important; }
+.infra-liste h3 { display: flex; align-items: center; gap: 6px; }
+.infra-liste .liste li { cursor: default; flex-direction: row; align-items: center; gap: 8px; padding: 6px 2px; }
+.zeile-knopf { all: unset; box-sizing: border-box; cursor: pointer; flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; padding: 4px 0; }
+.zeile-knopf small { flex-basis: 100%; }
+.zeile-knopf:focus-visible { outline: 2px solid var(--gruen); outline-offset: 2px; }
+.geraet-zeile.st-ueberfaellig small, .geraet-zeile.st-heute small { color: var(--rot); }
+button.klein { padding: 6px 10px; font-size: .88rem; flex: none; }
+.hinweis-liste { padding-left: 18px; color: #445; font-size: .9rem; display: flex; flex-direction: column; gap: 6px; }
+@media (max-width: 380px) { .infra-chips button { padding: 5px 8px; font-size: .85rem; } }
+.tabs.reiter button { flex: 1 1 0; min-width: 0; overflow-wrap: anywhere; line-height: 1.15; }
+.liste-panel { overflow-x: hidden; }
+@media (max-width: 480px) { .tabs.reiter button { font-size: .8rem; padding: 7px 4px; } }
+@media (max-width: 400px) { .reiter button { white-space: normal; } .nur-breit { display: none; } }

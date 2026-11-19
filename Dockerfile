@@ -18,7 +18,7 @@ WORKDIR /app
 COPY --from=build /app/package.json ./
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
-COPY --from=build /app/server/server.js /app/server/weideplan.js ./server/
+COPY --from=build /app/server/server.js /app/server/weideplan.js /app/server/infrastruktur.js ./server/
 RUN mkdir -p /app/server/data && chown -R node:node /app/server/data
 USER node
 EXPOSE 8787

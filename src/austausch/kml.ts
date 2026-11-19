@@ -1,6 +1,7 @@
 // KML-Export (Google Earth / Google My Maps) und Import von KML/KMZ (My Maps), GeoJSON und CSV.
 import { GRUPPEN_FARBEN, type LatLng } from '../types'
-import type { Zeile } from './zeilen'
+import type { TechnikZeile, Zeile } from './zeilen'
+import { INFRA_ARTEN, infraArt, infraRaten, laengeText, linienArt, linienArtRaten, type Geraet, type InfraArt, type LinienArt, type Tor } from '../../server/infrastruktur.js'
 
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 // KML-Farben sind aabbggrr
@@ -8,7 +9,7 @@ const kmlFarbe = (hex: string, alpha = 'ff') => { const h = hex.replace('#', '')
 const hexAusKml = (c: string) => { const h = c.trim().toLowerCase().replace(/^#/, ''); return /^[0-9a-f]{8}$/.test(h) ? `#${h.slice(6, 8)}${h.slice(4, 6)}${h.slice(2, 4)}` : null }
 
 // ---------------- Export ----------------
-export function kmlErzeugen(titel: string, zeilen: Zeile[], gruppenReihe: { id: string | null; name: string; farbe: string }[]): string {
+export function kmlErzeugen(titel: string, zeilen: Zeile[], gruppenReihe: { id: string | null; name: string; farbe: string }[], technik: TechnikZeile[] = []): string {
   const farben = [...new Set(zeilen.map((z) => z.farbe))]
   const styles = farben.map((f) => `<Style id="f-${f.slice(1)}"><IconStyle><color>${kmlFarbe(f)}</color><scale>1.1</scale><Icon><href>https://maps.google.com/mapfiles/kml/paddle/wht-blank.png</href></Icon><hotSpot x="32" y="1" xunits="pixels" yunits="pixels"/></IconStyle><LabelStyle><scale>0.9</scale></LabelStyle><LineStyle><color>${kmlFarbe(f)}</color><width>2</width></LineStyle><PolyStyle><color>${kmlFarbe(f, '59')}</color></PolyStyle></Style>`)
   const placemark = (z: Zeile) => {
@@ -24,13 +25,32 @@ export function kmlErzeugen(titel: string, zeilen: Zeile[], gruppenReihe: { id: 
     const l = zeilen.filter((z) => (g.id === '__flaechen' ? z.typ === 'Fläche' : z.typ === 'Nadel' && z.gruppeId === g.id))
     return l.length ? `<Folder><name>${esc(g.name)}</name>${l.map(placemark).join('')}</Folder>` : ''
   })
+  // Zäune & Wege als Linien (Stil je Art), Weide-Technik als Punkte; flockmap_technik = exakte Felder für die Rundreise
+  const tStile = [...new Set(technik.filter((t) => t.gattung === 'Linie').map((t) => t.farbe))].map((f) => `<Style id="l-${f.slice(1)}"><LineStyle><color>${kmlFarbe(f)}</color><width>4</width></LineStyle></Style>`)
+    .concat(INFRA_ARTEN.filter((a) => technik.some((t) => t.artWert === a.wert)).map((a) => `<Style id="i-${a.wert}"><IconStyle><color>${kmlFarbe(a.farbe)}</color><scale>1</scale><Icon><href>https://maps.google.com/mapfiles/kml/shapes/placemark_circle.png</href></Icon></IconStyle></Style>`))
+  const tPlacemark = (t: TechnikZeile) => {
+    const e = t.e
+    const technikFelder = e.typ === 'linie' ? { linienArt: e.linienArt, ...(e.geschlossen ? { geschlossen: true } : {}), ...(e.tore?.length ? { tore: e.tore } : {}), ...(e.flaeche ? { flaeche: e.flaeche } : {}), ...(e.farbe ? { farbe: e.farbe } : {}) }
+      : e.typ === 'pin' ? { infra: e.infra, ...(e.geraet ? { geraet: { ...e.geraet, pruefungen: (e.geraet.pruefungen ?? []).map(({ autorId: _a, ...p }) => p) } } : {}) } : {}
+    const daten: [string, string][] = [['flockmap_id', e.id], ['flockmap_technik', JSON.stringify(technikFelder)], ['Art', t.art], ['Name', t.name], ...(t.laenge != null ? [['Länge (m)', String(Math.round(t.laenge))] as [string, string]] : []), ...(t.netze != null ? [['Netze à 50 m', String(t.netze)] as [string, string]] : []), ...(t.geprueft ? [['Zuletzt geprüft', t.geprueft] as [string, string]] : []), ...(t.kv != null ? [['Spannung (kV)', String(t.kv)] as [string, string]] : [])]
+    const beschreibung = [t.art, t.laenge != null && `Länge: ${laengeText(t.laenge)}${t.netze != null ? ` (${t.netze} Netze à 50 m)` : ''}`, t.tore && `${t.tore} Tor(e)`, t.geprueft && `Zuletzt geprüft: ${t.geprueft.split('-').reverse().join('.')}`, t.kv != null && `Spannung: ${String(t.kv).replace('.', ',')} kV`, t.stand && `Ladestand: ${t.stand}`, t.notizen && `Notizen:\n${t.notizen}`].filter(Boolean).join('\n')
+    const geo = e.typ === 'linie'
+      ? `<LineString><tessellate>1</tessellate><coordinates>${[...e.punkte, ...(e.geschlossen ? [e.punkte[0]] : [])].map((p) => `${p.lng.toFixed(7)},${p.lat.toFixed(7)},0`).join(' ')}</coordinates></LineString>`
+      : e.typ === 'pin' ? `<Point><coordinates>${e.position.lng.toFixed(7)},${e.position.lat.toFixed(7)},0</coordinates></Point>` : ''
+    return `<Placemark><name>${esc(t.name || t.art)}</name><description>${esc(beschreibung)}</description><styleUrl>#${e.typ === 'linie' ? `l-${t.farbe.slice(1)}` : `i-${t.artWert}`}</styleUrl><ExtendedData>${daten.map(([k, v]) => `<Data name="${esc(k)}"><value>${esc(v)}</value></Data>`).join('')}</ExtendedData>${geo}</Placemark>`
+  }
+  const lin = technik.filter((t) => t.gattung === 'Linie'), pkt = technik.filter((t) => t.gattung === 'Punkt')
+  const tOrdner = (lin.length ? `<Folder><name>Zäune &amp; Wege</name>${lin.map(tPlacemark).join('')}</Folder>` : '') + (pkt.length ? `<Folder><name>Wasser &amp; Technik</name>${pkt.map(tPlacemark).join('')}</Folder>` : '')
   return `<?xml version="1.0" encoding="UTF-8"?>
-<kml xmlns="http://www.opengis.net/kml/2.2"><Document><name>${esc(titel)}</name><description>Export aus FlockMap, ${new Date().toLocaleString('de-DE')}</description>${styles.join('')}${ordner.join('')}</Document></kml>`
+<kml xmlns="http://www.opengis.net/kml/2.2"><Document><name>${esc(titel)}</name><description>Export aus FlockMap, ${new Date().toLocaleString('de-DE')}</description>${styles.join('')}${tStile.join('')}${ordner.join('')}${tOrdner}</Document></kml>`
 }
 
 // ---------------- Import ----------------
 export interface Vorschlag {
-  typ: 'pin' | 'flaeche'
+  typ: 'pin' | 'flaeche' | 'linie'
+  linienArt?: LinienArt; geschlossen?: boolean; tore?: Tor[]; flaeche?: string // Linie (Zaun/Weg/Graben)
+  infra?: InfraArt; geraet?: Geraet // Weide-Technik (nur aus FlockMap-Export exakt; sonst per Name erkannt)
+  linienFarbe?: string | null
   rohName: string
   titel: string
   ebene: string // Ordner/Ebene in My Maps -> Gruppe
@@ -90,9 +110,10 @@ export function kmlLesen(xml: string): ImportErgebnis {
   const doc = new DOMParser().parseFromString(xml, 'application/xml')
   if (doc.getElementsByTagName('parsererror').length || !alle(doc, 'kml').length && !alle(doc, 'Document').length) throw new Error('Keine gültige KML-Datei')
   // Stile: id -> Farbe (IconStyle bzw. PolyStyle/LineStyle); StyleMap -> „normal“
-  const stilFarbe = new Map<string, string>()
+  const stilFarbe = new Map<string, string>(), stilLinie = new Map<string, string>()
   for (const st of alle(doc, 'Style')) {
     const id = st.getAttribute('id'); if (!id) continue
+    const lf = hexAusKml(text(kind(kind(st, 'LineStyle') ?? st, 'color'))); if (lf && kind(st, 'LineStyle')) stilLinie.set(id, lf)
     const c = text(kind(kind(st, 'IconStyle') ?? st, 'color')) || text(kind(kind(st, 'PolyStyle') ?? st, 'color')) || text(kind(kind(st, 'LineStyle') ?? st, 'color'))
     const f = hexAusKml(c) ?? (id.match(/-([0-9A-Fa-f]{6})(?:-|$)/)?.[1] ? `#${id.match(/-([0-9A-Fa-f]{6})(?:-|$)/)![1].toLowerCase()}` : null)
     if (f) stilFarbe.set(id, f)
@@ -102,6 +123,12 @@ export function kmlLesen(xml: string): ImportErgebnis {
     const normal = kinder(sm, 'Pair').find((p) => text(kind(p, 'key')) === 'normal')
     const ziel = text(normal ? kind(normal, 'styleUrl') : null).replace(/^#/, '')
     if (stilFarbe.has(ziel)) stilFarbe.set(id, stilFarbe.get(ziel)!)
+    if (stilLinie.has(ziel)) stilLinie.set(id, stilLinie.get(ziel)!)
+  }
+  const linienFarbeVon = (pm: Element) => {
+    const inline = kind(pm, 'Style')
+    if (inline) { const f = hexAusKml(text(kind(kind(inline, 'LineStyle') ?? inline, 'color'))); if (f) return f }
+    return stilLinie.get(text(kind(pm, 'styleUrl')).replace(/^#/, '')) ?? null
   }
   const farbeVon = (pm: Element) => {
     const inline = kind(pm, 'Style')
@@ -120,7 +147,7 @@ export function kmlLesen(xml: string): ImportErgebnis {
     for (const d of alle(pm, 'Data')) { const n = d.getAttribute('name'); if (n) daten[n] = text(kind(d, 'value')) }
     for (const d of alle(pm, 'SimpleData')) { const n = d.getAttribute('name'); if (n) daten[n] = text(d) }
     const beschr = htmlZuText(text(kind(pm, 'description')))
-    const punkt = alle(pm, 'Point')[0], poly = alle(pm, 'Polygon')[0]
+    const punkt = alle(pm, 'Point')[0], poly = alle(pm, 'Polygon')[0], linien = alle(pm, 'LineString')
     const v: Vorschlag = { typ: 'pin', rohName, titel: rohName, ebene, farbe: farbeVon(pm), schafe: 0, boecke: 0, laemmer: 0, ausName: false, notiz: '' }
     if (punkt) {
       const k = koordinaten(text(alle(punkt, 'coordinates')[0] ?? null))
@@ -131,9 +158,22 @@ export function kmlLesen(xml: string): ImportErgebnis {
       const k = ohneSchluss(koordinaten(text(alle(ring, 'coordinates')[0] ?? null)))
       if (k.length < 3) { uebersprungen.push({ name: rohName, grund: 'Fläche mit zu wenigen Eckpunkten' }); continue }
       v.typ = 'flaeche'; v.punkte = k
+    } else if (linien.length) {
+      // Linie (My Maps: Linie/Weg zeichnen) -> Zaun/Weg/Graben; Art aus Name/Ebene geraten, Farbe aus dem Linienstil
+      const teile = linien.map((l) => koordinaten(text(alle(l, 'coordinates')[0] ?? null))).filter((k) => k.length >= 2)
+      if (!teile.length) { uebersprungen.push({ name: rohName || '(ohne Namen)', grund: 'Linie mit zu wenigen Punkten' }); continue }
+      v.typ = 'linie'; v.linienArt = linienArtRaten(`${rohName} ${ebene}`); v.farbe = linienFarbeVon(pm) ?? v.farbe
+      v.punkte = teile[0]
+      // MultiGeometry mit mehreren Linien: jede wird eine eigene Linie
+      for (let i = 1; i < teile.length; i++) vorschlaege.push({ ...v, rohName: `${rohName} (${i + 1})`, titel: `${rohName} (${i + 1})`, punkte: teile[i], notiz: htmlZuText(text(kind(pm, 'description'))) })
     } else {
-      uebersprungen.push({ name: rohName || '(ohne Namen)', grund: alle(pm, 'LineString').length ? 'Linie/Weg (FlockMap kennt nur Nadeln und Flächen)' : 'keine Nadel oder Fläche' })
+      uebersprungen.push({ name: rohName || '(ohne Namen)', grund: 'keine Nadel, Fläche oder Linie' })
       continue
+    }
+    if (v.typ === 'linie' && v.punkte && v.punkte.length >= 4) {
+      // geschlossene Linie (Ring) erkennen
+      const a = v.punkte[0], b = v.punkte[v.punkte.length - 1]
+      if (Math.abs(a.lat - b.lat) < 1e-7 && Math.abs(a.lng - b.lng) < 1e-7) { v.punkte = v.punkte.slice(0, -1); v.geschlossen = true }
     }
     if (daten.flockmap_id) {
       // Rundreise: Datei stammt aus FlockMap -> Felder exakt übernehmen
@@ -145,6 +185,7 @@ export function kmlLesen(xml: string): ImportErgebnis {
       if (daten.Herde) v.herde = daten.Herde
       if (daten.Gruppe !== undefined) v.ebene = daten.Gruppe
       const n = beschr.indexOf('Notizen:\n'); v.notiz = n >= 0 ? beschr.slice(n + 9).trim() : ''
+      if (daten.flockmap_technik) technikUebernehmen(v, daten.flockmap_technik)
     } else {
       const zusatz = Object.entries(daten).filter(([k, w]) => w && !/^(name|description|beschreibung|gx_media_links)$/i.test(k)).map(([k, w]) => `${k}: ${w}`)
       v.notiz = [beschr, ...zusatz].filter(Boolean).join('\n')
@@ -152,6 +193,31 @@ export function kmlLesen(xml: string): ImportErgebnis {
     vorschlaege.push(v)
   }
   return { vorschlaege, uebersprungen, titel, format: 'KML' }
+}
+
+// Exakte Felder aus einem FlockMap-Export (Zäune & Wasser) übernehmen; ungültiges wird ignoriert (Server prüft zusätzlich)
+function technikUebernehmen(v: Vorschlag, roh: string) {
+  try {
+    const t = JSON.parse(roh) as Record<string, unknown>
+    if (v.typ === 'linie') {
+      if (typeof t.linienArt === 'string') v.linienArt = linienArt(t.linienArt).wert
+      v.geschlossen = t.geschlossen === true || v.geschlossen
+      if (Array.isArray(t.tore)) v.tore = (t.tore as Tor[]).filter((x) => x && typeof x.id === 'string' && Number.isFinite(x.pos) && Number.isFinite(x.breite)).slice(0, 50)
+      if (typeof t.flaeche === 'string') v.flaeche = t.flaeche
+      if (typeof t.farbe === 'string' && /^#[0-9a-f]{6}$/i.test(t.farbe)) v.farbe = t.farbe.toLowerCase(); else if (!t.farbe) v.farbe = null
+    } else if (v.typ === 'pin' && infraArt(String(t.infra))) {
+      v.infra = t.infra as InfraArt
+      if (t.geraet && typeof t.geraet === 'object') v.geraet = t.geraet as Geraet
+    }
+  } catch { /* alte oder fremde Datei */ }
+}
+
+// Weide-Technik an Namen erkennen (z. B. „Tränke Siel“, „Weidezaungerät Nord“) – nur fremde Dateien
+export function technikAusName(v: Vorschlag, an: boolean): Vorschlag {
+  if (v.typ !== 'pin' || v.flockmapId) return v
+  if (!an) return v.infra ? { ...v, infra: undefined, geraet: undefined } : v
+  const i = infraRaten(v.rohName)
+  return i ? { ...v, infra: i, ...(i === 'geraet' ? { geraet: v.geraet ?? {} } : {}) } : v
 }
 
 export async function kmzLesen(daten: Uint8Array): Promise<ImportErgebnis> {
@@ -178,6 +244,13 @@ export function geojsonLesen(json: unknown): ImportErgebnis {
       const ring = (g.type === 'Polygon' ? (g.coordinates as number[][][])[0] : (g.coordinates as number[][][][])[0][0]) ?? []
       v.typ = 'flaeche'; v.punkte = ohneSchluss(ring.map(([lng, lat]) => ({ lat, lng })))
       if (v.punkte.length < 3) { uebersprungen.push({ name, grund: 'Fläche mit zu wenigen Eckpunkten' }); continue }
+    } else if (g?.type === 'LineString' || g?.type === 'MultiLineString') {
+      const teile = (g.type === 'LineString' ? [g.coordinates as number[][]] : (g.coordinates as number[][][])).map((l) => (l ?? []).map(([lng, lat]) => ({ lat, lng })).filter((q) => Number.isFinite(q.lat) && Number.isFinite(q.lng))).filter((l) => l.length >= 2)
+      if (!teile.length) { uebersprungen.push({ name: name || '(ohne Namen)', grund: 'Linie mit zu wenigen Punkten' }); continue }
+      const stroke = typeof pr.stroke === 'string' && /^#[0-9a-f]{6}$/i.test(pr.stroke) ? pr.stroke.toLowerCase() : null
+      v.typ = 'linie'; v.linienArt = linienArtRaten(`${name} ${v.ebene}`); v.farbe = stroke ?? v.farbe; v.punkte = teile[0]
+      for (let i = 1; i < teile.length; i++) vorschlaege.push({ ...v, rohName: `${name} (${i + 1})`, titel: `${name} (${i + 1})`, punkte: teile[i] })
+      if (typeof pr.flockmap_technik === 'string') technikUebernehmen(v, pr.flockmap_technik)
     } else { uebersprungen.push({ name: name || '(ohne Namen)', grund: `${g?.type ?? 'ohne Geometrie'} wird nicht unterstützt` }); continue }
     if (v.position && !(Number.isFinite(v.position.lat) && Number.isFinite(v.position.lng))) { uebersprungen.push({ name, grund: 'ungültige Koordinaten' }); continue }
     const n = (k: string[]) => { for (const x of k) if (pr[x] !== undefined && Number.isFinite(+pr[x]!)) return Math.max(0, Math.round(+pr[x]!)); return 0 }
@@ -228,6 +301,7 @@ export async function dateiLesen(f: File): Promise<ImportErgebnis> {
 // Tierzahlen aus Namen anwenden (nur wenn keine Zahlen aus Feldern kamen)
 export function namenAuswerten(v: Vorschlag, an: boolean): Vorschlag {
   if (v.flockmapId || v.feldZahlen) return v
+  if (v.typ === 'linie' || v.infra) return { ...v, titel: v.rohName, schafe: 0, boecke: 0, laemmer: 0, ausName: false } // Zäune & Technik haben keine Tiere
   if (!an) return { ...v, titel: v.rohName, schafe: 0, boecke: 0, laemmer: 0, ausName: false }
   const t = tierAusName(v.rohName)
   return t.gefunden ? { ...v, titel: t.titel, schafe: t.schafe, boecke: t.boecke, laemmer: t.laemmer, ausName: true } : { ...v, titel: v.rohName, ausName: false }

@@ -4,6 +4,8 @@ import * as WP from '../../server/weideplan.js'
 import type { Belegung, Herde, Tiere, UmtriebOp, FlaechenStatus } from '../../server/weideplan.js'
 import type { useKarte } from '../daten'
 import { TIERARTEN, type Eintrag } from '../types'
+import { geraeteFaellig, istNormal } from '../../server/infrastruktur.js'
+import { geraetZeile } from '../infra/Infra'
 import { tagKurz, tagLang, tiereText, tageText, neueId, statusText, STATUS_NAMEN } from './hilfen'
 
 type K = ReturnType<typeof useKarte>
@@ -22,6 +24,9 @@ export function WeideplanPanel(p: { k: K; onSchliessen: () => void; meldung: (s:
   const [zuletzt, setZuletzt] = useState<{ id: string; text: string } | null>(null)
   const status = useMemo(() => WP.flaechenStatus(k.weideplan, k.eintraege, heute), [k.weideplan, k.eintraege, heute])
   const faellig = useMemo(() => WP.faellige(k.weideplan, heute), [k.weideplan, heute])
+  // Weidezaungeräte: Prüfung überfällig/heute/morgen oder Akku leer
+  const geraete = useMemo(() => geraeteFaellig(k.eintraege, heute), [k.eintraege, heute])
+  const geraeteDran = geraete.filter((g) => g.stufe !== 'bald').length
   const darf = k.darfBearbeiten
   const name = (id?: string) => (id ? k.eintraege.find((e) => e.id === id)?.titel || 'ohne Namen' : '')
 
@@ -67,7 +72,7 @@ export function WeideplanPanel(p: { k: K; onSchliessen: () => void; meldung: (s:
         </div>
       )}
       <div className="tabs wp-reiter" role="tablist">
-        {([['jetzt', `Jetzt${faellig.some((f) => f.stufe !== 'bald') ? ` (${faellig.filter((f) => f.stufe !== 'bald').length})` : ''}`], ['zeitplan', 'Zeitplan'], ['flaechen', 'Flächen'], ['verlauf', 'Verlauf']] as const).map(([w, t]) => (
+        {([['jetzt', `Jetzt${faellig.some((f) => f.stufe !== 'bald') || geraeteDran ? ` (${faellig.filter((f) => f.stufe !== 'bald').length + geraeteDran})` : ''}`], ['zeitplan', 'Zeitplan'], ['flaechen', 'Flächen'], ['verlauf', 'Verlauf']] as const).map(([w, t]) => (
           <button key={w} role="tab" aria-selected={reiter === w} className={reiter === w ? 'aktiv' : ''} onClick={() => setReiter(w)}>{t}</button>
         ))}
       </div>
@@ -84,6 +89,17 @@ export function WeideplanPanel(p: { k: K; onSchliessen: () => void; meldung: (s:
               </ol>
             </div>
           )}
+          {geraete.length > 0 && <h3>⚡ Weidezaungeräte prüfen</h3>}
+          {geraete.map((g) => (
+            <div key={g.eintrag.id} className={`wp-karte wp-${g.stufe}`}>
+              <div className="wp-karte-kopf"><span className="wp-stufe">{g.leer ? 'Akku/Batterie leer' : g.nie ? 'Noch nie geprüft' : g.stufe === 'ueberfaellig' ? `Prüfung überfällig seit ${tageText(-g.tage)}` : g.stufe === 'heute' ? 'Prüfung heute fällig' : `Prüfung morgen (${tagKurz(g.datum)})`}</span></div>
+              <p><strong>{g.eintrag.titel || 'Weidezaungerät'}</strong>{geraetZeile(g.eintrag.geraet) && <> · {geraetZeile(g.eintrag.geraet)}</>}</p>
+              <div className="knoepfe">
+                {darf && <button className="primaer" onClick={() => { k.geprueft(g.eintrag.id, { datum: heute }); p.meldung(`${g.eintrag.titel || 'Weidezaungerät'}: Prüfung eingetragen ✓`) }}>✓ Geprüft</button>}
+                <button onClick={() => p.onZeigen(g.eintrag.id)}>Zeigen</button>
+              </div>
+            </div>
+          ))}
           {faellig.length > 0 && <h3>Fällig</h3>}
           {faellig.map((f) => {
             const b = f.belegung
@@ -164,7 +180,7 @@ function RuhezeitEinstellung({ k }: { k: K }) {
 
 // Auswahl einer Fläche/Nadel mit Status im Text
 function FlaechenWahl(p: { k: K; status: Map<string, FlaechenStatus>; value: string; onChange: (v: string) => void; ohne?: string; leer: string; label: string }) {
-  const liste = [...p.k.eintraege].filter((e) => e.id !== p.ohne).sort((a, b) => (a.typ === b.typ ? (a.titel || '').localeCompare(b.titel || '', 'de') : a.typ === 'flaeche' ? -1 : 1))
+  const liste = [...p.k.eintraege].filter((e) => e.id !== p.ohne && istNormal(e)).sort((a, b) => (a.typ === b.typ ? (a.titel || '').localeCompare(b.titel || '', 'de') : a.typ === 'flaeche' ? -1 : 1))
   return (
     <label>{p.label}
       <select value={p.value} onChange={(e) => p.onChange(e.target.value)}>

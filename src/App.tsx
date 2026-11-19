@@ -8,12 +8,14 @@ import { RechtLinks } from './recht/Recht'
 import { MeineDaten } from './recht/MeineDaten'
 import { WeideplanPanel, PlanZeile, type PlanStart } from './weideplan/Weideplan'
 import { planFarben as planFarbenAnwenden, faelligAnzahl } from './weideplan/hilfen'
-import { STATUS_FARBEN } from '../server/weideplan.js'
+import { STATUS_FARBEN, heute } from '../server/weideplan.js'
+import { InfraDetail, InfraFormular, InfraListe, InfraSymbol, LinienSymbol, useInfraAus, type PruefNeu } from './infra/Infra'
+import { geraeteFaellig, istInfra, istLinie, istNormal, laengeText, linienArt, linienLaenge, naechsteStelle, netzAnzahl, pruefungEintragen, zaunUmFlaeche, TOR_BREITE, gesamtLaenge } from '../server/infrastruktur.js'
 import { KarteLoeschenAbschnitt, GeloeschtHinweis } from './recht/Loeschen'
 import { googleNaviLink, routeBerechnen, routeText } from './route'
 import { eintragDatum, tagText, monatText, istAusblendbar, TIERARTEN, tierText, tierSymbolHtml, tierSummen, type Einheit, type Tierart, FARBEN, FLAECHEN_FARBEN, FLAECHE_STANDARD, START, STANDARD_FARBE, datum, farbName, hektar, mitte, neueId, notizenSortiert, pinFarbe, gruppenVorschlag, gruppenFarbe, gruppenOrdnung, naechsteGruppenFarbe, tierKurz, GRUPPEN_FARBEN, type Gruppe, type Eintrag, type Notiz, type Fokus, type LatLng, type Route } from './types'
 
-type Modus = 'ansicht' | 'pin' | 'flaeche'
+type Modus = 'ansicht' | 'pin' | 'flaeche' | 'linie' | 'punkte' | 'tor'
 type Panel = null | 'liste' | 'einstellungen' | 'nutzer' | 'profil' | 'hof' | 'austausch' | 'meinedaten' | 'weideplan'
 
 // Aktuell angemeldeter Nutzer (geteilte Karte) – für Autor neuer Notizen
@@ -113,10 +115,17 @@ export default function App() {
   // Häkchen je Gruppe: auf der Karte ein-/ausblenden (pro Gerät)
   const [gruppenAus, setGruppenAus] = useState<string[]>(() => { try { const x = JSON.parse(localStorage.getItem('wt-gruppen-aus') || '[]'); return Array.isArray(x) ? x.filter((v) => typeof v === 'string') : [] } catch { return [] } })
   useEffect(() => { localStorage.setItem('wt-gruppen-aus', JSON.stringify(gruppenAus)) }, [gruppenAus])
-  const aufKarte = useMemo(() => anzeige.eintraege.filter((e) => !(e.gruppe && anzeige.nummern[e.id] && gruppenAus.includes(e.gruppe))), [anzeige, gruppenAus])
+  // Zäune & Wasser: Ebene bzw. einzelne Arten ein-/ausblenden (pro Gerät)
+  const infraAus = useInfraAus()
+  // Eckpunkte bearbeiten (Linie/Fläche) bzw. Tore setzen (Linie)
+  const [bearbeiten, setBearbeiten] = useState<{ id: string; punkte: LatLng[]; sel: number | null } | null>(null)
+  const [torId, setTorId] = useState<string | null>(null)
+  const aufKarte = useMemo(() => anzeige.eintraege.filter((e) => !(e.gruppe && anzeige.nummern[e.id] && gruppenAus.includes(e.gruppe)) && infraAus.sichtbar(e) && !(modus === 'punkte' && e.id === bearbeiten?.id)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [anzeige, gruppenAus, infraAus.aus, modus, bearbeiten?.id])
   const verwendeteFarben = useMemo(() => {
     const anzahl = new Map<string, number>()
-    for (const e of anzeige.eintraege) { const f = pinFarbe(e); anzahl.set(f, (anzahl.get(f) ?? 0) + 1) }
+    for (const e of anzeige.eintraege) { if (!istNormal(e)) continue; const f = pinFarbe(e); anzahl.set(f, (anzahl.get(f) ?? 0) + 1) }
     // in der Reihenfolge der Vorschlagsfarben, eigene Farben danach
     const rang = (f: string) => { const i = FLAECHEN_FARBEN.findIndex((x) => x.wert === f); return i < 0 ? 99 : i }
     return [...anzahl.entries()].sort((a, b) => rang(a[0]) - rang(b[0])).map(([farbe, n]) => ({ farbe, n }))
@@ -128,7 +137,9 @@ export default function App() {
   const [planStart, setPlanStart] = useState<PlanStart>(null)
   const [planFarben, setPlanFarbenRoh] = useState(() => localStorage.getItem('wt-planfarben') === 'an')
   const setPlanFarben = (b: boolean) => { setPlanFarbenRoh(b); localStorage.setItem('wt-planfarben', b ? 'an' : 'aus') }
-  const faellig = useMemo(() => faelligAnzahl(k.weideplan), [k.weideplan])
+  // Fällige Geräte-Prüfungen (überfällig, heute, Akku leer) zählen im Weideplan-Abzeichen mit
+  const geraeteDran = useMemo(() => geraeteFaellig(k.eintraege).filter((x) => x.stufe !== 'bald'), [k.eintraege])
+  const faellig = useMemo(() => faelligAnzahl(k.weideplan), [k.weideplan]) + geraeteDran.length
   const planAn = planFarben && !!k.weideplan?.belegungen.length
   // Zuletzt verschobene Nadel (für „Rückgängig“)
   const [verschoben, setVerschoben] = useState<{ id: string; alt: LatLng; nr: number } | null>(null)
@@ -213,8 +224,11 @@ export default function App() {
     setVerschoben(null)
   }
 
-  const waehle = (id: string) => {
-    if (modus === 'flaeche') return
+  const waehle = (id: string, pos?: LatLng) => {
+    if (modus === 'tor') { if (id === torId && pos) torUmschalten(pos); return }
+    if ((modus === 'linie' || modus === 'flaeche') && pos) { setZeichenPunkte((l) => [...l, pos]); return } // darf an/in anderen Einträgen ansetzen
+    if (modus === 'pin' && pos) { if (!formular) neuerPin(pos); return } // Nadel auf eine Fläche/Linie setzen
+    if (modus !== 'ansicht' && modus !== 'pin') return
     setAusgewaehlt(id)
     setPanel(null)
     // Antippen zeigt nur die Details – eine Route gibt es nur über den Knopf „Route anzeigen“
@@ -227,7 +241,9 @@ export default function App() {
 
   const kartenKlick = (p: LatLng) => {
     if (formular) return
-    if (modus === 'flaeche') { setZeichenPunkte((l) => [...l, p]); return }
+    if (modus === 'flaeche' || modus === 'linie') { setZeichenPunkte((l) => [...l, p]); return }
+    if (modus === 'punkte') { setBearbeiten((b) => (b ? { ...b, sel: null } : b)); return }
+    if (modus === 'tor') { const e = k.eintraege.find((x) => x.id === torId); if (e && istLinie(e)) torUmschalten(p); return }
     if (modus === 'ansicht' && ausgewaehlt) { abwaehlen(); return }
     if (!k.darfBearbeiten) return
     neuerPin(p)
@@ -241,9 +257,51 @@ export default function App() {
     setModus('ansicht')
   }
 
+  // Linie (Zaun/Weg/Graben) fertig gezeichnet -> Formular
+  const linieFertig = () => {
+    if (zeichenPunkte.length < 2) { setMeldung('Bitte mindestens 2 Punkte entlang der Linie antippen.'); return }
+    const jetzt = new Date().toISOString()
+    const art = (localStorage.getItem('wt-letzte-linienart') as never) || 'elektronetz'
+    setFormular({ neu: true, e: { id: neueId(), typ: 'linie', punkte: zeichenPunkte, linienArt: linienArt(art).wert, titel: '', notizen: [], ...(k.ich ? { erstelltVon: k.ich.id } : {}), erstellt: jetzt, geaendert: jetzt } })
+    setZeichenPunkte([])
+    setModus('ansicht')
+  }
+  // Eckpunkte bearbeiten
+  const punkteStart = (e: Eintrag) => { if (e.typ === 'pin') return; setBearbeiten({ id: e.id, punkte: e.punkte, sel: null }); setModus('punkte') }
+  const punkteFertig = () => {
+    const e = k.eintraege.find((x) => x.id === bearbeiten?.id)
+    if (e && bearbeiten && e.typ !== 'pin') {
+      if (bearbeiten.punkte.length < (e.typ === 'flaeche' ? 3 : 2)) { setMeldung(e.typ === 'flaeche' ? 'Eine Fläche braucht mindestens 3 Eckpunkte.' : 'Eine Linie braucht mindestens 2 Punkte.'); return }
+      // Tore liegen in Metern ab Anfang – bei geänderter Länge auf die Linie begrenzen
+      const neu = { ...e, punkte: bearbeiten.punkte, geaendert: new Date().toISOString() } as Eintrag
+      if (neu.typ === 'linie') { if (neu.punkte.length < 3) delete neu.geschlossen; const L2 = gesamtLaenge(neu); if (neu.tore) neu.tore = neu.tore.filter((t) => t.pos < L2) }
+      k.speichern(neu)
+      setMeldung('Punkte gespeichert')
+    }
+    setBearbeiten(null); setModus('ansicht')
+  }
+  // Tor an der angetippten Stelle setzen; Tippen auf ein bestehendes Tor entfernt es
+  const torUmschalten = (q: LatLng) => {
+    const e = k.eintraege.find((x) => x.id === torId)
+    if (!e || !istLinie(e)) return
+    const st = naechsteStelle(e, q)
+    if (st.abstand > 30) { setMeldung('Bitte direkt auf die Linie tippen.'); return }
+    const tore = e.tore ?? []
+    const alt = tore.find((t) => Math.abs(t.pos - st.pos) <= Math.max(6, t.breite))
+    const neu = alt ? tore.filter((t) => t !== alt) : [...tore, { id: neueId(), pos: Math.round(st.pos * 10) / 10, breite: TOR_BREITE }]
+    k.speichern({ ...e, tore: neu.length ? neu : undefined, geaendert: new Date().toISOString() })
+    setMeldung(alt ? 'Tor entfernt' : `Tor gesetzt (${TOR_BREITE} m Lücke)`)
+  }
+  const zaunUm = (f: Eintrag) => {
+    if (f.typ !== 'flaeche') return
+    const z = zaunUmFlaeche({ id: f.id, titel: f.titel, punkte: f.punkte }, 'elektronetz', neueId(), new Date().toISOString())
+    setFormular({ neu: true, e: { ...z, ...(k.ich ? { erstelltVon: k.ich.id } : {}) } })
+  }
+
   const speichern = (e: Eintrag, basis?: Einheit[]) => {
     const fertig = { ...e, titel: e.titel.trim(), geaendert: new Date().toISOString() }
-    if (fertig.farbe) localStorage.setItem(fertig.typ === 'pin' ? 'wt-letzte-farbe' : 'wt-letzte-flaechenfarbe', fertig.farbe)
+    if (fertig.typ === 'linie') localStorage.setItem('wt-letzte-linienart', fertig.linienArt)
+    if (fertig.farbe && istNormal(fertig)) localStorage.setItem(fertig.typ === 'pin' ? 'wt-letzte-farbe' : 'wt-letzte-flaechenfarbe', fertig.farbe)
     k.speichern(fertig, basis)
     setFormular(null)
     setAusgewaehlt(fertig.id)
@@ -251,7 +309,7 @@ export default function App() {
   }
 
   const loeschen = (e: Eintrag) => {
-    if (!confirm(e.titel ? `„${e.titel}“ wirklich löschen?` : `Diese ${e.typ === 'pin' ? 'Nadel' : 'Fläche'} ohne Namen wirklich löschen?`)) return
+    if (!confirm(e.titel ? `„${e.titel}“ wirklich löschen?` : `Diese ${istInfra(e) ? 'Markierung' : e.typ === 'pin' ? 'Nadel' : e.typ === 'linie' ? 'Linie' : 'Fläche'} ohne Namen wirklich löschen?`)) return
     k.loeschen(e.id)
     abwaehlen()
     setFormular(null)
@@ -336,6 +394,12 @@ export default function App() {
           nummern={anzeige.nummern}
           ausgewaehlt={ausgewaehlt}
           zeichenPunkte={zeichenPunkte}
+          zeichenLinie={modus === 'linie'}
+          bearbeiten={modus === 'punkte' && bearbeiten ? { punkte: bearbeiten.punkte, sel: bearbeiten.sel, linie: k.eintraege.find((x) => x.id === bearbeiten.id)?.typ === 'linie', geschlossen: !!(k.eintraege.find((x) => x.id === bearbeiten.id) as { geschlossen?: boolean } | undefined)?.geschlossen } : null}
+          onPunktZiehen={(i, q) => setBearbeiten((b) => (b ? { ...b, punkte: b.punkte.map((x, j) => (j === i ? q : x)), sel: i } : b))}
+          onPunktWahl={(i) => setBearbeiten((b) => (b ? { ...b, sel: i } : b))}
+          onPunktEinfuegen={(i, q) => setBearbeiten((b) => (b ? { ...b, punkte: [...b.punkte.slice(0, i), q, ...b.punkte.slice(i)], sel: i } : b))}
+          warnIds={geraeteDran.map((x) => x.eintrag.id)}
           route={route}
           standort={standort}
           fokus={fokus}
@@ -357,6 +421,11 @@ export default function App() {
           <button className={`werkzeug-knopf${beschriftung ? ' an' : ''}`} aria-pressed={beschriftung} title={beschriftung ? 'Beschriftung ausblenden' : 'Beschriftung einblenden'} onClick={() => setBeschriftung((b) => !b)}>
             <Icon name="etikett" /><small>{beschriftung ? 'an' : 'aus'}</small>
           </button>
+          {k.eintraege.some((e) => !istNormal(e)) && (
+            <button className={`werkzeug-knopf${!infraAus.aus.includes('__alle') ? ' an' : ''}`} aria-pressed={!infraAus.aus.includes('__alle')} title={infraAus.aus.includes('__alle') ? 'Zäune & Wasser einblenden' : 'Zäune & Wasser ausblenden'} aria-label="Zäune und Wasser auf der Karte" onClick={() => infraAus.umschalten('__alle')}>
+              <svg className="icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M4 5v15M12 5v15M20 5v15M4 9h16M4 15h16" /></svg><small>{infraAus.aus.includes('__alle') ? 'aus' : 'Zaun'}</small>
+            </button>
+          )}
           {verwendeteFarben.length > 0 && (
             <div className="farb-chips" role="group" aria-label="Nadeln und Flächen einer Farbe hervorheben">
               {verwendeteFarben.map(({ farbe, n }) => (
@@ -379,6 +448,7 @@ export default function App() {
             {k.darfBearbeiten && (
               <>
                 <button className="fab" onClick={() => { abwaehlen(); if (panel === 'liste') setPanel(null); setZeichenPunkte([]); setModus('flaeche') }}>⬠<span>Fläche</span></button>
+                <button className="fab" title="Zaun, Weg oder Graben zeichnen" onClick={() => { abwaehlen(); if (panel === 'liste') setPanel(null); setZeichenPunkte([]); if (infraAus.aus.includes('__alle')) infraAus.umschalten('__alle'); setModus('linie') }}>〰<span>Zaun</span></button>
                 <button className="fab haupt-fab" onClick={() => { abwaehlen(); if (panel === 'liste') setPanel(null); setModus('pin') }}>＋<span>Nadel</span></button>
               </>
             )}
@@ -411,6 +481,46 @@ export default function App() {
           </div>
         )}
 
+        {modus === 'linie' && (() => {
+          const m = zeichenPunkte.length >= 2 ? linienLaenge({ punkte: zeichenPunkte }) : 0
+          return (
+            <div className="leiste">
+              <p>Tippe die Punkte entlang des Zauns, Wegs oder Grabens an ({zeichenPunkte.length} gesetzt{m ? <> · <strong>{laengeText(m)}</strong> · ≈ {netzAnzahl(m)} {netzAnzahl(m) === 1 ? 'Netz' : 'Netze'} à 50 m</> : ''}).</p>
+              <div className="knoepfe">
+                <button className="primaer" onClick={linieFertig}>Fertig</button>
+                <button onClick={() => setZeichenPunkte((l) => l.slice(0, -1))} disabled={!zeichenPunkte.length}>Rückgängig</button>
+                <button onClick={() => { setZeichenPunkte([]); setModus('ansicht') }}>Abbrechen</button>
+              </div>
+            </div>
+          )
+        })()}
+
+        {modus === 'punkte' && bearbeiten && (() => {
+          const e = k.eintraege.find((x) => x.id === bearbeiten.id)
+          const m = e?.typ === 'linie' ? linienLaenge({ ...e, punkte: bearbeiten.punkte }) : 0
+          return (
+            <div className="leiste">
+              <p><strong>Punkte ziehen</strong> zum Verschieben · <strong>＋</strong> fügt einen Punkt ein · Punkt antippen und „Punkt löschen“{e?.typ === 'linie' ? <> · {laengeText(m)}</> : e?.typ === 'flaeche' ? <> · ≈ {hektar(bearbeiten.punkte).toLocaleString('de-DE', { maximumFractionDigits: 2 })} ha</> : ''}</p>
+              <div className="knoepfe">
+                <button className="primaer" onClick={punkteFertig}>Fertig</button>
+                <button disabled={bearbeiten.sel == null} onClick={() => setBearbeiten((b) => (b && b.sel != null ? { ...b, punkte: b.punkte.filter((_, j) => j !== b.sel), sel: null } : b))}>Punkt löschen</button>
+                <button onClick={() => { setBearbeiten(null); setModus('ansicht') }}>Abbrechen</button>
+              </div>
+            </div>
+          )
+        })()}
+
+        {modus === 'tor' && (() => {
+          const e = k.eintraege.find((x) => x.id === torId)
+          const n = e && istLinie(e) ? e.tore?.length ?? 0 : 0
+          return (
+            <div className="leiste">
+              <p>🚪 <strong>Tippe auf die Linie</strong>, wo ein Tor bzw. Durchgang ist ({TOR_BREITE} m Lücke, wird von der Länge abgezogen). Tippen auf ein Tor entfernt es. {n} {n === 1 ? 'Tor' : 'Tore'}{e && istLinie(e) ? <> · {laengeText(linienLaenge(e))}</> : ''}</p>
+              <div className="knoepfe"><button className="primaer" onClick={() => { setTorId(null); setModus('ansicht') }}>Fertig</button></div>
+            </div>
+          )
+        })()}
+
         {auswahl && !formular && modus === 'ansicht' && (
           <Detail
             e={auswahl}
@@ -431,7 +541,14 @@ export default function App() {
             nummer={anzeige.nummern[auswahl.id]}
             kannGruppieren={k.darfBearbeiten && kannEintrag(auswahl)}
             onGruppe={(v) => { const g = v === '__neu' ? neueGruppe() : v ? k.gruppen.find((x) => x.id === v) ?? null : null; if (v === '__neu' && !g) return; inGruppe(g, [auswahl]) }}
-            planZeile={<PlanZeile k={k} e={auswahl} onOeffnen={(s) => { setPlanStart(s); setPanel('weideplan') }} />}
+            planZeile={<>
+              {istNormal(auswahl) && <PlanZeile k={k} e={auswahl} onOeffnen={(s) => { setPlanStart(s); setPanel('weideplan') }} />}
+              <InfraDetail e={auswahl} alle={k.eintraege} darfBearbeiten={k.darfBearbeiten} kannBearbeiten={k.darfBearbeiten && kannEintrag(auswahl)}
+                onGeprueft={(x) => { k.geprueft(auswahl.id, x); setMeldung('Prüfung eingetragen ✓') }}
+                onPunkte={() => punkteStart(auswahl)} onTore={() => { setTorId(auswahl.id); setModus('tor') }} onZaun={() => zaunUm(auswahl)}
+                onWahl={(id) => { const e = k.eintraege.find((x) => x.id === id); if (e) { fliege(mitte(e)); waehle(id) } }} />
+              {auswahl.typ === 'flaeche' && k.darfBearbeiten && kannEintrag(auswahl) && <button className="link-knopf punkte-link" onClick={() => punkteStart(auswahl)}>✏️ Eckpunkte bearbeiten</button>}
+            </>}
           />
         )}
 
@@ -442,7 +559,8 @@ export default function App() {
             onSichtbar={(gid) => setGruppenAus((l) => (l.includes(gid) ? l.filter((x) => x !== gid) : [...l, gid]))} onReihenfolge={k.reihenfolge} onSchliessen={() => setPanel(null)} onWahl={(e) => { fliege(mitte(e), e.typ === 'pin' ? 15 : undefined); waehle(e.id) }}
             darfBearbeiten={k.darfBearbeiten} kannEintrag={kannEintrag} kannGruppe={kannGruppe} ichId={k.ich?.id}
             onGruppeSpeichern={k.gruppeSpeichern} onGruppeLoeschen={k.gruppeLoeschen} onInGruppe={inGruppe} neueGruppe={neueGruppe}
-            onExport={(f) => { setExportFilter(f); setPanel('austausch') }} />
+            onExport={(f) => { setExportFilter(f); setPanel('austausch') }}
+            infraAus={infraAus.aus} onInfraUmschalten={infraAus.umschalten} onGeprueft={(id) => { k.geprueft(id, { datum: heute() }); setMeldung('Prüfung eingetragen ✓') }} />
         )}
         {panel === 'austausch' && <Austausch k={k} eintraege={anzeige.eintraege} filter={exportFilter} meldung={setMeldung} onSchliessen={() => setPanel(null)} />}
         {panel === 'einstellungen' && <Einstellungen k={k} onMeineDaten={() => setPanel('meinedaten')} onAustausch={() => { setExportFilter(null); setPanel('austausch') }} onSchliessen={() => setPanel(null)} meldung={setMeldung} onNutzer={() => setPanel(k.hof?.rolle ? 'hof' : 'nutzer')} onHof={() => setPanel('hof')} onProfil={() => setPanel('profil')} kopfFarbe={kopfFarbe} setKopfFarbe={setKopfFarbe} />}
@@ -484,12 +602,12 @@ function Detail(p: { e: Eintrag; routeInfo: string; darfBearbeiten: boolean; kan
   return (
     <section className="sheet">
       <div className="sheet-kopf">
-        <h2>{e.typ === 'pin' ? (gf && p.nummer ? <span className="nr-kreis" style={{ background: gf, color: hell(gf) ? '#1d2a1d' : '#fff' }}>{p.nummer}</span> : <span className="farbpunkt" style={{ background: pinFarbe(e), width: 16, height: 16 }} />) : <span className="flaechen-symbol" style={{ color: pinFarbe(e) }}>⬠</span>} {e.titel || <span className="ohne-name">ohne Namen</span>}</h2>
+        <h2>{istInfra(e) ? <InfraSymbol art={e.infra} groesse={24} /> : istLinie(e) ? <LinienSymbol e={e} /> : e.typ === 'pin' ? (gf && p.nummer ? <span className="nr-kreis" style={{ background: gf, color: hell(gf) ? '#1d2a1d' : '#fff' }}>{p.nummer}</span> : <span className="farbpunkt" style={{ background: pinFarbe(e), width: 16, height: 16 }} />) : <span className="flaechen-symbol" style={{ color: pinFarbe(e) }}>⬠</span>} {e.titel || <span className="ohne-name">ohne Namen</span>}</h2>
         <button className="x" onClick={p.onSchliessen} aria-label="Schließen"><Icon name="x" /></button>
       </div>
       <div className="meta">
-        <span>Farbe: {gf ? <>{farbName(gf)} (Gruppe) · eigene {farbName(pinFarbe(e))}</> : farbName(pinFarbe(e))}</span>
-        {e.typ === 'pin' && (p.kannGruppieren
+        {istNormal(e) && <span>Farbe: {gf ? <>{farbName(gf)} (Gruppe) · eigene {farbName(pinFarbe(e))}</> : farbName(pinFarbe(e))}</span>}
+        {e.typ === 'pin' && istNormal(e) && (p.kannGruppieren
           ? <label className="gruppe-wahl">In Gruppe<select value={gruppe?.id ?? ''} onChange={(x) => p.onGruppe(x.target.value)}>
               <option value="">– ohne Gruppe –</option>
               {p.gruppen.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
@@ -581,32 +699,43 @@ function Formular(p: { gruppeName?: string; start: Eintrag; neu: boolean; onSpei
   const [zeilen, setZeilen] = useState(() => (p.start.einheiten ?? []).map((x) => ({ ...x, anzahl: String(x.anzahl) })))
   const zeileAendern = (id: string, teil: Partial<{ art: Tierart; anzahl: string }>) => setZeilen((l) => l.map((z) => (z.id === id ? { ...z, ...teil } : z)))
   const [ersteNotiz, setErsteNotiz] = useState('')
-  const art = e.typ === 'pin' ? 'Nadel' : 'Fläche'
+  const [pruef, setPruef] = useState<PruefNeu>({ an: true, kv: '', stand: '' })
+  const normal = istNormal(e)
+  const art = istInfra(e) ? 'Markierung' : e.typ === 'pin' ? 'Nadel' : e.typ === 'linie' ? 'Linie' : 'Fläche'
   return (
     <section className="sheet formular">
       <form onSubmit={(ev) => {
         ev.preventDefault()
         const notizen = p.neu && ersteNotiz.trim() ? [{ id: neueId(), text: ersteNotiz.trim(), zeitpunkt: new Date().toISOString(), ...autorFelder() }] : e.notizen
         // leere/ungültige Zeilen fallen weg
-        const einheiten: Einheit[] = zeilen.filter((z) => z.anzahl.trim() !== '' && Number(z.anzahl) >= 0).map((z) => ({ id: z.id, art: z.art, anzahl: Math.round(Number(z.anzahl)) }))
-        p.onSpeichern({ ...e, notizen, einheiten }, p.start.einheiten ?? [])
+        const einheiten: Einheit[] = normal ? zeilen.filter((z) => z.anzahl.trim() !== '' && Number(z.anzahl) >= 0).map((z) => ({ id: z.id, art: z.art, anzahl: Math.round(Number(z.anzahl)) })) : []
+        let fertig: Eintrag = { ...e, notizen, einheiten }
+        // Weide-Technik und Linien: keine Tiere, keine Herde, keine Gruppe; alte App-Versionen erkennen „keine Technik“ an infra: null
+        if (!normal) fertig = { ...fertig, herde: undefined, gruppe: undefined, tierlisteModus: undefined }
+        if (fertig.typ === 'pin' && !fertig.infra) fertig = { ...fertig, infra: null as never, geraet: undefined }
+        if (fertig.typ === 'pin' && fertig.infra === 'geraet' && p.neu && pruef.an) {
+          const v = Number(pruef.kv.replace(',', '.'))
+          fertig = pruefungEintragen(fertig, { id: neueId(), datum: heute(), zeitpunkt: new Date().toISOString(), ...(pruef.kv.trim() && v >= 0 && v <= 20 ? { kv: Math.round(v * 10) / 10 } : {}), ...(pruef.stand ? { stand: pruef.stand } : {}), ...autorFelder() })
+        }
+        p.onSpeichern(fertig, p.start.einheiten ?? [])
       }}>
         <div className="sheet-kopf">
           <h2>{p.neu ? `Neue ${art}` : `${art} bearbeiten`}</h2>
           <button type="button" className="x" onClick={p.onAbbrechen} aria-label="Abbrechen"><Icon name="x" /></button>
         </div>
-        <label>Name<input autoFocus value={e.titel} placeholder={e.typ === 'pin' ? 'z. B. Mutterschafe Deich Nord' : 'z. B. Koog-Weide 3'} onChange={(x) => setE({ ...e, titel: x.target.value })} /></label>
+        {(e.typ === 'pin' || e.typ === 'linie') && <InfraFormular e={e} setE={setE} neu={p.neu} pruef={pruef} setPruef={setPruef} />}
+        <label>Name<input autoFocus={e.typ !== 'pin' || !p.neu} value={e.titel} placeholder={istInfra(e) ? (e.infra === 'geraet' ? 'z. B. Gerät Deich Nord' : e.infra === 'traenke' ? 'z. B. Tränke am Siel' : 'optional') : e.typ === 'linie' ? 'z. B. Netz Koog-Weide 3' : e.typ === 'pin' ? 'z. B. Mutterschafe Deich Nord' : 'z. B. Koog-Weide 3'} onChange={(x) => setE({ ...e, titel: x.target.value })} /></label>
         {p.neu ? (
           <label>Erste Notiz<textarea rows={3} value={ersteNotiz} placeholder="Was ist hier los? Wasser, Zaun, Lämmer …" onChange={(x) => setErsteNotiz(x.target.value)} /></label>
         ) : (
           <p className="hinweis klein">Notizen ({e.notizen.length}) fügst du in der Detailansicht hinzu bzw. bearbeitest sie dort.</p>
         )}
-        {(
+        {!istInfra(e) && (
           <div className="farbwahl">
-            <span className="feldname">{e.typ === 'pin' ? 'Farbe der Nadel' : 'Farbe der Fläche'}</span>
+            <span className="feldname">{e.typ === 'pin' ? 'Farbe der Nadel' : e.typ === 'linie' ? 'Farbe der Linie' : 'Farbe der Fläche'}</span>
             {p.gruppeName && <p className="hinweis klein">Solange die Nadel in der Gruppe „{p.gruppeName}“ ist, zeigt die Karte sie in der Gruppenfarbe. Diese Farbe gilt wieder ohne Gruppe.</p>}
             <div className="farben" role="radiogroup" aria-label={e.typ === 'pin' ? 'Farbe der Nadel' : 'Farbe der Fläche'}>
-              {(e.typ === 'pin' ? FARBEN : FLAECHEN_FARBEN).map((f) => (
+              {(e.typ === 'pin' ? FARBEN : e.typ === 'linie' ? [{ wert: linienArt(e.linienArt).farbe, name: `Standard (${linienArt(e.linienArt).name})` }, ...FLAECHEN_FARBEN.filter((f) => f.wert !== linienArt(e.linienArt).farbe)] : FLAECHEN_FARBEN).map((f) => (
                 <button type="button" key={f.wert} title={f.name} aria-label={f.name} aria-checked={pinFarbe(e) === f.wert} role="radio"
                   className={pinFarbe(e) === f.wert ? 'aktiv' : ''} style={{ background: f.wert }} onClick={() => setE({ ...e, farbe: f.wert })} />
               ))}
@@ -614,7 +743,7 @@ function Formular(p: { gruppeName?: string; start: Eintrag; neu: boolean; onSpei
             </div>
           </div>
         )}
-        <div className="einheiten">
+        {normal && <div className="einheiten">
           <span className="feldname">Tiere</span>
           {zeilen.map((z, i) => (
             <div className="einheit-zeile" key={z.id}>
@@ -630,10 +759,10 @@ function Formular(p: { gruppeName?: string; start: Eintrag; neu: boolean; onSpei
             <option value="ausblendbar">ausblendbar (Betrachter kann sie einklappen)</option>
           </select></label>
           <button type="button" className="tiere-plus" onClick={() => setZeilen((l) => [...l, { id: neueId(), art: l.length ? l[l.length - 1].art : 'schaf', anzahl: '' }])}>＋ Tiere hinzufügen</button>
-        </div>
+        </div>}
         <div className="zeile">
           <label>Datum<input type="date" required value={eintragDatum(e)} onChange={(x) => x.target.value && setE({ ...e, datum: x.target.value })} /></label>
-          <label>Herde<input value={e.herde ?? ''} placeholder="optional" onChange={(x) => setE({ ...e, herde: x.target.value || undefined })} /></label>
+          {normal && <label>Herde<input value={e.herde ?? ''} placeholder="optional" onChange={(x) => setE({ ...e, herde: x.target.value || undefined })} /></label>}
         </div>
         <div className="knoepfe">
           <button type="submit" className="primaer">Speichern</button>
@@ -652,14 +781,15 @@ type ListeProps = {
   onInGruppe: (g: Gruppe | null, liste: Eintrag[]) => void; neueGruppe: () => Gruppe | null; ichId?: string
   nummern: Record<string, number>; gruppenAus: string[]; onSichtbar: (gid: string) => void; onReihenfolge: (gid: string, ids: string[]) => void
   onExport: (f: ExportFilter) => void
+  infraAus: string[]; onInfraUmschalten: (w: string) => void; onGeprueft: (id: string) => void
 }
 function Liste(p: ListeProps) {
   // Zwei strikt getrennte Listen: Nadeln | Flächen – jeweils vollständig; aktive Filter werden deutlich angezeigt
-  const [reiter, setReiter] = useState<'pin' | 'flaeche'>(() => (localStorage.getItem('wt-liste-reiter') === 'flaeche' ? 'flaeche' : 'pin'))
+  const [reiter, setReiter] = useState<'pin' | 'flaeche' | 'infra'>(() => { const r = localStorage.getItem('wt-liste-reiter'); return r === 'flaeche' || r === 'infra' ? r : 'pin' })
   useEffect(() => { localStorage.setItem('wt-liste-reiter', reiter) }, [reiter])
   const [suche, setSuche] = useState('')
   const [farbFilter, setFarbFilter] = useState<string | null>(null)
-  const typListe = p.eintraege.filter((e) => e.typ === reiter)
+  const typListe = p.eintraege.filter((e) => e.typ === reiter && istNormal(e))
   // Zeitraum (nach Datum des Eintrags): alle | Jahr | Monat | frei von–bis (Grenzen inklusive, leer = offen)
   const [zeitraum, setZeitraum] = useState('alle')
   const [von, setVon] = useState('')
@@ -677,7 +807,7 @@ function Liste(p: ListeProps) {
   const zeitraumText = zr === 'frei' ? `${von ? tagText(von) : '…'} – ${bis ? tagText(bis) : '…'}` : zr.startsWith('j:') ? `Jahr ${zr.slice(2)}` : zr.startsWith('m:') ? monatText(zr.slice(2)) : ''
   const neuesteZuerst = (a: Eintrag, b: Eintrag) => eintragDatum(b).localeCompare(eintragDatum(a)) || b.geaendert.localeCompare(a.geaendert)
   const alle = typListe.filter(imZeitraum) // Basis für Summen und Farbübersicht
-  const anzahl = { pin: p.eintraege.filter((e) => e.typ === 'pin').length, flaeche: p.eintraege.filter((e) => e.typ === 'flaeche').length }
+  const anzahl = { pin: p.eintraege.filter((e) => e.typ === 'pin' && istNormal(e)).length, flaeche: p.eintraege.filter((e) => e.typ === 'flaeche').length, infra: p.eintraege.filter((e) => !istNormal(e)).length }
   const vorhandeneFarben = [...new Set(alle.map((e) => pinFarbe(e)))]
     .sort((a, b) => { const r = (f: string) => { const i = FLAECHEN_FARBEN.findIndex((x) => x.wert === f); return i < 0 ? 99 : i }; return r(a) - r(b) })
   // Übersicht „Nach Farbe“: je Farbe Anzahl Einträge, Tiere je Art (und bei Flächen Hektar) – nur aktiver Reiter
@@ -892,12 +1022,13 @@ function Liste(p: ListeProps) {
         <button className="x" onClick={p.onSchliessen} aria-label="Schließen"><Icon name="x" /></button>
       </div>
       <div className="tabs reiter" role="tablist">
-        {(['pin', 'flaeche'] as const).map((f) => (
+        {(['pin', 'flaeche', 'infra'] as const).map((f) => (
           <button key={f} role="tab" aria-selected={reiter === f} className={reiter === f ? 'aktiv' : ''} onClick={() => { setReiter(f); setFarbFilter(null) }}>
-            {f === 'pin' ? '📍 Nadeln' : '⬠ Flächen'} ({anzahl[f]})
+            {f === 'pin' ? '📍 Nadeln' : f === 'flaeche' ? '⬠ Flächen' : <>〰 Zäune<span className="nur-breit"> &amp; Wasser</span></>} ({anzahl[f]})
           </button>
         ))}
       </div>
+      {reiter === 'infra' ? <InfraListe eintraege={p.eintraege} aus={p.infraAus} onUmschalten={p.onInfraUmschalten} onWahl={p.onWahl} darfBearbeiten={p.darfBearbeiten} onGeprueft={p.onGeprueft} /> : <>
       <p className="hinweis summe">
         {zeitraumAktiv && <strong>{zeitraumText}: </strong>}{alle.length} {alle.length === 1 ? wort[0] : wort[1]}
         {reiter === 'flaeche' && alle.length > 0 && <> · ≈ {ha.toLocaleString('de-DE', { maximumFractionDigits: 2 })} ha</>}
@@ -1055,6 +1186,7 @@ function Liste(p: ListeProps) {
           )
         })}
       </div>
+      </>}
       {zieh && gezogen && (
         <div className="zieh-geist" style={{ left: zieh.x, top: zieh.y }} aria-hidden="true">
           <span className="farbpunkt" style={{ background: pinFarbe(gezogen) }} /> {gezogen.titel || 'ohne Namen'}

@@ -1,3 +1,4 @@
+import { linienArt, punktBei, gesamtLaenge, type LinienArt, type InfraArt, type Geraet, type Tor } from '../server/infrastruktur.js'
 export type LatLng = { lat: number; lng: number }
 
 // Ein Tagebuch-Eintrag (Notiz) an einer Nadel oder Fläche
@@ -32,6 +33,17 @@ interface Basis {
 export interface Pin extends Basis {
   typ: 'pin'
   position: LatLng
+  infra?: InfraArt // Weide-Technik statt normaler Nadel: Tränke, Weidezaungerät, Tor, Unterstand, Salzleckstein
+  geraet?: Geraet // nur Weidezaungerät: Strom, Ladestand, letzte Prüfung, Spannung, Prüfintervall
+}
+// Zaunlinie, Weg oder Graben
+export interface Linie extends Basis {
+  typ: 'linie'
+  punkte: LatLng[]
+  linienArt: LinienArt
+  geschlossen?: boolean // Ring (z. B. „Zaun um Fläche“)
+  flaeche?: string // verknüpfte Fläche
+  tore?: Tor[] // Lücken für Tore (Position in Metern ab Anfang)
 }
 
 // Gut auf Satellitenbild sichtbare Vorschlagsfarben
@@ -50,13 +62,13 @@ export const STANDARD_FARBE = FARBEN[0].wert
 export const FLAECHE_STANDARD = '#2e7d32'
 export const FLAECHEN_FARBEN = [{ name: 'Grün', wert: FLAECHE_STANDARD }, ...FARBEN]
 // Farbe eines Eintrags (Nadel oder Fläche)
-export const pinFarbe = (e: { typ: 'pin' | 'flaeche'; farbe?: string }) => (e.farbe || (e.typ === 'pin' ? STANDARD_FARBE : FLAECHE_STANDARD)).toLowerCase()
+export const pinFarbe = (e: { typ: 'pin' | 'flaeche' | 'linie'; farbe?: string; linienArt?: string }) => (e.farbe || (e.typ === 'pin' ? STANDARD_FARBE : e.typ === 'linie' ? linienArt(e.linienArt).farbe : FLAECHE_STANDARD)).toLowerCase()
 export const farbName = (f: string) => FLAECHEN_FARBEN.find((x) => x.wert === f.toLowerCase())?.name ?? f
 export interface Flaeche extends Basis {
   typ: 'flaeche'
   punkte: LatLng[]
 }
-export type Eintrag = Pin | Flaeche
+export type Eintrag = Pin | Flaeche | Linie
 
 // Eigene Gruppe der Nadel-Liste (geteilt, auf dem Server in der Karte gespeichert)
 export interface Gruppe { id: string; name: string; farbe?: string; reihenfolge?: string[]; von?: string; erstellt?: string }
@@ -125,6 +137,7 @@ export const notizenSortiert = (e: Eintrag) => [...(e.notizen ?? [])].sort((a, b
 
 export function mitte(e: Eintrag): LatLng {
   if (e.typ === 'pin') return e.position
+  if (e.typ === 'linie' && e.punkte.length >= 2) return punktBei(e, gesamtLaenge(e) / 2) // Mitte entlang der Linie
   const n = e.punkte.length || 1
   return {
     lat: e.punkte.reduce((s, p) => s + p.lat, 0) / n,

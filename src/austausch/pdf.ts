@@ -3,7 +3,8 @@
 import { jsPDF } from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import { kartenbild } from './kartenbild'
-import { summenBauen, zahl, type Zeile } from './zeilen'
+import { summenBauen, technikBauen, zahl, type Zeile } from './zeilen'
+import { LINIEN_ARTEN, INFRA_ARTEN, laengeText } from '../../server/infrastruktur.js'
 import type { Gruppe, Eintrag } from '../types'
 import * as WP from '../../server/weideplan.js'
 import type { Weideplan } from '../../server/weideplan.js'
@@ -16,7 +17,7 @@ export const pdfText = (s: string) => s
 const rgb = (hex: string): [number, number, number] => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)) as [number, number, number]
 const GRUEN: [number, number, number] = [30, 77, 43]
 
-export interface BerichtOptionen { karte: string; hof?: string; autor?: string; filterText?: string; gesamtAnzahl: number; jeGruppe: boolean; mitKarte: boolean; weideplan?: { plan: Weideplan; eintraege: Eintrag[] } }
+export interface BerichtOptionen { karte: string; hof?: string; autor?: string; filterText?: string; gesamtAnzahl: number; jeGruppe: boolean; mitKarte: boolean; weideplan?: { plan: Weideplan; eintraege: Eintrag[] }; technik?: Eintrag[] }
 
 export async function pdfErzeugen(zeilen: Zeile[], gruppen: Gruppe[], o: BerichtOptionen): Promise<Blob> {
   const doc = new jsPDF({ unit: 'mm', format: 'a4', compress: true })
@@ -48,7 +49,7 @@ export async function pdfErzeugen(zeilen: Zeile[], gruppen: Gruppe[], o: Bericht
   })
   y += 20
   if (o.mitKarte) {
-    const kb2 = await kartenbild(zeilen).catch(() => null)
+    const kb2 = await kartenbild(zeilen, 1500, 1000, o.technik ?? []).catch(() => null)
     if (kb2) { const h = (B - 2 * rand) * (2 / 3); doc.addImage(kb2.bild, 'JPEG', rand, y, B - 2 * rand, h); doc.setDrawColor(200); doc.rect(rand, y, B - 2 * rand, h); y += h + 6 }
   }
   // Summen je Gruppe
@@ -78,6 +79,56 @@ export async function pdfErzeugen(zeilen: Zeile[], gruppen: Gruppe[], o: Bericht
   doc.addPage()
   doc.setFontSize(13); doc.setFont('helvetica', 'bold'); doc.text(pdfText(`Alle Einträge (${zeilen.length})`), rand, 16); doc.setFont('helvetica', 'normal')
   tabelle(zeilen, false, 20)
+
+  // ---- Zäune & Wasser: Längen je Art, Weidezaungeräte mit Prüfstand, Wasserstellen/Tore/Unterstände ----
+  const tz = technikBauen(o.technik ?? [])
+  if (tz.length) {
+    const gruen = { fillColor: GRUEN }, st = { fontSize: 8, cellPadding: 1.4, overflow: 'linebreak' as const, valign: 'top' as const }
+    const datum = (d?: string) => (d && /^\d{4}/.test(d) ? d.split('-').reverse().join('.') : d ?? '')
+    const nachY = () => (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 8
+    doc.addPage()
+    doc.setTextColor(30, 40, 30); doc.setFontSize(13); doc.setFont('helvetica', 'bold'); doc.text(pdfText('Zäune & Wasser'), rand, 16); doc.setFont('helvetica', 'normal')
+    const linien = tz.filter((z) => z.gattung === 'Linie')
+    let ty = 22
+    if (linien.length) {
+      const proArt = LINIEN_ARTEN.map((a) => ({ a, l: linien.filter((z) => z.artWert === a.wert) })).filter((x) => x.l.length)
+      autoTable(doc, {
+        startY: ty, margin: { left: rand, right: rand, bottom: 16 }, headStyles: gruen, styles: st,
+        head: [['Art', 'Anzahl', 'Länge', 'Netze à 50 m']],
+        body: proArt.map(({ a, l }) => { const m = l.reduce((x, z) => x + (z.laenge ?? 0), 0); return [pdfText(a.name), zahl(l.length), pdfText(laengeText(m)), a.wert === 'elektronetz' ? zahl(l.reduce((x, z) => x + (z.netze ?? 0), 0)) : ''] }),
+        columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' } },
+      })
+      ty = nachY()
+      autoTable(doc, {
+        startY: ty, margin: { left: rand, right: rand, bottom: 16 }, headStyles: gruen, styles: st,
+        head: [['Linie', 'Art', 'Länge', 'Netze', 'Tore', 'Notizen']],
+        body: linien.map((z) => [pdfText(z.name || '(ohne Namen)'), pdfText(z.art + (z.geschlossen ? ' (Ring)' : '')), pdfText(laengeText(z.laenge ?? 0)), z.netze != null ? zahl(z.netze) : '', z.tore ? zahl(z.tore) : '', pdfText(z.notizen.slice(0, 300))]),
+        columnStyles: { 0: { cellWidth: 40 }, 1: { cellWidth: 28 }, 2: { cellWidth: 18, halign: 'right' }, 3: { cellWidth: 12, halign: 'right' }, 4: { cellWidth: 10, halign: 'right' } },
+        didDrawCell: (d) => { if (d.section === 'body' && d.column.index === 0) { doc.setFillColor(...rgb(linien[d.row.index].farbe)); doc.rect(d.cell.x, d.cell.y, 1.2, d.cell.height, 'F') } },
+      })
+      ty = nachY()
+    }
+    const geraete = tz.filter((z) => z.artWert === 'geraet')
+    if (geraete.length) {
+      doc.setFontSize(11); doc.setFont('helvetica', 'bold'); doc.text(pdfText('Weidezaungeräte'), rand, ty); doc.setFont('helvetica', 'normal')
+      autoTable(doc, {
+        startY: ty + 2, margin: { left: rand, right: rand, bottom: 16 }, headStyles: gruen, styles: st,
+        head: [['Gerät', 'Zuletzt geprüft', 'Nächste Prüfung', 'Spannung', 'Strom', 'Ladestand', 'Lage']],
+        body: geraete.map((z) => [pdfText(z.name || 'Weidezaungerät'), datum(z.geprueft) || 'nie', datum(z.faelligAb), z.kv != null ? `${zahl(z.kv, 1)} kV` : '', pdfText(z.strom), pdfText(z.stand), `${z.lat.toFixed(5)}\n${z.lng.toFixed(5)}`]),
+      })
+      ty = nachY()
+    }
+    const sonst = tz.filter((z) => z.gattung === 'Punkt' && z.artWert !== 'geraet')
+    if (sonst.length) {
+      doc.setFontSize(11); doc.setFont('helvetica', 'bold'); doc.text(pdfText(INFRA_ARTEN.filter((a) => a.wert !== 'geraet' && sonst.some((z) => z.artWert === a.wert)).map((a) => a.name).join(', ')), rand, ty); doc.setFont('helvetica', 'normal')
+      autoTable(doc, {
+        startY: ty + 2, margin: { left: rand, right: rand, bottom: 16 }, headStyles: gruen, styles: st,
+        head: [['Art', 'Name', 'Lage', 'Notizen']],
+        body: sonst.map((z) => [pdfText(z.art), pdfText(z.name || '(ohne Namen)'), `${z.lat.toFixed(5)}\n${z.lng.toFixed(5)}`, pdfText(z.notizen.slice(0, 300))]),
+        columnStyles: { 0: { cellWidth: 28 }, 1: { cellWidth: 45 }, 2: { cellWidth: 22 } },
+      })
+    }
+  }
 
   // ---- Optional: Weideplan (aktuelle Belegung, Flächenstatus, letzte Umtriebe) ----
   if (o.weideplan && (o.weideplan.plan.belegungen.length || o.weideplan.plan.bewegungen.length)) {

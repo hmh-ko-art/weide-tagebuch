@@ -39,8 +39,11 @@ export function kreisNachVerschieben(e: Pin, neu: LatLng, karte: string): Pick<P
   const k = e.kreis
   if (!k || k.gebunden !== false || FL.abstand(k.mitte, neu) <= k.radius) return null
   const v = kreisVorgaben(karte)
-  const stehen = FL.kreiseStehenSauber([...(e.kreiseStehen ?? []), { ...k, id: 'k' + Math.random().toString(36).slice(2, 10) }])
-  const kreis = FL.kreisSauber({ radius: v.radius, farbe: v.farbe || k.farbe, gebunden: v.gebunden, mitte: neu, seit: new Date().toISOString().slice(0, 10) }, neu)
+  // Farbe folgt der Nadel: neuer Kreis und stehen gebliebener Kreis behalten die Farbe des bisherigen Kreises
+  // (fest gespeichert, damit sie sich nicht mehr mit der Nadelfarbe oder einem anderen Kreis ändert)
+  const farbe = k.farbe || pinFarbe(e)
+  const stehen = FL.kreiseStehenSauber([...(e.kreiseStehen ?? []), { ...k, farbe, id: 'k' + Math.random().toString(36).slice(2, 10) }])
+  const kreis = FL.kreisSauber({ radius: v.radius, farbe, gebunden: v.gebunden, mitte: neu, seit: new Date().toISOString().slice(0, 10) }, neu)
   return { kreis, kreiseStehen: stehen }
 }
 // Einen Kreis der Nadel ändern/entfernen (stehenId null = aktueller Kreis)

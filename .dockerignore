@@ -1,0 +1,13 @@
+node_modules
+dist
+backups
+logos
+server/data
+deploy
+.git
+*.png
+!public/*.png
+*.log
+.env*
+cloudflared
+*.tgz

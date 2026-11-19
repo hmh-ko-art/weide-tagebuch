@@ -1,0 +1,14 @@
+# Caddy holt und erneuert das HTTPS-Zertifikat für {$DOMAIN} automatisch (Let's Encrypt).
+{$DOMAIN} {
+	encode zstd gzip
+	# Server-Sent Events (/api/.../events) sofort durchreichen, nicht puffern
+	reverse_proxy {$APP_UPSTREAM} {
+		flush_interval -1
+	}
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+}

@@ -1,0 +1,16 @@
+# Nur für lokale Tests ohne Docker-Bridge-Netz (z. B. in Sandboxen): alles im Host-Netz.
+# docker compose -f docker-compose.yml -f docker-compose.test.yml up -d --build
+services:
+  db:
+    network_mode: host
+  app:
+    network_mode: host
+    build:
+      network: host
+    environment:
+      DATABASE_URL: postgres://flockmap:${POSTGRES_PASSWORD}@127.0.0.1:5432/flockmap
+  caddy:
+    network_mode: host
+    ports: !reset []
+    environment:
+      APP_UPSTREAM: 127.0.0.1:8787

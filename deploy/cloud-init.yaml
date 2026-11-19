@@ -1,0 +1,30 @@
+#cloud-config
+# Optional: bei Hetzner beim Server-Anlegen unter „Cloud config“ einfügen.
+# Macht den Server sofort sicher (Updates, Firewall, nur SSH-Schlüssel) und installiert Docker.
+# Die App selbst richtet danach deploy/setup.sh ein (per SSH, mit DOMAIN=...).
+package_update: true
+package_upgrade: true
+packages:
+  - ca-certificates
+  - curl
+  - git
+  - ufw
+  - fail2ban
+  - unattended-upgrades
+  - docker.io
+  - docker-compose-v2
+write_files:
+  - path: /etc/ssh/sshd_config.d/10-flockmap.conf
+    content: |
+      PasswordAuthentication no
+      KbdInteractiveAuthentication no
+      PermitRootLogin prohibit-password
+runcmd:
+  - systemctl enable --now docker
+  - ufw allow OpenSSH
+  - ufw allow 80/tcp
+  - ufw allow 443/tcp
+  - ufw allow 443/udp
+  - ufw --force enable
+  - systemctl reload ssh || true
+  - git clone https://github.com/hmh-ko-art/weide-tagebuch.git /opt/flockmap

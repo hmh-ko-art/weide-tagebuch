@@ -19,7 +19,8 @@ let pg = null
 async function ablageStarten() {
   if (!DATABASE_URL) return console.log('Ablage: JSON-Dateien in', DATA_DIR)
   const { default: pgMod } = await import('pg')
-  const lokal = /@(localhost|127\.0\.0\.1)[:/]/.test(DATABASE_URL)
+  // Ohne SSL: lokale DB oder eigener Server (Docker-Netz, DATABASE_SSL=off). Render bleibt bei SSL.
+  const lokal = /@(localhost|127\.0\.0\.1)[:/]/.test(DATABASE_URL) || /^(off|false|disable|0)$/i.test(process.env.DATABASE_SSL || '')
   pg = new pgMod.Pool({ connectionString: DATABASE_URL, ssl: lokal ? false : { rejectUnauthorized: false }, max: 3 })
   await pg.query('CREATE TABLE IF NOT EXISTS karten (id text PRIMARY KEY, daten jsonb NOT NULL, geaendert timestamptz NOT NULL DEFAULT now())')
   const { rows } = await pg.query('SELECT id, daten FROM karten')

@@ -3,11 +3,12 @@ import Karte, { HAT_GOOGLE_KEY } from './map/Karte'
 import { useKarte, zugangsLink, einladungsLink, NAME_MAX, type Ich, type Nutzer } from './daten'
 import { HofPanel, HofEinrichten, ROLLEN } from './Hof'
 import { OfflineAbschnitt } from './OfflineAbschnitt'
+import { Austausch, type ExportFilter } from './Austausch'
 import { googleNaviLink, routeBerechnen, routeText } from './route'
 import { eintragDatum, tagText, monatText, istAusblendbar, TIERARTEN, tierText, tierSymbolHtml, tierSummen, type Einheit, type Tierart, FARBEN, FLAECHEN_FARBEN, FLAECHE_STANDARD, START, STANDARD_FARBE, datum, farbName, hektar, mitte, neueId, notizenSortiert, pinFarbe, gruppenVorschlag, gruppenFarbe, gruppenOrdnung, naechsteGruppenFarbe, tierKurz, GRUPPEN_FARBEN, type Gruppe, type Eintrag, type Notiz, type Fokus, type LatLng, type Route } from './types'
 
 type Modus = 'ansicht' | 'pin' | 'flaeche'
-type Panel = null | 'liste' | 'einstellungen' | 'nutzer' | 'profil' | 'hof'
+type Panel = null | 'liste' | 'einstellungen' | 'nutzer' | 'profil' | 'hof' | 'austausch'
 
 // Aktuell angemeldeter Nutzer (geteilte Karte) – für Autor neuer Notizen
 let aktuellerNutzer: Ich | null = null
@@ -73,6 +74,7 @@ export default function App() {
   const [ausgewaehlt, setAusgewaehlt] = useState<string | null>(null)
   const [formular, setFormular] = useState<{ e: Eintrag; neu: boolean } | null>(null)
   const [panel, setPanel] = useState<Panel>(null)
+  const [exportFilter, setExportFilter] = useState<ExportFilter>(null)
   const [route, setRoute] = useState<Route | null>(null)
   const [routeInfo, setRouteInfo] = useState<string>('')
   const [standort, setStandort] = useState<LatLng | null>(null)
@@ -418,9 +420,11 @@ export default function App() {
           <Liste eintraege={anzeige.eintraege} gruppen={k.gruppen} nummern={anzeige.nummern} gruppenAus={gruppenAus}
             onSichtbar={(gid) => setGruppenAus((l) => (l.includes(gid) ? l.filter((x) => x !== gid) : [...l, gid]))} onReihenfolge={k.reihenfolge} onSchliessen={() => setPanel(null)} onWahl={(e) => { fliege(mitte(e), e.typ === 'pin' ? 15 : undefined); waehle(e.id) }}
             darfBearbeiten={k.darfBearbeiten} kannEintrag={kannEintrag} kannGruppe={kannGruppe} ichId={k.ich?.id}
-            onGruppeSpeichern={k.gruppeSpeichern} onGruppeLoeschen={k.gruppeLoeschen} onInGruppe={inGruppe} neueGruppe={neueGruppe} />
+            onGruppeSpeichern={k.gruppeSpeichern} onGruppeLoeschen={k.gruppeLoeschen} onInGruppe={inGruppe} neueGruppe={neueGruppe}
+            onExport={(f) => { setExportFilter(f); setPanel('austausch') }} />
         )}
-        {panel === 'einstellungen' && <Einstellungen k={k} onSchliessen={() => setPanel(null)} meldung={setMeldung} onNutzer={() => setPanel(k.hof?.rolle ? 'hof' : 'nutzer')} onHof={() => setPanel('hof')} onProfil={() => setPanel('profil')} kopfFarbe={kopfFarbe} setKopfFarbe={setKopfFarbe} />}
+        {panel === 'austausch' && <Austausch k={k} eintraege={anzeige.eintraege} filter={exportFilter} meldung={setMeldung} onSchliessen={() => setPanel(null)} />}
+        {panel === 'einstellungen' && <Einstellungen k={k} onAustausch={() => { setExportFilter(null); setPanel('austausch') }} onSchliessen={() => setPanel(null)} meldung={setMeldung} onNutzer={() => setPanel(k.hof?.rolle ? 'hof' : 'nutzer')} onHof={() => setPanel('hof')} onProfil={() => setPanel('profil')} kopfFarbe={kopfFarbe} setKopfFarbe={setKopfFarbe} />}
         {k.einladung && !k.ich && k.status !== 'verbinde' && <Beitreten k={k} />}
         {panel === 'profil' && k.ich && <Profil k={k} onSchliessen={() => setPanel(null)} meldung={setMeldung} />}
         {panel === 'hof' && k.hof && <HofPanel k={k} onSchliessen={() => setPanel(null)} meldung={setMeldung} />}
@@ -621,6 +625,7 @@ type ListeProps = {
   onGruppeSpeichern: (g: Gruppe) => void; onGruppeLoeschen: (id: string) => void
   onInGruppe: (g: Gruppe | null, liste: Eintrag[]) => void; neueGruppe: () => Gruppe | null; ichId?: string
   nummern: Record<string, number>; gruppenAus: string[]; onSichtbar: (gid: string) => void; onReihenfolge: (gid: string, ids: string[]) => void
+  onExport: (f: ExportFilter) => void
 }
 function Liste(p: ListeProps) {
   // Zwei strikt getrennte Listen: Nadeln | Flächen – jeweils vollständig; aktive Filter werden deutlich angezeigt
@@ -857,6 +862,7 @@ function Liste(p: ListeProps) {
     <section className={`panel liste-panel${zieh ? ' zieht' : ''}`} ref={panelRef}>
       <div className="sheet-kopf">
         <h2>Tagebuch</h2>
+        <button className="kopf-export" title={filterAktiv ? 'Angezeigte exportieren (Excel, PDF, KML)' : 'Exportieren (Excel, PDF, KML)'} onClick={() => p.onExport(filterAktiv ? { ids: liste.map((e) => e.id), text: [`nur ${wort[1]}`, farbe && `Farbe ${farbName(farbe)}`, suche.trim() && `Suche „${suche.trim()}“`, zeitraumAktiv && `Zeitraum ${zeitraumText}`].filter(Boolean).join(' · ') } : null)}>⬇️ Export{filterAktiv ? ` (${liste.length})` : ''}</button>
         <button className="x" onClick={p.onSchliessen} aria-label="Schließen"><Icon name="x" /></button>
       </div>
       <div className="tabs reiter" role="tablist">
@@ -1033,7 +1039,7 @@ function Liste(p: ListeProps) {
   )
 }
 
-function Einstellungen(p: { k: ReturnType<typeof useKarte>; onSchliessen: () => void; meldung: (s: string) => void; onNutzer: () => void; onHof: () => void; onProfil: () => void; kopfFarbe: string | null; setKopfFarbe: (f: string | null) => void }) {
+function Einstellungen(p: { k: ReturnType<typeof useKarte>; onAustausch: () => void; onSchliessen: () => void; meldung: (s: string) => void; onNutzer: () => void; onHof: () => void; onProfil: () => void; kopfFarbe: string | null; setKopfFarbe: (f: string | null) => void }) {
   const { k } = p
   const [name, setName] = useState('Weidekarte Deichschäferei')
   const [kartenName, setKartenName] = useState(k.kartenName)
@@ -1042,24 +1048,6 @@ function Einstellungen(p: { k: ReturnType<typeof useKarte>; onSchliessen: () => 
   const basis = `${location.origin}${location.pathname}?karte=${k.karteId}`
   const kopieren = async (t: string) => {
     try { await navigator.clipboard.writeText(t); p.meldung('Link kopiert') } catch { prompt('Link kopieren:', t) }
-  }
-  const exportieren = () => {
-    const blob = new Blob([JSON.stringify({ app: 'flockmap', version: 1, exportiert: new Date().toISOString(), eintraege: k.eintraege }, null, 2)], { type: 'application/json' })
-    const a = document.createElement('a')
-    a.href = URL.createObjectURL(blob)
-    a.download = `flockmap-${new Date().toISOString().slice(0, 10)}.json`
-    a.click()
-  }
-  const importieren = async (f: File) => {
-    try {
-      const j = JSON.parse(await f.text())
-      const liste: Eintrag[] = Array.isArray(j) ? j : j.eintraege
-      if (!Array.isArray(liste)) throw new Error()
-      if (!confirm(`${liste.length} Einträge importieren? Vorhandene Einträge mit gleicher ID werden überschrieben.`)) return
-      const ids = new Set(liste.map((e) => e.id))
-      await k.alleErsetzen([...k.eintraege.filter((e) => !ids.has(e.id)), ...liste])
-      p.meldung('Import erfolgreich')
-    } catch { p.meldung('Datei konnte nicht gelesen werden') }
   }
   return (
     <section className="panel">
@@ -1138,11 +1126,9 @@ function Einstellungen(p: { k: ReturnType<typeof useKarte>; onSchliessen: () => 
       </div>
       <p className="hinweis klein">Nur auf diesem Gerät, rein optisch.</p>
 
-      <h3>Daten</h3>
-      <button onClick={exportieren}>⬇️ Als JSON exportieren</button>
-      {k.istAdmin && (
-        <label className="btn">⬆️ JSON importieren<input type="file" accept="application/json,.json" hidden onChange={(e) => e.target.files?.[0] && importieren(e.target.files[0])} /></label>
-      )}
+      <h3>Daten: Export &amp; Import</h3>
+      <button className="primaer" onClick={p.onAustausch}>⬇️⬆️ Export &amp; Import öffnen</button>
+      <p className="hinweis klein">Excel-Liste, PDF-Bericht, KML für Google Earth/My Maps{k.istAdmin ? ', vollständige Sicherung und Import aus Google My Maps' : ''}.</p>
 
       <h3>Karte</h3>
       <p className="hinweis">Kartendienst: {HAT_GOOGLE_KEY ? 'Google Maps (Satellit)' : 'Esri-Satellit / OpenStreetMap (kostenlos) – für Google Maps einen API-Key in VITE_GOOGLE_MAPS_API_KEY eintragen'}.<br />Routen: {HAT_GOOGLE_KEY ? 'Google Directions' : 'OSRM (kostenloser Demo-Server)'}.</p>

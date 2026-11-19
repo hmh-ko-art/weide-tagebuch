@@ -42,3 +42,15 @@ Einschränkungen Free-Plan: Dienst schläft nach 15 Min. ohne Zugriffe ein (erst
 - **Postausgang**: alle Änderungen (Nadeln, Flächen, Notizen, Gruppen, Zuordnungen, Verschieben, Löschen) in einer Warteschlange (localStorage, synchron + Kopie in IndexedDB); automatisches Senden bei Netz, alle 20 s erneut, Zeitlimit 15 s je Anfrage. Status in der Kopfzeile: „Offline · X Änderungen warten“ / „Live · synchronisiert“.
 - **Konflikte**: Client schickt `basisGeaendert`. Weicht der Serverstand ab und der Inhalt ist verschieden, gilt die neuere Änderung (Änderungszeitpunkt); die andere Fassung wird als Notiz am Eintrag gesichert. Löschen eines inzwischen von jemand anderem geänderten Eintrags wird mit 409 abgelehnt; Bearbeiten eines inzwischen gelöschten Eintrags stellt ihn wieder her. Nutzer bekommt jeweils einen Hinweis.
 - **Kartenkacheln**: nur angesehene Kacheln werden gespeichert (Esri/OSM-Bedingungen: kein Massen-Download), max. 2.500 zuletzt angesehene; „Diesen Kartenausschnitt sichern“ schützt angesehene Kacheln (Zoom ±2) vor dem Aufräumen, max. 3.000.
+
+## Export & Import
+
+Panel „Export & Import“ (Liste → „⬇️ Export“ oder Einstellungen → Daten). Code in `src/Austausch.tsx` und `src/austausch/`.
+
+- **Excel (.xlsx)**: eigener schlanker Schreiber (`xlsx.ts`, ZIP über `fflate`) – Blätter „Nadeln und Flächen“ (echte Zahlen/Datumswerte, Autofilter, fixierte Kopfzeile, Summenzeile), „Summen je Gruppe“, „Notizen“.
+- **PDF** (`pdf.ts`, jsPDF + autotable, nur bei Bedarf geladen): Titel mit Hof/Karte/Datum, Kennzahlen, Übersichtskarte (`kartenbild.ts`: Esri-Kacheln wie in der App + Flächen/Nadeln, Quellenangabe), Summen je Gruppe, Tabelle aller Einträge, optional je Gruppe eine Seite.
+- **KML**: Ordner je Gruppe, Stile je Farbe, Flächen als Polygone, `ExtendedData` mit allen Feldern (`flockmap_id` → verlustfreie Rundreise, doppelte werden beim Re-Import erkannt).
+- **Filter**: Export aus der Liste bietet „Nur gefilterte exportieren“ (Suche, Farbe, Zeitraum des aktiven Reiters).
+- **Sicherung (JSON, nur Admin)**: ganze Karte ohne Zugänge/Links. Wiederherstellen: in diese Karte (nur Fehlendes ergänzen) oder als neue Karte.
+- **Import (nur Admin)**: KML/KMZ (Google My Maps: Ebenen → Gruppen, Stilfarben, Beschreibung + Zusatzfelder → Notiz, Tierzahlen aus Namen wie „50 + 1“, „+12 L“, „80 Schafe“), GeoJSON, CSV. Vorschau mit Häkchen je Eintrag, Duplikaterkennung (gleicher Name < 15 m).
+- Geschrieben wird über `POST /api/karten/:id/stapel` (Admin): ergänzt nur neue IDs, ändert nie Vorhandenes → idempotent, läuft über den Offline-Postausgang.

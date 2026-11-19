@@ -40,6 +40,8 @@ type Ausstehend =
   | { art: 'gruppe-delete'; id: string }
   | { art: 'zuordnen'; gruppe: string | null; ids: string[] }
   | { art: 'reihenfolge'; gruppe: string; ids: string[] }
+  // Import/Wiederherstellen: viele Einträge + Gruppen in EINER Änderung (nur Neues wird ergänzt, Vorhandenes bleibt unverändert)
+  | { art: 'stapel'; eintraege: Eintrag[]; gruppen: Gruppe[] }
 
 // Eine Änderung auf eine Liste anwenden (lokal sofort und als Overlay über Serverdaten)
 function anwenden(liste: Eintrag[], a: Ausstehend): Eintrag[] {
@@ -65,6 +67,10 @@ function anwenden(liste: Eintrag[], a: Ausstehend): Eintrag[] {
       return liste.map((x) => (x.gruppe === a.id ? { ...x, gruppe: undefined } : x))
     case 'zuordnen':
       return liste.map((x) => (a.ids.includes(x.id) ? { ...x, gruppe: a.gruppe ?? undefined } : x))
+    case 'stapel': {
+      const ids = new Set(liste.map((x) => x.id))
+      return [...liste, ...a.eintraege.filter((x) => !ids.has(x.id)).map(migrieren)]
+    }
   }
 }
 function gruppenAnwenden(gruppen: Gruppe[], a: Ausstehend): Gruppe[] {
@@ -79,6 +85,16 @@ function gruppenAnwenden(gruppen: Gruppe[], a: Ausstehend): Gruppe[] {
     return g.id === a.gruppe ? { ...g, reihenfolge: [...ohne, ...a.ids] } : { ...g, reihenfolge: ohne }
   })
   if (a.art === 'reihenfolge') return gruppen.map((g) => (g.id === a.gruppe ? { ...g, reihenfolge: a.ids } : g))
+  if (a.art === 'stapel') {
+    // wie der Server: neue Gruppen anhängen; neue Nadeln hinten an die Nummernfolge ihrer Gruppe
+    const neu = a.gruppen.filter((g) => !gruppen.some((x) => x.id === g.id)).map((g) => ({ ...g, reihenfolge: [] as string[] }))
+    return [...gruppen, ...neu].map((g) => {
+      const vorgabe = a.gruppen.find((x) => x.id === g.id)?.reihenfolge ?? []
+      const mitglieder = a.eintraege.filter((e) => e.gruppe === g.id).map((e) => e.id)
+      const dazu = [...vorgabe.filter((id) => mitglieder.includes(id)), ...mitglieder].filter((id) => !(g.reihenfolge ?? []).includes(id))
+      return dazu.length ? { ...g, reihenfolge: [...(g.reihenfolge ?? []), ...new Set(dazu)] } : g
+    })
+  }
   return gruppen
 }
 // Autor-Anzeige aktuell halten: Notizen mit Nutzer-ID bekommen den aktuellen Namen vom Server.
@@ -198,8 +214,9 @@ export function useKarte() {
       : a.art === 'gruppe-put' ? [`/api/karten/${karteId}/gruppen/${a.gruppe.id}`, 'PUT', { name: a.gruppe.name, ...(a.gruppe.farbe ? { farbe: a.gruppe.farbe } : {}) }]
       : a.art === 'reihenfolge' ? [`/api/karten/${karteId}/gruppen/${a.gruppe}/reihenfolge`, 'PUT', { ids: a.ids }]
       : a.art === 'gruppe-delete' ? [`/api/karten/${karteId}/gruppen/${a.id}`, 'DELETE', undefined]
+      : a.art === 'stapel' ? [`/api/karten/${karteId}/stapel`, 'POST', { eintraege: a.eintraege, gruppen: a.gruppen }]
       : [`/api/karten/${karteId}/gruppe-zuordnen`, 'POST', { gruppe: a.gruppe, ids: a.ids }]
-    const r = await mitZeitlimit(url, { method, headers, body: body ? JSON.stringify(body) : undefined })
+    const r = await mitZeitlimit(url, { method, headers, body: body ? JSON.stringify(body) : undefined }, a.art === 'stapel' ? 60000 : 15000)
     const j = await r.json().catch(() => ({}))
     // Löschen abgelehnt, weil inzwischen von jemand anderem geändert -> nichts geht verloren, Nutzer wird informiert
     if (r.status === 409 && j.konflikt) throw Object.assign(new Error('Konflikt'), { endgueltig: true, konflikt: j.konflikt as Konflikt })
@@ -293,6 +310,17 @@ export function useKarte() {
   const gruppeLoeschen = useCallback((id: string) => ausfuehren({ art: 'gruppe-delete', id }), [ausfuehren])
   const reihenfolge = useCallback((gruppe: string, ids: string[]) => ausfuehren({ art: 'reihenfolge', gruppe, ids }), [ausfuehren])
   const zuordnen = useCallback((gruppe: string | null, ids: string[]) => { if (ids.length) ausfuehren({ art: 'zuordnen', gruppe, ids }) }, [ausfuehren])
+  // Import/Wiederherstellen (Admin): ergänzt nur fehlende Einträge/Gruppen – geht offline in den Postausgang
+  const stapel = useCallback((eintraege: Eintrag[], gruppen: Gruppe[]) => { if (eintraege.length || gruppen.length) ausfuehren({ art: 'stapel', eintraege, gruppen }) }, [ausfuehren])
+  // Sicherung als NEUE geteilte Karte anlegen (braucht Netz); danach wird die neue Karte geöffnet
+  const alsNeueKarte = useCallback(async (name: string, eintraege: Eintrag[], gruppen: Gruppe[]) => {
+    const r = await fetch('/api/karten', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, eintraege, gruppen, ...(ich?.name ? { adminName: ich.name } : {}) }) })
+    if (!r.ok) throw new Error('Server nicht erreichbar – zum Anlegen einer neuen Karte wird Netz gebraucht')
+    const k = await r.json()
+    localStorage.setItem(zugangKey(k.id), k.zugang)
+    schreibenJetzt()
+    return { id: k.id as string, zugang: k.zugang as string }
+  }, [ich])
 
   const alleErsetzen = useCallback(async (roh: Eintrag[]) => {
     const liste = roh.map(migrieren)
@@ -372,5 +400,5 @@ export function useKarte() {
   }
   const einladungVerwalten = { laden: () => einladungApi('GET'), erzeugen: () => einladungApi('POST'), deaktivieren: () => einladungApi('DELETE') }
 
-  return { jetztSenden: queueAbarbeiten, wartend, letzteSync, konflikte, hof, setHof, eintraege, gruppen, gruppeSpeichern, gruppeLoeschen, zuordnen, reihenfolge, speichern, loeschen, notizSpeichern, notizLoeschen, alleErsetzen, teilen, abmelden, nameAendern, einladung, einladungPruefen, beitreten, kartenNameAendern, einladungVerwalten, nutzerStand, status, darfBearbeiten, istAdmin, ich, ichLaden, hinweis, setHinweis, nutzer, karteId, zugang, kartenName }
+  return { stapel, alsNeueKarte, jetztSenden: queueAbarbeiten, wartend, letzteSync, konflikte, hof, setHof, eintraege, gruppen, gruppeSpeichern, gruppeLoeschen, zuordnen, reihenfolge, speichern, loeschen, notizSpeichern, notizLoeschen, alleErsetzen, teilen, abmelden, nameAendern, einladung, einladungPruefen, beitreten, kartenNameAendern, einladungVerwalten, nutzerStand, status, darfBearbeiten, istAdmin, ich, ichLaden, hinweis, setHinweis, nutzer, karteId, zugang, kartenName }
 }

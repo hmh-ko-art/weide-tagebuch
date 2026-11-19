@@ -29,6 +29,8 @@ function swPrecache(): Plugin {
 
 export default defineConfig({
   plugins: [react(), swPrecache()],
+  // jsPDF: optionale Module (HTML-/SVG-Rendering) nicht mitbauen
+  resolve: { alias: { html2canvas: path.resolve('src/austausch/leer.ts'), canvg: path.resolve('src/austausch/leer.ts'), dompurify: path.resolve('src/austausch/leer.ts') } },
   server: { host: true, proxy: { '/api': 'http://localhost:8787' } },
   preview: { host: true, proxy: { '/api': 'http://localhost:8787' } },
 })

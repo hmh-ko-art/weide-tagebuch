@@ -394,3 +394,27 @@ select { font: inherit; border: 1px solid #c9d3c4; border-radius: 10px; padding:
 .klein-knopf { padding: 5px 10px !important; font-size: .82rem; margin-left: auto; }
 .konflikt-liste { margin: 0; padding-left: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
 .konflikt-liste li { background: #fff4ec; border-radius: 8px; padding: 8px 10px; color: #6b3a1f; }
+
+/* ---- Export & Import ---- */
+.kopf-export { margin-left: auto; margin-right: 6px; padding: 6px 10px; font-size: .9rem; white-space: nowrap; }
+.austausch .export-karte { border: 1px solid var(--rand, #e2dccb); border-radius: 12px; padding: 10px 12px; margin: 8px 0 12px; display: flex; flex-direction: column; gap: 6px; }
+.austausch .export-karte > button, .austausch .export-karte > .btn { width: 100%; }
+.austausch .export-karte .hinweis { margin: 2px 0 0; }
+.austausch .klein-option { display: flex; flex-direction: row; gap: 8px; align-items: flex-start; font-size: .92rem; font-weight: 400; margin: 0; }
+.austausch .klein-option input { width: 18px; height: 18px; padding: 0; margin-top: 3px; flex: none; }
+.auswahl-wahl { display: flex; flex-direction: column; gap: 6px; background: #fff7e8; border: 1px solid #f0d9a8; border-radius: 10px; padding: 8px 10px; margin-bottom: 6px; }
+.auswahl-wahl label { display: flex; flex-direction: row; gap: 8px; align-items: flex-start; font-weight: 500; margin: 0; }
+.auswahl-wahl input { width: 18px; height: 18px; padding: 0; margin-top: 3px; flex: none; }
+.auswahl-wahl small { font-weight: 400; color: #6b5d45; }
+.vorschau-box { background: #f6f8f3; border: 1px solid #cfdcc6; border-radius: 10px; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+.vorschau-box p { margin: 0; }
+.vorschau-tabelle { max-height: 320px; overflow: auto; border: 1px solid #dfe6d8; border-radius: 8px; background: #fff; }
+.vorschau-tabelle table { width: 100%; border-collapse: collapse; font-size: .86rem; }
+.vorschau-tabelle th { position: sticky; top: 0; background: #e8f0e3; text-align: left; padding: 5px 6px; font-weight: 600; }
+.vorschau-tabelle td { padding: 4px 6px; border-top: 1px solid #eef1ea; vertical-align: top; overflow-wrap: anywhere; }
+.vorschau-tabelle td input { width: 18px; height: 18px; padding: 0; margin: 2px 0 0; }
+.vorschau-tabelle td.zahl, .vorschau-tabelle th:nth-child(n+4) { text-align: right; white-space: nowrap; }
+.vorschau-tabelle tr.aus td { opacity: .45; }
+.vorschau-tabelle .roh { color: #7a7466; }
+.vorschau-tabelle .doppelt { color: #b04a14; }
+.vorschau-tabelle .farbpunkt { display: inline-block; width: 10px; height: 10px; border-radius: 50%; border: 1px solid rgba(0,0,0,.3); vertical-align: middle; }

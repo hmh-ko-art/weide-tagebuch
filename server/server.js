@@ -332,6 +332,59 @@ app.put('/api/karten/:id/eintraege', mitKarte('admin'), (req, res) => {
   res.json({ ok: true, version: k.version })
 })
 
+// Import / Wiederherstellen (nur Admin): viele Einträge + Gruppen in EINER Änderung.
+// Ergänzt nur, was es noch nicht gibt (gleiche ID = schon vorhanden -> bleibt unverändert). Dadurch ist die Anfrage
+// gefahrlos wiederholbar (Offline-Postausgang) und überschreibt nie Änderungen anderer.
+const STAPEL_MAX = 3000
+app.post('/api/karten/:id/stapel', mitKarte('admin'), (req, res) => {
+  const k = req.karte, ich = req.nutzer
+  const roh = Array.isArray(req.body?.eintraege) ? req.body.eintraege : []
+  const gRoh = Array.isArray(req.body?.gruppen) ? req.body.gruppen : []
+  if (roh.length > STAPEL_MAX) return res.status(413).json({ fehler: `Höchstens ${STAPEL_MAX} Einträge auf einmal` })
+  k.gruppen ??= []
+  const jetzt = new Date().toISOString()
+  let gruppenNeu = 0
+  for (const g of gruppenPruefen(gRoh)) {
+    if (k.gruppen.some((x) => x.id === g.id)) continue
+    if (k.gruppen.length >= GRUPPEN_MAX) break
+    const name = gruppenNamePruefen(g.name).name
+    if (!name) continue
+    k.gruppen.push({ id: g.id, name, ...(g.farbe ? { farbe: g.farbe } : {}), reihenfolge: [], von: ich.id, erstellt: jetzt })
+    gruppenNeu++
+  }
+  const nutzerIds = new Set(k.nutzer.map((n) => n.id))
+  const vorhanden = new Set(k.eintraege.map((e) => e.id))
+  let neu = 0, schon = 0, ungueltig = 0
+  const neueIds = []
+  for (const r of roh) {
+    if (!r || typeof r.id !== 'string' || !/^[\w-]{1,64}$/.test(r.id) || !['pin', 'flaeche'].includes(r.typ)) { ungueltig++; continue }
+    if (r.typ === 'pin' && !(r.position && Number.isFinite(r.position.lat) && Number.isFinite(r.position.lng))) { ungueltig++; continue }
+    if (r.typ === 'flaeche' && !(Array.isArray(r.punkte) && r.punkte.length >= 3 && r.punkte.every((p) => p && Number.isFinite(p.lat) && Number.isFinite(p.lng)))) { ungueltig++; continue }
+    if (vorhanden.has(r.id)) { schon++; continue }
+    const e = migrieren(r)
+    // Notizen behalten ihren Autor-Namen (z. B. aus einer Sicherung); Nutzer-ID nur, wenn es die Person auf dieser Karte gibt
+    e.notizen = e.notizen.filter(notizOk).slice(0, 500).map((n) => ({ id: n.id, text: n.text.slice(0, 5000), zeitpunkt: n.zeitpunkt, ...(typeof n.autor === 'string' && n.autor ? { autor: n.autor.slice(0, 60) } : {}), ...(n.autorId && nutzerIds.has(n.autorId) ? { autorId: n.autorId } : {}) }))
+    e.titel = typeof e.titel === 'string' ? e.titel.slice(0, 200) : ''
+    if (typeof e.erstellt !== 'string' || isNaN(Date.parse(e.erstellt))) e.erstellt = jetzt
+    if (typeof e.geaendert !== 'string' || isNaN(Date.parse(e.geaendert))) e.geaendert = jetzt
+    e.erstelltVon = e.erstelltVon && nutzerIds.has(e.erstelltVon) ? e.erstelltVon : ich.id
+    e.geaendertVon = ich.id
+    delete e.basisGeaendert
+    k.eintraege.push(gruppeGueltig(k, e))
+    vorhanden.add(e.id); neueIds.push(e.id); neu++
+  }
+  // Nummernfolge: vorgegebene Reihenfolge (z. B. aus der Sicherung) zuerst, neue Mitglieder hinten anhängen
+  for (const g of k.gruppen) {
+    const mitglieder = neueIds.filter((id) => k.eintraege.find((e) => e.id === id)?.gruppe === g.id)
+    if (!mitglieder.length) continue
+    const vorgabe = reihenfolgePruefen(gRoh.find((x) => x && x.id === g.id)?.reihenfolge).filter((id) => mitglieder.includes(id))
+    const dazu = [...new Set([...vorgabe, ...mitglieder])].filter((id) => !(g.reihenfolge ?? []).includes(id))
+    g.reihenfolge = [...(g.reihenfolge ?? []), ...dazu]
+  }
+  if (neu || gruppenNeu) speichern(k)
+  res.json({ ok: true, version: k.version, neu, schon, ungueltig, gruppenNeu })
+})
+
 // Notiz anlegen/ändern (per Notiz-ID zusammengeführt -> gleichzeitige Notizen gehen nicht verloren)
 // Notizen: jeder Nutzer darf an jedem Eintrag Notizen hinzufügen; ändern/löschen nur eigene (Admin: alle)
 app.put('/api/karten/:id/eintraege/:eid/notizen/:nid', mitKarte('nutzer'), (req, res) => {

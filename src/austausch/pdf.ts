@@ -11,6 +11,7 @@ import type { Weideplan } from '../../server/weideplan.js'
 import { tiereText, statusText } from '../weideplan/hilfen'
 import * as FL from '../../server/flaechen.js'
 import { kreisZeilen } from './kreise'
+import { spannungZeilen } from './spannung'
 import type { PachtListe } from '../../server/flaechen.js'
 import { flaechenZeilen } from './flaechenliste'
 
@@ -21,7 +22,7 @@ export const pdfText = (s: string) => s
 const rgb = (hex: string): [number, number, number] => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)) as [number, number, number]
 const GRUEN: [number, number, number] = [30, 77, 43]
 
-export interface BerichtOptionen { kreise?: Eintrag[]; karte: string; hof?: string; autor?: string; filterText?: string; gesamtAnzahl: number; jeGruppe: boolean; mitKarte: boolean; weideplan?: { plan: Weideplan; eintraege: Eintrag[] }; technik?: Eintrag[]; flaechen?: { eintraege: Eintrag[]; pacht: PachtListe | null } }
+export interface BerichtOptionen { kreise?: Eintrag[]; spannungSchwelle?: number; karte: string; hof?: string; autor?: string; filterText?: string; gesamtAnzahl: number; jeGruppe: boolean; mitKarte: boolean; weideplan?: { plan: Weideplan; eintraege: Eintrag[] }; technik?: Eintrag[]; flaechen?: { eintraege: Eintrag[]; pacht: PachtListe | null } }
 
 export async function pdfErzeugen(zeilen: Zeile[], gruppen: Gruppe[], o: BerichtOptionen): Promise<Blob> {
   const doc = new jsPDF({ unit: 'mm', format: 'a4', compress: true })
@@ -207,6 +208,23 @@ export async function pdfErzeugen(zeilen: Zeile[], gruppen: Gruppe[], o: Bericht
         startY: 26, margin: { left: rand, right: rand, bottom: 16 }, headStyles: { fillColor: GRUEN }, styles: { fontSize: 8, cellPadding: 1.3, overflow: 'linebreak' as const },
         head: [['Nadel', 'Art', 'Radius', 'Fläche ca.', 'Umfang', 'Netze', 'Verhalten', 'Seit'].map(pdfText)],
         body: kz.map((r) => [pdfText(r.name || '(ohne Namen)'), pdfText(r.art), `${zahl(r.radius)} m`, `${zahl(r.ha, 2)} ha`, `${zahl(Math.round(r.umfang))} m`, String(r.netze), pdfText(r.bindung), r.seit ? r.seit.split('-').reverse().join('.') : '']),
+      })
+    }
+  }
+
+  if (o.kreise) {
+    const sw = o.spannungSchwelle ?? 4
+    const sz = spannungZeilen(o.kreise, sw)
+    if (sz.length) {
+      doc.addPage()
+      doc.setTextColor(30, 40, 30); doc.setFontSize(13); doc.setFont('helvetica', 'bold'); doc.text(pdfText('Zaunspannung (Weidezaungeräte)'), rand, 16); doc.setFont('helvetica', 'normal')
+      const nadeln = new Set(sz.map((r) => r.e.id)).size, tief = sz.filter((r) => r.unter).length
+      doc.setFontSize(9); doc.setTextColor(60); doc.text(pdfText(`${sz.length} ${sz.length === 1 ? 'Messung' : 'Messungen'} an ${nadeln} ${nadeln === 1 ? 'Nadel' : 'Nadeln'} · Warnschwelle ${zahl(sw, 1)} kV${tief ? ` · ${tief} darunter` : ''}`), rand, 22)
+      autoTable(doc, {
+        startY: 26, margin: { left: rand, right: rand, bottom: 16 }, headStyles: { fillColor: GRUEN }, styles: { fontSize: 8, cellPadding: 1.3, overflow: 'linebreak' as const },
+        head: [['Nadel', 'Datum', 'Uhrzeit', 'Spannung', 'Eingetragen von'].map(pdfText)],
+        body: sz.map((r) => [pdfText(r.name || '(ohne Namen)'), r.datum.split('-').reverse().join('.'), r.zeit, `${zahl(r.kv, 1)} kV${r.unter ? ' (!)' : ''}`, pdfText(r.autor)]),
+        didParseCell: (d) => { if (d.section === 'body' && d.column.index === 3 && sz[d.row.index]?.unter) { d.cell.styles.textColor = [200, 30, 30]; d.cell.styles.fontStyle = 'bold' } },
       })
     }
   }

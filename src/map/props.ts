@@ -15,6 +15,7 @@ export interface KartenProps {
   onKreisRadius?: (r: number) => void
   onLangDruck?: (p: LatLng, x: number, y: number) => void // langes Drücken / Rechtsklick auf die Karte (Kreis-Farbe)
   onKreisKlick?: (id: string, stehenId: string | null, x: number, y: number) => void // Tipp auf einen Kreis (Farbe direkt wählen)
+  spannungSchwelle?: number // kV: darunter rotes ⚡-Schild
   warnIds?: string[] // Weidezaungeräte mit fälliger Prüfung (rot umrandet)
   route: Route | null
   standort: LatLng | null

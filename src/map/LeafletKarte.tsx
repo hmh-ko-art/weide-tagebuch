@@ -7,6 +7,7 @@ import { FARBE_AKTIV, ROUTE_FARBE, type KartenProps } from './props'
 import { ansichtSetzen, letzteAnsicht } from '../offline'
 import { infraSvg } from './symbole'
 import { abstand, alleKreise } from '../../server/flaechen.js'
+import { spannungLetzte } from '../../server/spannung.js'
 import { gesamtLaenge, laengeText, linienArt, linienLaenge, linienStuecke, punktBei } from '../../server/infrastruktur.js'
 
 const ll = (q: { lat: number; lng: number }) => [q.lat, q.lng] as [number, number]
@@ -17,14 +18,22 @@ const mitteIcon = L.divIcon({ className: 'eck-icon', html: '<span class="eck mit
 
 // Beschriftung: Name und – falls gesetzt – dezent Symbol + Tierzahl
 // Tierliste 'ausblendbar': kleiner Knopf ▾/▸ im Schild klappt sie ein/aus (Zustand pro Gerät)
-const labelHtml = (e: Eintrag, zu: boolean) => {
+// Zaunspannung: kleines ⚡-Schild (rot unter der Warnschwelle) – auch wenn die Beschriftung aus ist
+const voltHtml = (e: Eintrag, schwelle: number) => {
+  const m = spannungLetzte(e)
+  if (!m) return ''
+  return `<span class="label-volt${m.kv < schwelle ? ' tief' : ''}" title="Zaunspannung ${m.datum.split('-').reverse().join('.')}">⚡${m.kv.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}</span>`
+}
+const labelHtml = (e: Eintrag, zu: boolean, schwelle: number, mitName = true) => {
+  const volt = voltHtml(e, schwelle)
+  if (!mitName) return volt ? `<div class="pin-label nur-volt">${volt}</div>` : ''
   const name = e.titel.trim().replace(/[<>&"]/g, '')
   const summen = tierSummen([e])
   const liste = summen.map((x) => `<span class="label-tiere">${tierSymbolHtml(x.art)}${x.n}</span>`).join('')
   const tiere = summen.length && istAusblendbar(e)
     ? `<span class="tiere-knopf" role="button" aria-expanded="${!zu}" title="Tiere ${zu ? 'einblenden' : 'ausblenden'}">${zu ? '▸ Tiere' : `▾${liste}`}</span>`
     : liste
-  return name || tiere ? `<div class="pin-label">${name}${tiere}</div>` : ''
+  return name || tiere || volt ? `<div class="pin-label">${name}${tiere}${volt}</div>` : ''
 }
 const pinIcon = (aktiv: boolean, label: string, farbe: string, hervor: boolean, nr?: number) =>
   L.divIcon({
@@ -163,7 +172,7 @@ export default function LeafletKarte(p: KartenProps) {
         }
       } else if (e.typ === 'pin') {
         const ziehbar = verschiebbar.has(e.id)
-        const m = L.marker([e.position.lat, e.position.lng], { icon: pinIcon(aktiv, p.beschriftung ? labelHtml(e, tiereZu.has(e.id)) : '', pinFarbe(e), hervor.has(pinFarbe(e)), p.nummern[e.id]), zIndexOffset: aktiv ? 1000 : hervor.has(pinFarbe(e)) ? 500 : 0, draggable: ziehbar, autoPan: true })
+        const m = L.marker([e.position.lat, e.position.lng], { icon: pinIcon(aktiv, labelHtml(e, tiereZu.has(e.id), p.spannungSchwelle ?? 4, p.beschriftung), pinFarbe(e), hervor.has(pinFarbe(e)), p.nummern[e.id]), zIndexOffset: aktiv ? 1000 : hervor.has(pinFarbe(e)) ? 500 : 0, draggable: ziehbar, autoPan: true })
         m.on('click', klick)
         if (ziehbar) {
           // Finger runter, ziehen, loslassen -> neue Position (kurzes Antippen bleibt ein Klick)
@@ -187,7 +196,7 @@ export default function LeafletKarte(p: KartenProps) {
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [p.kreisBearbeiten?.id, p.eintraege, p.ausgewaehlt, p.beschriftung, p.hervor.join(), p.verschiebbar.join(), p.tiereZu.join(), p.nummern, (p.warnIds ?? []).join()])
+  }, [p.kreisBearbeiten?.id, p.eintraege, p.ausgewaehlt, p.beschriftung, p.hervor.join(), p.verschiebbar.join(), p.tiereZu.join(), p.nummern, (p.warnIds ?? []).join(), p.spannungSchwelle])
 
   // Zeichnen einer Fläche oder Linie
   useEffect(() => {

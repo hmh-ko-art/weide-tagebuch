@@ -96,6 +96,19 @@ Code: `server/flaechen.js` (gemeinsam für Server **und** App: Messen, Steckbrie
 - Die neue Nadel ist ausgewählt und sofort verschiebbar; ist sie unter der Leiste verdeckt, schiebt die Karte nur (kein Zoom).
 - Zeichnen (Fläche/Zaun), Kreis-Mitte setzen, Tor-Modus und offene Paletten haben Vorrang vor dem Nadel-Setzen.
 
+## Weidezaungerät an der Nadel (7f)
+
+Ein Weidezaungerät gehört fest zu einer Nadel (einem Pferch) und wandert mit ihr mit. Gespeichert wird nur die Spannung.
+
+- **Eintragen:** Nadel antippen → Feld „⚡ Weidezaungerät“ → Zahl in kV eintippen (z. B. `6,2`, Zahlentastatur) → **⚡ Speichern**. Datum, Uhrzeit und Name werden automatisch gespeichert.
+- **Eine Messung pro Tag:** Ein zweiter Wert am selben Tag ersetzt den ersten. Der Knopf heißt dann „⚡ Ersetzen“.
+- **Anzeige:** An der Nadel auf der Karte und in der Liste steht ein kleines Schild „⚡ 6,2“. Es ist rot, wenn der Wert unter der Warnschwelle liegt. In der Nadel stehen letzter Wert, Tag und Name, darunter der Verlauf der letzten 14 Tage. Gespeichert werden bis zu 60 Tage.
+- **Warnschwelle:** Einstellungen → Zaunspannung, Standard 4 kV. Sie gilt für diese Karte auf diesem Gerät.
+- **Rollen:** Admins und Mitarbeiter können an allen Nadeln messen. Wer nur ansehen darf, sieht die Werte, kann aber nichts eintragen. Beim Bearbeiten einer Nadel bleiben die Messungen immer erhalten.
+- **Offline:** Messungen werden wie alles andere gespeichert und gesendet, sobald wieder Netz da ist.
+- **Export:** Das Excel-Blatt „Zaunspannung“ und ein PDF-Kapitel enthalten Nadel, Datum, Uhrzeit, kV, „unter Schwelle“ und den Namen. Die JSON-Sicherung enthält die Messungen ohne interne Nutzer-IDs.
+- **Google-Ansicht:** Kein Schild. Der Wert steht im Tooltip der Nadel.
+
 ## Kreis um Nadel („eingezäunt“)
 
 Code: `server/flaechen.js` (`kreisSauber`, `kreisMasse`, `kreisPolygon`, `kreisMitte`), `src/kreis/Kreis.tsx`, `src/austausch/kreise.ts`.

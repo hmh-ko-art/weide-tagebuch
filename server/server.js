@@ -6,6 +6,7 @@ import path from 'node:path'
 import * as WP from './weideplan.js'
 import * as FL from './flaechen.js'
 import * as IS from './infrastruktur.js'
+import * as SP from './spannung.js'
 import crypto from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 
@@ -176,6 +177,7 @@ function autorNamen(k) {
   for (const e of k.eintraege) for (const n of e.notizen ?? []) if (n.autorId) ids.add(n.autorId)
   for (const b of k.weideplan?.bewegungen ?? []) if (b.autorId) ids.add(b.autorId)
   for (const e of k.eintraege) for (const p of e.geraet?.pruefungen ?? []) if (p.autorId) ids.add(p.autorId)
+  for (const e of k.eintraege) for (const m of e.spannung ?? []) if (m.autorId) ids.add(m.autorId)
   for (const e of k.eintraege) for (const f of e.steckbrief?.fristen ?? []) if (f.erledigt?.autorId) ids.add(f.erledigt.autorId)
   return Object.fromEntries(k.nutzer.filter((n) => ids.has(n.id)).map((n) => [n.id, n.name]))
 }
@@ -297,6 +299,9 @@ app.put('/api/karten/:id/eintraege/:eid', mitKarte('nutzer'), (req, res) => {
     // … und keinen Kreis um die Nadel -> behalten
     if (alt0?.kreis && body.typ === 'pin' && !('kreis' in body)) e.kreis = alt0.kreis
     if (alt0?.kreiseStehen && body.typ === 'pin' && !('kreiseStehen' in body)) e.kreiseStehen = alt0.kreiseStehen
+    // Zaunspannung ändert sich nur über /spannung (Mitarbeiter dürfen an allen Nadeln messen) -> Bearbeiten überschreibt sie nie
+    if (alt0) { if (alt0.spannung) e.spannung = alt0.spannung; else delete e.spannung }
+    else if (Array.isArray(e.spannung)) e.spannung = e.spannung.map((m) => ({ ...m, autor: req.nutzer.name, autorId: req.nutzer.id })) // neue Nadel (offline gemessen): Absender ist Autor
     const f = IS.eintragSauber(e) || FL.flaecheSauber(e)
     if (f) return res.status(400).json({ fehler: f })
     FL.erledigtUebernehmen(e, alt0)
@@ -411,6 +416,7 @@ app.post('/api/karten/:id/stapel', mitKarte('admin'), (req, res) => {
     const e = migrieren(r)
     if (IS.eintragSauber(e) || FL.flaecheSauber(e)) { ungueltig++; continue }
     for (const p of e.geraet?.pruefungen ?? []) if (p.autorId && !nutzerIds.has(p.autorId)) delete p.autorId
+    for (const m of e.spannung ?? []) if (m.autorId && !nutzerIds.has(m.autorId)) delete m.autorId
     for (const f of e.steckbrief?.fristen ?? []) if (f.erledigt?.autorId && !nutzerIds.has(f.erledigt.autorId)) delete f.erledigt.autorId
     // Notizen behalten ihren Autor-Namen (z. B. aus einer Sicherung); Nutzer-ID nur, wenn es die Person auf dieser Karte gibt
     e.notizen = e.notizen.filter(notizOk).slice(0, 500).map((n) => ({ id: n.id, text: n.text.slice(0, 5000), zeitpunkt: n.zeitpunkt, ...(typeof n.autor === 'string' && n.autor ? { autor: n.autor.slice(0, 60) } : {}), ...(n.autorId && nutzerIds.has(n.autorId) ? { autorId: n.autorId } : {}) }))
@@ -494,6 +500,23 @@ app.put('/api/karten/:id/weideplan/einstellungen', mitKarte('nutzer'), (req, res
 })
 
 // Weidezaungerät geprüft (ein Tipp): darf jede Person mit Schreibrecht – auch an fremden Geräten. Idempotent über die Prüf-ID.
+// Zaunspannung an einer Nadel (ein Weidezaungerät je Pferch): eine Messung pro Tag, gleicher Tag überschreibt
+app.post('/api/karten/:id/eintraege/:eid/spannung', mitKarte('nutzer'), (req, res) => {
+  const k = req.karte, ich = req.nutzer
+  const i = k.eintraege.findIndex((x) => x.id === req.params.eid)
+  if (i < 0) return res.status(409).json({ fehler: 'Nadel gibt es nicht mehr', konflikt: { art: 'spannung-weg', titel: '' } })
+  const alt = k.eintraege[i]
+  if (alt.typ !== 'pin' || alt.infra) return res.status(400).json({ fehler: 'Spannung nur an Nadeln' })
+  const b = req.body ?? {}
+  const kv = SP.kvWert(b.kv)
+  if (kv === undefined || !WP.tagOk(b.datum) || b.datum > WP.tagPlus(WP.heute(), 1) || b.datum < WP.tagPlus(WP.heute(), -400)) return res.status(400).json({ fehler: 'Ungültige Spannung (0–20 kV)' })
+  const zeitpunkt = typeof b.zeitpunkt === 'string' && !isNaN(Date.parse(b.zeitpunkt)) ? b.zeitpunkt : new Date().toISOString()
+  const vorher = alt.spannung?.find((x) => x.datum === b.datum)
+  if (vorher && (vorher.zeitpunkt ?? '') > zeitpunkt) return res.json({ ok: true, version: k.version }) // spätere Messung desselben Tages schon da
+  k.eintraege[i] = SP.spannungEintragen(alt, { datum: b.datum, kv, zeitpunkt, autor: ich.name, autorId: ich.id })
+  speichern(k)
+  res.json({ ok: true, version: k.version })
+})
 app.post('/api/karten/:id/eintraege/:eid/geprueft', mitKarte('nutzer'), (req, res) => {
   const k = req.karte, ich = req.nutzer
   const i = k.eintraege.findIndex((x) => x.id === req.params.eid)
@@ -1169,6 +1192,7 @@ function personAnonymisieren(k, id, name) {
   }
   for (const g of k.gruppen ?? []) if (g.von === id) delete g.von
   for (const e of k.eintraege) for (const p of e.geraet?.pruefungen ?? []) if (p.autorId === id) { p.autor = EHEMALIG; delete p.autorId }
+  for (const e of k.eintraege) for (const m of e.spannung ?? []) if (m.autorId === id) { m.autor = EHEMALIG; delete m.autorId }
   for (const e of k.eintraege) for (const f of e.steckbrief?.fristen ?? []) if (f.erledigt?.autorId === id) { f.erledigt.autor = EHEMALIG; delete f.erledigt.autorId }
   if (k.einladung?.von === id) delete k.einladung.von
   WP.planAnonymisieren(k, id, EHEMALIG)

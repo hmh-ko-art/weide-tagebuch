@@ -692,3 +692,27 @@ button.klein { padding: 6px 10px; font-size: .88rem; flex: none; }
 .rueck-dauer { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; font-size: .92rem; }
 .rueck-dauer .knoepfe button { min-width: 64px; }
 .toast .rest { font-weight: 400; font-size: .85em; opacity: .8; }
+.pin-label .label-volt { margin-left: 5px; padding: 0 4px; border-radius: 5px; background: #fff3c4; color: #5d4300; font-weight: 700; font-size: 11px; }
+.pin-label .label-volt:first-child { margin-left: 0; }
+.pin-label .label-volt.tief { background: #d32f2f; color: #fff; }
+.pin-label.nur-volt { padding: 0; background: none; box-shadow: none; }
+.spannung { margin: 6px 0; padding: 8px 10px; border: 2px solid #fbc02d; border-radius: 12px; background: #fffdf2; display: flex; flex-direction: column; gap: 6px; }
+.spannung.tief { border-color: #d32f2f; background: #fff5f5; }
+.spannung-kopf { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px; }
+.spannung-kopf small { color: #555; }
+.spannung-marke { display: inline-block; padding: 1px 8px; border-radius: 999px; background: #fff3c4; color: #5d4300; font-weight: 800; white-space: nowrap; }
+.spannung-marke.klein { padding: 0 6px; font-size: .78rem; font-weight: 700; margin-left: 6px; }
+.spannung-marke.tief { background: #d32f2f; color: #fff; }
+.spannung-warn { margin: 0; color: #b71c1c; font-weight: 600; font-size: .88rem; }
+.spannung-form { display: flex; gap: 8px; align-items: stretch; }
+.spannung-eingabe { display: flex; flex-direction: row; align-items: center; margin: 0; gap: 6px; flex: 1; min-width: 0; font-weight: 700; }
+.spannung-eingabe input { flex: 1; min-width: 0; width: 100%; font-size: 1.5rem; padding: 8px 10px; text-align: center; }
+.spannung-form button { font-size: 1.05rem; padding: 0 14px; white-space: nowrap; }
+.spannung-verlauf summary { cursor: pointer; font-size: .88rem; color: #33502f; }
+.spannung-verlauf ul { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 2px; }
+.spannung-verlauf li { display: grid; grid-template-columns: 70px auto 1fr; align-items: center; gap: 8px; font-size: .88rem; }
+.spannung-verlauf li .spannung-marke.klein { margin-left: 0; justify-self: start; }
+.spannung-verlauf li small { color: #666; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.unsichtbar { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+.spannung-schwelle { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-weight: 600; }
+.spannung-schwelle input { width: 80px; font-size: 1.1rem; text-align: center; }

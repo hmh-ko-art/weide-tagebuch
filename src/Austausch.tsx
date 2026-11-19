@@ -13,6 +13,8 @@ import type { Weideplan } from '../server/weideplan.js'
 import type { Blatt } from './austausch/xlsx'
 import { flaechenBlaetter } from './austausch/flaechenliste'
 import { kreisBlatt } from './austausch/kreise'
+import { spannungBlatt } from './austausch/spannung'
+import { schwelleLesen } from './spannung/schwelle'
 import { messen } from '../server/flaechen.js'
 import type { Pacht, PachtListe } from '../server/flaechen.js'
 
@@ -102,6 +104,7 @@ export function Austausch(p: { k: K; eintraege: Eintrag[]; filter: ExportFilter;
       ...(hatPlan ? planBlaetter(k.weideplan!, k.eintraege) : []),
       ...(hatFlaechen ? flaechenBlaetter(auswahl, pachtFuer) : []),
       ...kreisBlatt(auswahl),
+      ...spannungBlatt(auswahl, schwelleLesen(k.karteId || 'lokal')),
       ...(technik.length ? [{
         name: 'Zäune & Wasser',
         kopf: ['Art', 'Name', 'Länge (m)', 'Netze à 50 m', 'Tore', 'Zuletzt geprüft', 'Nächste Prüfung', 'Spannung (kV)', 'Strom', 'Ladestand', 'Prüfen alle (Tage)', 'Breite', 'Länge', 'Notizen', 'ID'],
@@ -122,7 +125,7 @@ export function Austausch(p: { k: K; eintraege: Eintrag[]; filter: ExportFilter;
 
   const pdf = () => mit('PDF-Bericht', async () => {
     const { pdfErzeugen } = await import('./austausch/pdf')
-    const blob = await pdfErzeugen(zeilen, k.gruppen, { karte: name, hof: k.hof?.name, autor: k.ich?.name, filterText, gesamtAnzahl: p.eintraege.length, jeGruppe, mitKarte, technik: technikE, kreise: auswahl, ...(mitFlaechen && hatFlaechen ? { flaechen: { eintraege: auswahl, pacht: pachtFuer } } : {}), ...(mitPlan && hatPlan ? { weideplan: { plan: k.weideplan!, eintraege: k.eintraege } } : {}) })
+    const blob = await pdfErzeugen(zeilen, k.gruppen, { karte: name, hof: k.hof?.name, autor: k.ich?.name, filterText, gesamtAnzahl: p.eintraege.length, jeGruppe, mitKarte, technik: technikE, kreise: auswahl, spannungSchwelle: schwelleLesen(k.karteId || 'lokal'), ...(mitFlaechen && hatFlaechen ? { flaechen: { eintraege: auswahl, pacht: pachtFuer } } : {}), ...(mitPlan && hatPlan ? { weideplan: { plan: k.weideplan!, eintraege: k.eintraege } } : {}) })
     herunterladen(blob, dateiName(name, 'pdf'))
     p.meldung('PDF-Bericht erstellt')
   })

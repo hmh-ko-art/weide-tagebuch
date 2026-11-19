@@ -1,4 +1,5 @@
 import { alleKreise } from '../../server/flaechen.js'
+import { spannungLetzte, kvText } from '../../server/spannung.js'
 import { useEffect, useRef } from 'react'
 import { APIProvider, AdvancedMarker, Map, useMap } from '@vis.gl/react-google-maps'
 import { START, START_ZOOM, pinFarbe, type Eintrag } from '../types'
@@ -102,7 +103,7 @@ export default function GoogleKarte(p: KartenProps) {
       >
         {p.eintraege.map((e) =>
           e.typ === 'pin' ? (
-            <AdvancedMarker key={e.id} position={e.position} title={e.titel || undefined} onClick={() => p.onAuswahl(e.id)}
+            <AdvancedMarker key={e.id} position={e.position} title={[e.titel, spannungLetzte(e) ? `⚡ ${kvText(spannungLetzte(e)!.kv)}` : ''].filter(Boolean).join(' · ') || undefined} onClick={() => p.onAuswahl(e.id)}
               draggable={p.verschiebbar.includes(e.id)} onDragEnd={(ev) => { const ll = ev.latLng; if (ll) p.onVerschieben(e.id, { lat: ll.lat(), lng: ll.lng() }) }}>
               <div dangerouslySetInnerHTML={{ __html: e.infra ? infraSvg(e.infra, 30, e.id === p.ausgewaehlt, !!p.warnIds?.includes(e.id)) : nadelHtml(pinFarbe(e), e.id === p.ausgewaehlt, p.hervor.includes(pinFarbe(e)), p.nummern[e.id]) }} />
             </AdvancedMarker>

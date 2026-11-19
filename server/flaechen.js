@@ -1,6 +1,7 @@
 // Flächen-Steckbrief (Art, Eigentum/Pacht, FLIK/Schlag, Förderprogramme + Fristen), Pacht (nur Admin/Inhaber)
 // und genaues Ausmessen. Gemeinsame Logik für Server UND App (wie weideplan.js / infrastruktur.js).
 import { heute, tagOk, tagPlus, tageZwischen } from './weideplan.js'
+import { spannungFeld } from './spannung.js'
 
 export const FLAECHEN_ARTEN = [
   { wert: 'gruenland', name: 'Grünland' },
@@ -83,6 +84,7 @@ export function steckbriefSauber(s) {
 }
 // Eintrag: Steckbrief nur an Flächen; Fehlertext oder null
 export function flaecheSauber(e) {
+  spannungFeld(e) // Zaunspannung: nur an normalen Nadeln
   // Kreis um Nadel („eingezäunt“): nur an Nadeln
   if (e.typ === 'pin') {
     const k = kreisSauber(e.kreis, e.position); if (k) e.kreis = k; else delete e.kreis

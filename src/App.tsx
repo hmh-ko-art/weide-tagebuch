@@ -10,6 +10,9 @@ import { WeideplanPanel, PlanZeile, type PlanStart } from './weideplan/Weideplan
 import { planFarben as planFarbenAnwenden, faelligAnzahl } from './weideplan/hilfen'
 import { STATUS_FARBEN, heute } from '../server/weideplan.js'
 import { FlaechenUebersicht, MessText, SteckbriefDetail, SteckbriefFormular, fristenListe, pachtAusForm, pachtFormAus } from './flaechen/Flaechen'
+import { SpannungZeile } from './spannung/Spannung'
+import { schwelleLesen, schwelleSetzen } from './spannung/schwelle'
+import * as SP from '../server/spannung.js'
 import { KreisDetail, KreisLeiste, KreisPop, kreisAendern, kreisAnzahl, kreisAusEdit, kreisNachVerschieben, kreisStart, kreisVorgaben, kreisVorgabenSetzen, type KreisEdit } from './kreis/Kreis'
 import * as FL from '../server/flaechen.js'
 import type { Pacht } from '../server/flaechen.js'
@@ -93,6 +96,8 @@ export default function App() {
   const [routeInfo, setRouteInfo] = useState<string>('')
   const [standort, setStandort] = useState<LatLng | null>(null)
   // Beschriftung (Namen auf der Karte) an/aus – pro Gerät gespeichert
+  const [schwelle, setSchwelleRoh] = useState(() => schwelleLesen(k.karteId || 'lokal'))
+  const setSchwelle = (n: number) => { schwelleSetzen(k.karteId || 'lokal', n); setSchwelleRoh(n) }
   const [rueckS, setRueckS] = useState(() => { const n = Number(localStorage.getItem('wt-rueckgaengig-s')); return [5, 10, 20].includes(n) ? n : 10 })
   useEffect(() => { localStorage.setItem('wt-rueckgaengig-s', String(rueckS)) }, [rueckS])
   const [beschriftung, setBeschriftung] = useState(() => localStorage.getItem('wt-beschriftung') !== 'aus')
@@ -433,6 +438,7 @@ export default function App() {
             if (best) { setAusgewaehlt(best.id); setKreisPop({ id: best.id, stehenId: best.sid, x, y }) }
           } : undefined}
           onKreisRadius={(r) => setKreisEdit((x) => (x ? { ...x, radius: Math.min(FL.KREIS_MAX, r) } : x))}
+          spannungSchwelle={schwelle}
           warnIds={geraeteDran.map((x) => x.eintrag.id)}
           route={route}
           standort={standort}
@@ -607,6 +613,7 @@ export default function App() {
                 onGeprueft={(x) => { k.geprueft(auswahl.id, x); setMeldung('Prüfung eingetragen ✓') }}
                 onPunkte={() => punkteStart(auswahl)} onTore={() => { setTorId(auswahl.id); setModus('tor') }} onZaun={() => zaunUm(auswahl)}
                 onWahl={(id) => { const e = k.eintraege.find((x) => x.id === id); if (e) { fliege(mitte(e)); waehle(id) } }} />
+              {auswahl.typ === 'pin' && !auswahl.infra && <SpannungZeile e={auswahl} darf={k.darfBearbeiten} schwelle={schwelle} onMessen={(kv) => { k.spannungMessen(auswahl.id, kv); setMeldung(`⚡ ${SP.kvText(kv)} gespeichert${kv < schwelle ? ' – unter der Warnschwelle!' : ''}`) }} />}
               {auswahl.typ === 'pin' && <KreisDetail e={auswahl} karte={k.karteId || 'lokal'} darf={k.darfBearbeiten && kannEintrag(auswahl)}
                 onEinkreisen={() => { const ke = kreisStart(auswahl, k.karteId || 'lokal'); setKreisEdit(ke); setModus('kreis'); setFokus({ ...(auswahl.kreis && auswahl.kreis.gebunden === false ? auswahl.kreis.mitte : auswahl.position), n: Date.now(), nurSichtbar: true }) }}
                 onAbgebaut={(sid) => { k.speichern({ ...auswahl, ...kreisAendern(auswahl, sid ?? null, () => null), geaendert: new Date().toISOString() }); setMeldung('Kreis entfernt – abgebaut ✂️') }} />}
@@ -619,7 +626,7 @@ export default function App() {
         {formular && <Formular gruppeName={k.gruppen.find((g) => g.id === formular.e.gruppe)?.name} start={formular.e} neu={formular.neu} istAdmin={k.istAdmin} pacht={k.pacht[formular.e.id]} onPacht={(p) => k.pachtSpeichern(formular.e.id, p)} onSpeichern={speichern} onAbbrechen={() => setFormular(null)} onLoeschen={formular.neu || !kannEintrag(formular.e) ? undefined : () => loeschen(formular.e)} />}
 
         {panel === 'liste' && (
-          <Liste eintraege={anzeige.eintraege} gruppen={k.gruppen} nummern={anzeige.nummern} gruppenAus={gruppenAus}
+          <Liste schwelle={schwelle} eintraege={anzeige.eintraege} gruppen={k.gruppen} nummern={anzeige.nummern} gruppenAus={gruppenAus}
             onSichtbar={(gid) => setGruppenAus((l) => (l.includes(gid) ? l.filter((x) => x !== gid) : [...l, gid]))} onReihenfolge={k.reihenfolge} onSchliessen={() => setPanel(null)} onWahl={(e) => { fliege(mitte(e), e.typ === 'pin' ? 15 : undefined); waehle(e.id) }}
             darfBearbeiten={k.darfBearbeiten} kannEintrag={kannEintrag} kannGruppe={kannGruppe} ichId={k.ich?.id}
             onGruppeSpeichern={k.gruppeSpeichern} onGruppeLoeschen={k.gruppeLoeschen} onInGruppe={inGruppe} neueGruppe={neueGruppe}
@@ -647,7 +654,7 @@ export default function App() {
           </section>
         )}
         {panel === 'austausch' && <Austausch k={k} eintraege={anzeige.eintraege} filter={exportFilter} meldung={setMeldung} onSchliessen={() => setPanel(null)} />}
-        {panel === 'einstellungen' && <Einstellungen k={k} onMeineDaten={() => setPanel('meinedaten')} onAustausch={() => { setExportFilter(null); setPanel('austausch') }} onSchliessen={() => setPanel(null)} meldung={setMeldung} onNutzer={() => setPanel(k.hof?.rolle ? 'hof' : 'nutzer')} onHof={() => setPanel('hof')} onProfil={() => setPanel('profil')} kopfFarbe={kopfFarbe} setKopfFarbe={setKopfFarbe} rueckS={rueckS} setRueckS={setRueckS} />}
+        {panel === 'einstellungen' && <Einstellungen k={k} onMeineDaten={() => setPanel('meinedaten')} onAustausch={() => { setExportFilter(null); setPanel('austausch') }} onSchliessen={() => setPanel(null)} meldung={setMeldung} onNutzer={() => setPanel(k.hof?.rolle ? 'hof' : 'nutzer')} onHof={() => setPanel('hof')} onProfil={() => setPanel('profil')} kopfFarbe={kopfFarbe} setKopfFarbe={setKopfFarbe} rueckS={rueckS} setRueckS={setRueckS} schwelle={schwelle} setSchwelle={setSchwelle} />}
         {panel === 'weideplan' && <WeideplanPanel k={k} start={planStart} meldung={setMeldung} planFarben={planFarben} setPlanFarben={setPlanFarben} onSchliessen={() => { setPanel(null); setPlanStart(null) }}
           onZeigen={(id) => { const e = k.eintraege.find((x) => x.id === id); if (e) { fliege(mitte(e), e.typ === 'pin' ? 15 : undefined); waehle(e.id) } }} />}
         {panel === 'meinedaten' && <MeineDaten k={k} meldung={setMeldung} onSchliessen={() => setPanel(null)} />}
@@ -882,6 +889,7 @@ function Formular(p: { gruppeName?: string; start: Eintrag; neu: boolean; istAdm
 }
 
 type ListeProps = {
+  schwelle: number
   eintraege: Eintrag[]; gruppen: Gruppe[]; onWahl: (e: Eintrag) => void; onSchliessen: () => void
   darfBearbeiten: boolean; kannEintrag: (e: Eintrag) => boolean; kannGruppe: (g: Gruppe) => boolean
   onGruppeSpeichern: (g: Gruppe) => void; onGruppeLoeschen: (id: string) => void
@@ -1113,7 +1121,7 @@ function Liste(p: ListeProps) {
     return (
       <li key={e.id} data-id={e.id} className={zieh?.id === e.id ? 'wird-gezogen' : undefined} onClick={() => p.onWahl(e)}>
         <div className="zeile-oben">
-          <strong>{e.typ === 'pin' ? <span className="farbpunkt" style={{ background: pinFarbe(e) }} /> : <span className="flaechen-symbol" style={{ color: pinFarbe(e) }}>⬠</span>} {e.titel || <span className="ohne-name">ohne Namen</span>}{e.typ === 'pin' && kreisAnzahl(e) > 0 && <span className="kreis-marke" title={e.kreis ? `Eingezäunt: Kreis ${e.kreis.radius} m` : 'Kreise am alten Standort'} style={{ borderColor: e.kreis?.farbe || e.kreiseStehen?.[0]?.farbe || pinFarbe(e) }}>◯ {e.kreis ? `${e.kreis.radius} m` : ''}{(e.kreiseStehen?.length ?? 0) > 0 ? `${e.kreis ? ' ' : ''}+${e.kreiseStehen!.length} alt` : ''}</span>}</strong>
+          <strong>{e.typ === 'pin' ? <span className="farbpunkt" style={{ background: pinFarbe(e) }} /> : <span className="flaechen-symbol" style={{ color: pinFarbe(e) }}>⬠</span>} {e.titel || <span className="ohne-name">ohne Namen</span>}{e.typ === 'pin' && SP.spannungLetzte(e) && <span className={`spannung-marke klein${SP.spannungLetzte(e)!.kv < p.schwelle ? ' tief' : ''}`} title={`Zaunspannung ${SP.spannungLetzte(e)!.datum.split('-').reverse().join('.')}`}>⚡ {SP.kvText(SP.spannungLetzte(e)!.kv)}</span>}{e.typ === 'pin' && kreisAnzahl(e) > 0 && <span className="kreis-marke" title={e.kreis ? `Eingezäunt: Kreis ${e.kreis.radius} m` : 'Kreise am alten Standort'} style={{ borderColor: e.kreis?.farbe || e.kreiseStehen?.[0]?.farbe || pinFarbe(e) }}>◯ {e.kreis ? `${e.kreis.radius} m` : ''}{(e.kreiseStehen?.length ?? 0) > 0 ? `${e.kreis ? ' ' : ''}+${e.kreiseStehen!.length} alt` : ''}</span>}</strong>
           {griff && griffFuer(e)}
         </div>
         {e.notizen.length > 0 && <span className="notiz-kurz">{notizenSortiert(e)[0].text}</span>}
@@ -1306,7 +1314,7 @@ function Liste(p: ListeProps) {
   )
 }
 
-function Einstellungen(p: { k: ReturnType<typeof useKarte>; onMeineDaten: () => void; onAustausch: () => void; onSchliessen: () => void; meldung: (s: string) => void; onNutzer: () => void; onHof: () => void; onProfil: () => void; kopfFarbe: string | null; setKopfFarbe: (f: string | null) => void; rueckS: number; setRueckS: (n: number) => void }) {
+function Einstellungen(p: { k: ReturnType<typeof useKarte>; onMeineDaten: () => void; onAustausch: () => void; onSchliessen: () => void; meldung: (s: string) => void; onNutzer: () => void; onHof: () => void; onProfil: () => void; kopfFarbe: string | null; setKopfFarbe: (f: string | null) => void; rueckS: number; setRueckS: (n: number) => void; schwelle: number; setSchwelle: (n: number) => void }) {
   const { k } = p
   const [name, setName] = useState('Weidekarte Deichschäferei')
   const [kartenName, setKartenName] = useState(k.kartenName)
@@ -1397,6 +1405,10 @@ function Einstellungen(p: { k: ReturnType<typeof useKarte>; onMeineDaten: () => 
         <div className="knoepfe">{[5, 10, 20].map((n) => <button key={n} role="radio" aria-checked={p.rueckS === n} className={p.rueckS === n ? 'primaer' : ''} onClick={() => p.setRueckS(n)}>{n} s</button>)}</div>
       </div>
       <p className="hinweis klein">So lange zählt der Hinweis mit „Rückgängig“ herunter (Standard 10 s), nur auf diesem Gerät.</p>
+
+      <h3>Zaunspannung</h3>
+      <label className="spannung-schwelle">⚡ Warnschwelle<span><input type="text" inputMode="decimal" defaultValue={String(p.schwelle).replace('.', ',')} aria-label="Warnschwelle in kV" onBlur={(x) => { const n = Number(x.target.value.replace(',', '.')); if (Number.isFinite(n) && n > 0 && n <= 20) p.setSchwelle(Math.round(n * 10) / 10); else x.target.value = String(p.schwelle).replace('.', ',') }} /> kV</span></label>
+      <p className="hinweis klein">Darunter wird das ⚡-Schild an der Nadel rot (Standard 4 kV). Gilt für diese Karte auf diesem Gerät.</p>
 
       <h3>Daten: Export &amp; Import</h3>
       <button className="primaer" onClick={p.onAustausch}>⬇️⬆️ Export &amp; Import öffnen</button>

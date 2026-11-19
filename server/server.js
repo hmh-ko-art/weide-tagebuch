@@ -669,6 +669,33 @@ app.post('/api/betreiber/hoefe', betreiber, (req, res) => {
   res.status(201).json({ hof: hofInfo(h, inhaber), karte: k.id, zugang: inhaber.zugang })
 })
 
+// Hof auflösen (Betreiber, z. B. Test oder Rückerstattung). ?karten=behalten (Standard): Karten bleiben als Einzelkarten
+// mit allen Personen (Zugänge gültig); ?karten=loeschen: auch die Karten des Hofs werden gelöscht.
+app.delete('/api/betreiber/hoefe/:hid', betreiber, async (req, res) => {
+  const h = hofCache.get(req.params.hid)
+  if (!h) return res.status(404).json({ fehler: 'Hof nicht gefunden' })
+  const loeschen = req.query.karten === 'loeschen'
+  for (const kid of h.karten) {
+    const k = cache.get(kid)
+    if (!k || k.hof !== h.id) continue
+    if (loeschen) {
+      cache.delete(kid)
+      for (const r of clients.get(kid) ?? []) r.end()
+      clients.delete(kid)
+      if (pg) await pgKette.then(() => pg.query('DELETE FROM karten WHERE id = $1', [kid]))
+      else fs.rmSync(datei(kid), { force: true })
+    } else {
+      delete k.hof
+      for (const n of k.nutzer) delete n.hof
+      nutzerGeaendert(k)
+    }
+  }
+  hofCache.delete(h.id)
+  if (pg) await hofKette.then(() => pg.query('DELETE FROM hoefe WHERE id = $1', [h.id]))
+  else fs.rmSync(hofDatei(h.id), { force: true })
+  res.json({ ok: true, karten: loeschen ? 'geloescht' : 'behalten' })
+})
+
 // -- Bestehende Karte zum Hof machen (Admin der Karte). Alle bisherigen Personen werden Hof-Mitglieder
 //    mit demselben Zugang (ihre Links bleiben gültig): Admin -> Admin (wer klickt: Inhaber), Nutzer -> Mitarbeiter.
 app.post('/api/karten/:id/hof', mitKarte('admin'), (req, res) => {

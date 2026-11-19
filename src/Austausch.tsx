@@ -304,9 +304,9 @@ function Importieren(p: { k: K; meldung: (s: string) => void; onFertig: () => vo
         erstellt: jetzt, geaendert: jetzt,
       }
       if (v.typ === 'linie') return { ...basis, typ: 'linie', punkte: v.punkte!, linienArt: linienArt(v.linienArt).wert, ...(v.geschlossen && v.punkte!.length >= 3 ? { geschlossen: true } : {}), ...(v.tore?.length ? { tore: v.tore } : {}), ...(v.flaeche ? { flaeche: v.flaeche } : {}) }
-      if (v.typ === 'pin' && v.infra) return { ...basis, typ: 'pin', position: v.position!, infra: v.infra, ...(v.geraet ? { geraet: v.geraet } : {}), ...(v.kreis ? { kreis: v.kreis } : {}) }
+      if (v.typ === 'pin' && v.infra) return { ...basis, typ: 'pin', position: v.position!, infra: v.infra, ...(v.geraet ? { geraet: v.geraet } : {}), ...(v.kreis ? { kreis: v.kreis } : {}), ...(v.kreiseStehen?.length ? { kreiseStehen: v.kreiseStehen } : {}) }
       if (v.typ === 'flaeche' && v.pacht && k.istAdmin) pachtNeu[id] = v.pacht
-      return v.typ === 'pin' ? { ...basis, typ: 'pin', position: v.position!, ...(gruppeFuer(v.ebene) ? { gruppe: gruppeFuer(v.ebene) } : {}), ...(v.kreis ? { kreis: v.kreis } : {}) } : { ...basis, typ: 'flaeche', punkte: v.punkte!, ...(v.steckbrief ? { steckbrief: v.steckbrief } : {}) }
+      return v.typ === 'pin' ? { ...basis, typ: 'pin', position: v.position!, ...(gruppeFuer(v.ebene) ? { gruppe: gruppeFuer(v.ebene) } : {}), ...(v.kreis ? { kreis: v.kreis } : {}), ...(v.kreiseStehen?.length ? { kreiseStehen: v.kreiseStehen } : {}) } : { ...basis, typ: 'flaeche', punkte: v.punkte!, ...(v.steckbrief ? { steckbrief: v.steckbrief } : {}) }
     })
     // Reihenfolge in der Gruppe wie in der Datei
     const reihe = (g: Gruppe) => ({ ...g, reihenfolge: eintraege.filter((e) => e.gruppe === g.id).map((e) => e.id) })

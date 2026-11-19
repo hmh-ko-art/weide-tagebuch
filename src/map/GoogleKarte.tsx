@@ -1,4 +1,4 @@
-import { kreisMitte } from '../../server/flaechen.js'
+import { alleKreise } from '../../server/flaechen.js'
 import { useEffect, useRef } from 'react'
 import { APIProvider, AdvancedMarker, Map, useMap } from '@vis.gl/react-google-maps'
 import { START, START_ZOOM, pinFarbe, type Eintrag } from '../types'
@@ -37,12 +37,18 @@ function Overlays(p: KartenProps) {
     }
     // Kreise um Nadeln (beim Bearbeiten: Vorschau mit dem eingestellten Radius)
     for (const e of p.eintraege) {
-      if (e.typ !== 'pin' || !e.kreis) continue
-      const kb = p.kreisBearbeiten?.id === e.id ? p.kreisBearbeiten : null
-      const f = kb?.farbe ?? e.kreis.farbe ?? pinFarbe(e)
-      const c = new google.maps.Circle({ map, center: kb?.mitte ?? kreisMitte(e)!, radius: kb?.radius ?? e.kreis.radius, strokeColor: kb ? FARBE_AKTIV : f, strokeWeight: 2.5, fillColor: f, fillOpacity: 0.15 })
-      c.addListener('click', () => cb.current.onAuswahl(e.id))
-      polys.push(c as unknown as google.maps.Polygon)
+      if (e.typ !== 'pin') continue
+      for (const ak of alleKreise(e)) {
+        const kb = ak.stehenId == null && p.kreisBearbeiten?.id === e.id ? p.kreisBearbeiten : null
+        const f = kb?.farbe ?? ak.kreis.farbe ?? pinFarbe(e)
+        const c = new google.maps.Circle({ map, center: kb?.mitte ?? ak.mitte, radius: kb?.radius ?? ak.kreis.radius, strokeColor: kb ? FARBE_AKTIV : f, strokeWeight: 2.5, fillColor: f, fillOpacity: ak.stehenId ? 0.08 : 0.15 })
+        c.addListener('click', (ev: google.maps.MapMouseEvent) => {
+          const d = ev.domEvent as MouseEvent | undefined
+          if (cb.current.onKreisKlick && !kb) cb.current.onKreisKlick(e.id, ak.stehenId, d?.clientX ?? window.innerWidth / 2, d?.clientY ?? window.innerHeight / 2)
+          else cb.current.onAuswahl(e.id)
+        })
+        polys.push(c as unknown as google.maps.Polygon)
+      }
     }
     const kb = p.kreisBearbeiten
     if (kb && !p.eintraege.some((e) => e.id === kb.id && e.typ === 'pin' && e.kreis)) polys.push(new google.maps.Circle({ map, center: kb.mitte, radius: kb.radius, strokeColor: FARBE_AKTIV, strokeWeight: 2.5, fillColor: kb.farbe, fillOpacity: 0.2, clickable: false }) as unknown as google.maps.Polygon)
@@ -68,7 +74,9 @@ function Overlays(p: KartenProps) {
   }, [map, p.route])
 
   useEffect(() => {
-    if (map && p.fokus) { map.panTo(p.fokus); map.setZoom(p.fokus.zoom ?? Math.max(map.getZoom() ?? 10, 14)) }
+    if (!map || !p.fokus) return
+    if (p.fokus.nurSichtbar) { if (!map.getBounds()?.contains(p.fokus)) map.panTo(p.fokus); return } // Zoom bleibt
+    map.panTo(p.fokus); map.setZoom(p.fokus.zoom ?? Math.max(map.getZoom() ?? 10, 14))
   }, [map, p.fokus])
 
   return null

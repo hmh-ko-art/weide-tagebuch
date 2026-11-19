@@ -84,7 +84,10 @@ export function steckbriefSauber(s) {
 // Eintrag: Steckbrief nur an Flächen; Fehlertext oder null
 export function flaecheSauber(e) {
   // Kreis um Nadel („eingezäunt“): nur an Nadeln
-  if (e.typ === 'pin') { const k = kreisSauber(e.kreis, e.position); if (k) e.kreis = k; else delete e.kreis } else delete e.kreis
+  if (e.typ === 'pin') {
+    const k = kreisSauber(e.kreis, e.position); if (k) e.kreis = k; else delete e.kreis
+    const st = kreiseStehenSauber(e.kreiseStehen); if (st.length) e.kreiseStehen = st; else delete e.kreiseStehen
+  } else { delete e.kreis; delete e.kreiseStehen }
   if (e.typ !== 'flaeche') { delete e.steckbrief; return null }
   const s = steckbriefSauber(e.steckbrief)
   if (s) e.steckbrief = s; else delete e.steckbrief
@@ -220,6 +223,29 @@ export function kreisSauber(k, position) {
   const mitte = gebunden ? (pktOk(position) ? { lat: position.lat, lng: position.lng } : null) : (pktOk(k.mitte) ? { lat: k.mitte.lat, lng: k.mitte.lng } : pktOk(position) ? { lat: position.lat, lng: position.lng } : null)
   if (!mitte) return null
   return ohneLeere({ radius, farbe: typeof k.farbe === 'string' && /^#[0-9a-f]{6}$/i.test(k.farbe) ? k.farbe.toLowerCase() : undefined, gebunden, mitte, seit: tagOk(k.seit) ? k.seit : undefined })
+}
+// Zurückgebliebene Kreise (Nadel wurde von einem festen Kreis weg versetzt): bleiben am alten Standort, jeder mit eigener ID
+export const KREISE_STEHEN_MAX = 50
+export function kreiseStehenSauber(l) {
+  if (!Array.isArray(l)) return []
+  const ids = new Set(), aus = []
+  for (const x of l.slice(0, KREISE_STEHEN_MAX)) {
+    if (!x || typeof x !== 'object' || !pktOk(x.mitte)) continue
+    const k = kreisSauber({ ...x, gebunden: false }, null)
+    if (!k) continue
+    let id = typeof x.id === 'string' && /^[a-z0-9_-]{1,40}$/i.test(x.id) ? x.id : ''
+    while (!id || ids.has(id)) id = 'k' + Math.random().toString(36).slice(2, 10)
+    ids.add(id)
+    aus.push({ id, ...k })
+  }
+  return aus
+}
+// Alle Kreise einer Nadel: aktueller Kreis (stehenId null) + zurückgebliebene
+export function alleKreise(e) {
+  if (!e || e.typ !== 'pin') return []
+  const l = e.kreis ? [{ kreis: e.kreis, mitte: kreisMitte(e), stehenId: null }] : []
+  for (const k of e.kreiseStehen ?? []) l.push({ kreis: k, mitte: k.mitte, stehenId: k.id })
+  return l
 }
 export const kreisMitte = (e) => (e.kreis ? (e.kreis.gebunden !== false && e.position ? e.position : e.kreis.mitte) : null)
 export function kreisMasse(r) {

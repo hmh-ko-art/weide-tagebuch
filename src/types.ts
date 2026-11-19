@@ -1,5 +1,5 @@
 import { linienArt, punktBei, gesamtLaenge, type LinienArt, type InfraArt, type Geraet, type Tor } from '../server/infrastruktur.js'
-import { messen, type Kreis, type Steckbrief } from '../server/flaechen.js'
+import { messen, type Kreis, type KreisStehen, type Steckbrief } from '../server/flaechen.js'
 export type LatLng = { lat: number; lng: number }
 
 // Ein Tagebuch-Eintrag (Notiz) an einer Nadel oder Fläche
@@ -37,6 +37,7 @@ export interface Pin extends Basis {
   infra?: InfraArt // Weide-Technik statt normaler Nadel: Tränke, Weidezaungerät, Tor, Unterstand, Salzleckstein
   geraet?: Geraet // nur Weidezaungerät: Strom, Ladestand, letzte Prüfung, Spannung, Prüfintervall
   kreis?: Kreis | null // „eingezäunt“: Kreis um die Nadel (null = abgebaut; Feld fehlt bei alten Apps -> Server behält ihn)
+  kreiseStehen?: KreisStehen[] // am alten Standort zurückgebliebene Kreise (Nadel von festem Kreis weg versetzt)
 }
 // Zaunlinie, Weg oder Graben
 export interface Linie extends Basis {
@@ -116,6 +117,7 @@ export interface Route {
 export interface Fokus extends LatLng {
   zoom?: number
   n: number
+  nurSichtbar?: boolean // Zoom behalten, nur verschieben, falls der Punkt verdeckt/außerhalb ist
 }
 
 export const START: LatLng = { lat: 54.45, lng: 8.85 } // Nordfriesische Deichküste (Husum/Eiderstedt)

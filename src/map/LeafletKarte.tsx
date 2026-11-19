@@ -6,7 +6,7 @@ import { NADEL_BREITE, NADEL_HOEHE, nadelHtml } from './nadel'
 import { FARBE_AKTIV, ROUTE_FARBE, type KartenProps } from './props'
 import { ansichtSetzen, letzteAnsicht } from '../offline'
 import { infraSvg } from './symbole'
-import { abstand, kreisMitte } from '../../server/flaechen.js'
+import { abstand, alleKreise } from '../../server/flaechen.js'
 import { gesamtLaenge, laengeText, linienArt, linienLaenge, linienStuecke, punktBei } from '../../server/infrastruktur.js'
 
 const ll = (q: { lat: number; lng: number }) => [q.lat, q.lng] as [number, number]
@@ -95,13 +95,18 @@ export default function LeafletKarte(p: KartenProps) {
         else cb.current.onAuswahl(e.id)
       }
       // Kreis um die Nadel („eingezäunt“) – beim Bearbeiten zeichnet die Bearbeiten-Ebene ihn
-      if (e.typ === 'pin' && e.kreis && e.id !== p.kreisBearbeiten?.id) {
-        const mi = kreisMitte(e)!, f = e.kreis.farbe || pinFarbe(e)
-        L.circle(ll(mi), { radius: e.kreis.radius, color: '#000', weight: aktiv ? 6 : 4.5, opacity: 0.35, fill: false, interactive: false }).addTo(g)
-        L.circle(ll(mi), { radius: e.kreis.radius, color: aktiv ? '#fff' : f, weight: aktiv ? 3.5 : 2.5, fillColor: f, fillOpacity: aktiv ? 0.22 : 0.12, dashArray: e.kreis.gebunden === false ? undefined : '8 5' })
-          .on('click', (ev: L.LeafletMouseEvent) => { L.DomEvent.stopPropagation(ev); cb.current.onAuswahl(e.id) }).addTo(g)
+      if (e.typ === 'pin') for (const ak of alleKreise(e)) {
+        if (ak.stehenId == null && e.id === p.kreisBearbeiten?.id) continue // beim Bearbeiten zeichnet die Bearbeiten-Ebene ihn
+        const kr = ak.kreis, mi = ak.mitte, f = kr.farbe || pinFarbe(e), alt = ak.stehenId != null
+        L.circle(ll(mi), { radius: kr.radius, color: '#000', weight: aktiv ? 6 : 4.5, opacity: alt ? 0.25 : 0.35, fill: false, interactive: false }).addTo(g)
+        L.circle(ll(mi), { radius: kr.radius, color: aktiv ? '#fff' : f, weight: aktiv ? 3.5 : 2.5, fillColor: f, fillOpacity: alt ? 0.08 : aktiv ? 0.22 : 0.12, dashArray: kr.gebunden === false ? undefined : '8 5', className: alt ? 'kreis-alt-linie' : undefined })
+          .on('click', (ev: L.LeafletMouseEvent) => {
+            L.DomEvent.stopPropagation(ev)
+            if (cb.current.onKreisKlick) cb.current.onKreisKlick(e.id, ak.stehenId, ev.originalEvent?.clientX ?? 0, ev.originalEvent?.clientY ?? 0)
+            else cb.current.onAuswahl(e.id)
+          }).addTo(g)
         // Fester Kreis und Nadel woanders: dünne Verbindungslinie, damit man sieht, wozu er gehört
-        if (e.kreis.gebunden === false && abstand(mi, e.position) > 2) L.polyline([ll(e.position), ll(mi)], { color: f, weight: 1.5, dashArray: '2 6', opacity: 0.9, interactive: false }).addTo(g)
+        if (!alt && kr.gebunden === false && abstand(mi, e.position) > 2) L.polyline([ll(e.position), ll(mi)], { color: f, weight: 1.5, dashArray: '2 6', opacity: 0.9, interactive: false }).addTo(g)
       }
       if (e.typ === 'pin' && e.infra) {
         // Weide-Technik: eigenes rundes Symbol (Gerät mit fälliger Prüfung rot umrandet)
@@ -232,8 +237,31 @@ export default function LeafletKarte(p: KartenProps) {
   }, [p.standort])
 
   useEffect(() => {
-    if (p.fokus) map.current!.flyTo([p.fokus.lat, p.fokus.lng], p.fokus.zoom ?? Math.max(map.current!.getZoom(), 14))
+    const f = p.fokus
+    if (!f) return
+    if (!f.nurSichtbar) { map.current!.flyTo([f.lat, f.lng], f.zoom ?? Math.max(map.current!.getZoom(), 14)); return }
+    // Zoom bleibt; nur schieben, wenn der Punkt außerhalb oder unter einer Leiste liegt
+    const t = setTimeout(() => {
+      const m = map.current!, h = m.getSize().y, w = m.getSize().x
+      const unten = verdecktAb(el.current!, h)
+      const q = m.latLngToContainerPoint([f.lat, f.lng])
+      if (q.x >= 30 && q.x <= w - 30 && q.y >= 70 && q.y <= unten - 30) return
+      const ziel = L.point(w / 2, Math.max(90, (70 + unten) / 2))
+      m.panBy(q.subtract(ziel), { animate: true })
+    }, 60)
+    return () => clearTimeout(t)
   }, [p.fokus])
 
   return <div ref={el} className="karte" />
+}
+
+// Unterkante des sichtbaren Kartenbereichs (Leiste/Sheet unten verdeckt die Karte auf dem Handy)
+function verdecktAb(karte: HTMLElement, h: number) {
+  const top = karte.getBoundingClientRect().top
+  let unten = h
+  document.querySelectorAll('.leiste, .sheet').forEach((x) => {
+    const r = (x as HTMLElement).getBoundingClientRect()
+    if (r.height > 0 && r.left < window.innerWidth / 2 && r.right > window.innerWidth / 2 && r.top - top < unten) unten = Math.max(120, r.top - top)
+  })
+  return unten
 }

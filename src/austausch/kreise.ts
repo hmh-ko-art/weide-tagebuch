@@ -6,11 +6,11 @@ import type { Blatt } from './xlsx'
 
 export interface KreisZeile { e: Pin; name: string; art: string; radius: number; ha: number; m2: number; umfang: number; netze: number; bindung: string; farbe: string; seit: string; lat: number; lng: number }
 export function kreisZeilen(eintraege: Eintrag[]): KreisZeile[] {
-  return eintraege.filter((e): e is Pin => e.typ === 'pin' && !!e.kreis).map((e) => {
-    const k = e.kreis!, m = FL.kreisMasse(k.radius), mi = FL.kreisMitte(e)!
+  return eintraege.filter((e): e is Pin => e.typ === 'pin').flatMap((e) => FL.alleKreise(e).map(({ kreis: k, mitte: mi, stehenId }) => {
+    const m = FL.kreisMasse(k.radius)
     const farbe = k.farbe || pinFarbe(e)
-    return { e, name: e.titel || '', art: e.infra ? infraArt(e.infra)?.name ?? 'Technik' : 'Nadel', radius: k.radius, ha: m.ha, m2: m.m2, umfang: m.umfang, netze: m.netze, bindung: k.gebunden === false ? 'bleibt am Standort' : 'an Nadel gebunden', farbe, seit: k.seit ?? '', lat: mi.lat, lng: mi.lng }
-  }).sort((a, b) => a.name.localeCompare(b.name, 'de'))
+    return { e, name: e.titel || '', art: e.infra ? infraArt(e.infra)?.name ?? 'Technik' : 'Nadel', radius: k.radius, ha: m.ha, m2: m.m2, umfang: m.umfang, netze: m.netze, bindung: stehenId ? 'alter Standort (bleibt stehen)' : k.gebunden === false ? 'bleibt am Standort' : 'an Nadel gebunden', farbe, seit: k.seit ?? '', lat: mi.lat, lng: mi.lng }
+  })).sort((a, b) => a.name.localeCompare(b.name, 'de'))
 }
 export function kreisBlatt(eintraege: Eintrag[]): Blatt[] {
   const z = kreisZeilen(eintraege)

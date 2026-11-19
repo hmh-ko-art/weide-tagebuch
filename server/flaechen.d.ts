@@ -39,6 +39,10 @@ export function pachtGleich(a: Pacht | null | undefined, b: Pacht | null | undef
 export function flaechenSummen(eintraege: Eintrag[], pacht: PachtListe | null | undefined): { anzahl: number; ha: number; pachtHa: number; eigentumHa: number; pachtEuro: number; ohnePreis: number; nachArt: Record<string, number> }
 
 export interface Kreis { radius: number; farbe?: string; gebunden: boolean; mitte: LatLng; seit?: string }
+export interface KreisStehen extends Kreis { id: string }
+export const KREISE_STEHEN_MAX: number
+export function kreiseStehenSauber(l: unknown): KreisStehen[]
+export function alleKreise(e: unknown): { kreis: Kreis; mitte: LatLng; stehenId: string | null }[]
 export const KREIS_STANDARD: number
 export const KREIS_MIN: number
 export const KREIS_MAX: number

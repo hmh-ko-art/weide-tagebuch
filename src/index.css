@@ -153,6 +153,7 @@ select { font: inherit; border: 1px solid #c9d3c4; border-radius: 10px; padding:
 .leaflet-marker-draggable .nadel-tap { touch-action: none; }
 .pin-icon.zieht .nadel-tap svg { transform: translateY(-6px) scale(1.25); transform-origin: 50% 100%; filter: drop-shadow(0 6px 4px rgba(0,0,0,.45)); transition: transform .1s; }
 .toast.mit-knopf { display: flex; align-items: center; gap: 12px; padding: 6px 6px 6px 16px; white-space: nowrap; }
+.toast.mit-knopf.lang { white-space: normal; width: max-content; max-width: calc(100vw - 24px); line-height: 1.25; border-radius: 16px; }
 .toast.mit-knopf button { background: #fff; color: #263238; border: 0; border-radius: 16px; padding: 6px 12px; font-weight: 700; }
 
 /* Tierart-Symbol neben der Tierzahl */
@@ -660,11 +661,30 @@ button.klein { padding: 6px 10px; font-size: .88rem; flex: none; }
 .kreis-schnell { display: flex; gap: 4px; flex-wrap: wrap; }
 .kreis-schnell button { min-width: 44px; padding: 6px 8px; }
 .kreis-schnell button.aktiv { background: var(--gruen); color: #fff; border-color: var(--gruen); }
-.kreis-bindung { display: flex; flex-direction: column; gap: 2px; font-size: .92rem; }
-.kreis-bindung small { color: #555; }
+.kreis-standard { display: flex; flex-direction: column; gap: 4px; font-size: .9rem; }
+.kreis-standard label { display: flex !important; flex-direction: row !important; align-items: center; gap: 8px; font-weight: 600; }
+.kreis-standard input[type=checkbox] { width: 20px !important; height: 20px; flex: none; margin: 0; }
+.kreis-standard small { font-weight: 400; color: #555; }
+.kreis-alle { align-self: flex-start; padding: 6px 10px; font-size: .88rem; }
+.kreis-wahl-titel { margin-top: 2px !important; font-weight: 600; color: #333; }
+.kreis-wahl { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.kreis-wahl button { min-height: 64px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 8px 6px; border: 2px solid var(--gruen); background: #fff; color: #1d2a1d; border-radius: 12px; font-size: 1rem; font-weight: 700; line-height: 1.2; }
+.kreis-wahl button small { font-size: .74rem; font-weight: 400; color: #555; }
+.kreis-wahl button.aktiv { background: var(--gruen); color: #fff; }
+.kreis-wahl button.aktiv small { color: #e8f2e8; }
+.kreis-alte { margin: 4px 0; font-size: .9rem; }
+.kreis-alte p { margin: 0 0 4px; }
+.kreis-alte small { color: #555; }
+.kreis-alt { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 8px; margin-bottom: 4px; border: 2px solid #888; border-radius: 10px; background: #fafcf8; }
+.kreis-alt button { padding: 4px 8px; font-size: .85rem; flex: none; }
+.kreis-pop { position: fixed; z-index: 1200; background: #fff; border-radius: 14px; box-shadow: 0 4px 18px rgba(0,0,0,.35); padding: 8px 10px 10px; display: flex; flex-direction: column; gap: 6px; }
+.kreis-pop-kopf { display: flex; align-items: center; justify-content: space-between; gap: 6px; font-weight: 700; font-size: .85rem; }
+.kreis-pop-kopf span { overflow-wrap: anywhere; line-height: 1.25; }
+.kreis-pop-zu { padding: 2px 8px !important; min-width: 0 !important; border: none !important; background: none !important; font-size: 1rem; }
+.kreis-pop .farben { display: flex; flex-wrap: wrap; gap: 6px; }
+.kreis-pop .farben button { width: 30px; height: 30px; min-width: 0; padding: 0; border-radius: 50%; }
+.kreis-pop-knoepfe { display: flex; gap: 6px; }
+.kreis-pop-knoepfe button { flex: 1; padding: 6px 8px; font-size: .85rem; }
 .kreis-griff { background: var(--orange) !important; color: #fff; font-weight: 700; font-size: 16px; display: flex; align-items: center; justify-content: center; width: 30px !important; height: 30px !important; border: 3px solid #fff; box-shadow: 0 1px 6px rgba(0,0,0,.5); }
 .kreis-griff-mini { display: inline-block; background: var(--orange); color: #fff; border-radius: 50%; width: 1.4em; text-align: center; font-weight: 700; }
 .kreis-marke { margin-left: 6px; padding: 0 6px; border: 2px dashed #888; border-radius: 999px; font-size: .75rem; font-weight: 600; white-space: nowrap; }
-.kreis-bindung label { display: flex !important; flex-direction: row !important; align-items: center; gap: 8px; font-weight: 500; }
-.kreis-bindung input[type=radio] { width: 20px !important; height: 20px; flex: none; margin: 0; }
-.kreis-bindung label small { font-weight: 400; }

@@ -2,7 +2,7 @@
 import { GRUPPEN_FARBEN, type LatLng } from '../types'
 import type { TechnikZeile, Zeile } from './zeilen'
 import * as FL from '../../server/flaechen.js'
-import type { Kreis, Pacht, PachtListe, Steckbrief } from '../../server/flaechen.js'
+import type { Kreis, KreisStehen, Pacht, PachtListe, Steckbrief } from '../../server/flaechen.js'
 import type { Eintrag } from '../types'
 import { INFRA_ARTEN, infraArt, infraRaten, laengeText, linienArt, linienArtRaten, type Geraet, type InfraArt, type LinienArt, type Tor } from '../../server/infrastruktur.js'
 
@@ -58,11 +58,11 @@ export function kmlErzeugen(titel: string, zeilen: Zeile[], gruppenReihe: { id: 
   const lin = technik.filter((t) => t.gattung === 'Linie'), pkt = technik.filter((t) => t.gattung === 'Punkt')
   const tOrdner = (lin.length ? `<Folder><name>Zäune &amp; Wege</name>${lin.map(tPlacemark).join('')}</Folder>` : '') + (pkt.length ? `<Folder><name>Wasser &amp; Technik</name>${pkt.map(tPlacemark).join('')}</Folder>` : '')
   // Kreise um Nadeln als Vieleck (Google Earth/My Maps kennen keine Kreise); flockmap_kreis = exakt für die Rundreise
-  const kreisPm = kreisQuelle.filter((e) => e.typ === 'pin' && e.kreis).map((e) => {
-    const p = e as Extract<Eintrag, { typ: 'pin' }>, k = p.kreis!, mi = FL.kreisMitte(p)!, m = FL.kreisMasse(k.radius), f = k.farbe || '#ff9800'
+  const kreisPm = kreisQuelle.flatMap((e) => FL.alleKreise(e).map((ak) => ({ p: e as Extract<Eintrag, { typ: 'pin' }>, ...ak }))).map(({ p, kreis: k, mitte: mi, stehenId }) => {
+    const m = FL.kreisMasse(k.radius), f = k.farbe || '#ff9800'
     const ring = FL.kreisPolygon(mi, k.radius)
-    const daten: [string, string][] = [['flockmap_kreis_fuer', p.id], ['flockmap_kreis', JSON.stringify(k)], ['Nadel', p.titel || ''], ['Radius (m)', String(k.radius)], ['Fläche (ha, ≈)', m.ha.toFixed(3)], ['Umfang (m)', String(Math.round(m.umfang))], [`Netze à ${FL.NETZ_LAENGE} m`, String(m.netze)], ['Verhalten', k.gebunden === false ? 'bleibt am Standort' : 'an Nadel gebunden']]
-    return `<Placemark><name>${esc(`◯ ${p.titel || 'Nadel'} (${k.radius} m)`)}</name><description>${esc(`Eingezäunt: Kreis ${k.radius} m · ${FL.haText(m.ha)} · Umfang ${FL.umfangText(m.umfang)}`)}</description><Style><LineStyle><color>${kmlFarbe(f)}</color><width>3</width></LineStyle><PolyStyle><color>${kmlFarbe(f, '40')}</color></PolyStyle></Style><ExtendedData>${daten.map(([a, b]) => `<Data name="${esc(a)}"><value>${esc(b)}</value></Data>`).join('')}</ExtendedData><Polygon><outerBoundaryIs><LinearRing><coordinates>${[...ring, ring[0]].map((q) => `${q.lng.toFixed(7)},${q.lat.toFixed(7)},0`).join(' ')}</coordinates></LinearRing></outerBoundaryIs></Polygon></Placemark>`
+    const daten: [string, string][] = [['flockmap_kreis_fuer', p.id], ['flockmap_kreis', JSON.stringify(k)], ...(stehenId ? [['flockmap_kreis_stehen', '1'] as [string, string]] : []), ['Nadel', p.titel || ''], ['Radius (m)', String(k.radius)], ['Fläche (ha, ≈)', m.ha.toFixed(3)], ['Umfang (m)', String(Math.round(m.umfang))], [`Netze à ${FL.NETZ_LAENGE} m`, String(m.netze)], ['Verhalten', stehenId ? 'alter Standort (bleibt stehen)' : k.gebunden === false ? 'bleibt am Standort' : 'an Nadel gebunden']]
+    return `<Placemark><name>${esc(`◯ ${p.titel || 'Nadel'}${stehenId ? ' · alter Standort' : ''} (${k.radius} m)`)}</name><description>${esc(`Eingezäunt: Kreis ${k.radius} m · ${FL.haText(m.ha)} · Umfang ${FL.umfangText(m.umfang)}`)}</description><Style><LineStyle><color>${kmlFarbe(f)}</color><width>3</width></LineStyle><PolyStyle><color>${kmlFarbe(f, '40')}</color></PolyStyle></Style><ExtendedData>${daten.map(([a, b]) => `<Data name="${esc(a)}"><value>${esc(b)}</value></Data>`).join('')}</ExtendedData><Polygon><outerBoundaryIs><LinearRing><coordinates>${[...ring, ring[0]].map((q) => `${q.lng.toFixed(7)},${q.lat.toFixed(7)},0`).join(' ')}</coordinates></LinearRing></outerBoundaryIs></Polygon></Placemark>`
   })
   const kOrdner = kreisPm.length ? `<Folder><name>Einkreisungen</name>${kreisPm.join('')}</Folder>` : ''
   return `<?xml version="1.0" encoding="UTF-8"?>
@@ -90,6 +90,7 @@ export interface Vorschlag {
   flockmapId?: string // Export aus FlockMap (Rundreise)
   steckbrief?: Steckbrief // Flächen: Art, FLIK/Schlag, Förderung (aus FlockMap exakt, sonst aus Feldern wie FLIK/SCHLAG_NR erkannt)
   kreis?: Kreis // Kreis um Nadel (aus FlockMap-Export)
+  kreiseStehen?: KreisStehen[] // Kreise am alten Standort (aus FlockMap-Export)
   pacht?: Pacht // nur aus FlockMap-Export mit Pachtdaten; übernommen nur von Admins
 }
 export interface ImportErgebnis { vorschlaege: Vorschlag[]; uebersprungen: { name: string; grund: string }[]; titel: string; format: string }
@@ -165,7 +166,7 @@ export function kmlLesen(xml: string): ImportErgebnis {
   const docEl = alle(doc, 'Document')[0] ?? doc.documentElement
   const titel = text(kind(docEl, 'name'))
   const vorschlaege: Vorschlag[] = [], uebersprungen: ImportErgebnis['uebersprungen'] = []
-  const kreisRoh: { fuer: string; roh: string; pm: Element }[] = []
+  const kreisRoh: { fuer: string; roh: string; pm: Element; stehen: boolean }[] = []
   for (const pm of alle(doc, 'Placemark')) {
     // oberster Ordner unter dem Dokument = Ebene (My Maps: eine Ebene je Folder)
     let ebene = '', p: Element | null = pm.parentElement
@@ -175,7 +176,7 @@ export function kmlLesen(xml: string): ImportErgebnis {
     for (const d of alle(pm, 'Data')) { const n = d.getAttribute('name'); if (n) daten[n] = text(kind(d, 'value')) }
     for (const d of alle(pm, 'SimpleData')) { const n = d.getAttribute('name'); if (n) daten[n] = text(d) }
     // Kreis um eine Nadel aus einem FlockMap-Export: an die Nadel hängen statt eigene Fläche
-    if (daten.flockmap_kreis_fuer && daten.flockmap_kreis) { kreisRoh.push({ fuer: daten.flockmap_kreis_fuer, roh: daten.flockmap_kreis, pm }); continue }
+    if (daten.flockmap_kreis_fuer && daten.flockmap_kreis) { kreisRoh.push({ fuer: daten.flockmap_kreis_fuer, roh: daten.flockmap_kreis, pm, stehen: daten.flockmap_kreis_stehen === '1' }); continue }
     const beschr = htmlZuText(text(kind(pm, 'description')))
     const punkt = alle(pm, 'Point')[0], poly = alle(pm, 'Polygon')[0], linien = alle(pm, 'LineString')
     const v: Vorschlag = { typ: 'pin', rohName, titel: rohName, ebene, farbe: farbeVon(pm), schafe: 0, boecke: 0, laemmer: 0, ausName: false, notiz: '' }
@@ -226,9 +227,10 @@ export function kmlLesen(xml: string): ImportErgebnis {
   }
   for (const kr of kreisRoh) {
     const pin = vorschlaege.find((v) => v.typ === 'pin' && v.flockmapId === kr.fuer)
-    let k: Kreis | null = null
-    try { k = FL.kreisSauber(JSON.parse(kr.roh), pin?.position) } catch { /* kaputt */ }
-    if (pin && k) pin.kreis = k
+    let k: Kreis | null = null, st: KreisStehen[] = []
+    try { if (kr.stehen) st = FL.kreiseStehenSauber([JSON.parse(kr.roh)]); else k = FL.kreisSauber(JSON.parse(kr.roh), pin?.position) } catch { /* kaputt */ }
+    if (pin && st.length) pin.kreiseStehen = FL.kreiseStehenSauber([...(pin.kreiseStehen ?? []), ...st])
+    else if (pin && k) pin.kreis = k
     else uebersprungen.push({ name: text(kind(kr.pm, 'name')) || 'Kreis', grund: 'Kreis ohne zugehörige Nadel (Nadel nicht in der Datei)' })
   }
   return { vorschlaege, uebersprungen, titel, format: 'KML' }

@@ -34,3 +34,11 @@ Einschränkungen Free-Plan: Dienst schläft nach 15 Min. ohne Zugriffe ein (erst
 - Bestehende Karte → Hof: Einstellungen → „Hof einrichten“ (Admin). Alle bisherigen Personen werden Hof-Mitglieder, ihre Links bleiben gültig.
 - Neuer Hof (später nach dem Kauf): `/?betreiber` mit `FLOCKMAP_ADMIN_TOKEN`.
 - Karten ohne Hof und alle alten Links funktionieren unverändert. Speicherung: Tabelle `hoefe` (Postgres) bzw. `server/data/hof-<id>.json`.
+
+## Offline-Modus
+
+- **App-Hülle**: `public/sw.js` lädt beim Installieren alle App-Dateien vor (Liste setzt das Vite-Plugin in `vite.config.ts` beim Build ein, inkl. Versionskennung). Seitenaufrufe: Netz zuerst (5 s), sonst gespeicherte Hülle.
+- **Kartendaten**: Einträge, Gruppen, Kartenname, eigene Rolle in IndexedDB (`src/speicher.ts`, Rückfall localStorage). Alte localStorage-Daten werden beim ersten Start übernommen.
+- **Postausgang**: alle Änderungen (Nadeln, Flächen, Notizen, Gruppen, Zuordnungen, Verschieben, Löschen) in einer Warteschlange (localStorage, synchron + Kopie in IndexedDB); automatisches Senden bei Netz, alle 20 s erneut, Zeitlimit 15 s je Anfrage. Status in der Kopfzeile: „Offline · X Änderungen warten“ / „Live · synchronisiert“.
+- **Konflikte**: Client schickt `basisGeaendert`. Weicht der Serverstand ab und der Inhalt ist verschieden, gilt die neuere Änderung (Änderungszeitpunkt); die andere Fassung wird als Notiz am Eintrag gesichert. Löschen eines inzwischen von jemand anderem geänderten Eintrags wird mit 409 abgelehnt; Bearbeiten eines inzwischen gelöschten Eintrags stellt ihn wieder her. Nutzer bekommt jeweils einen Hinweis.
+- **Kartenkacheln**: nur angesehene Kacheln werden gespeichert (Esri/OSM-Bedingungen: kein Massen-Download), max. 2.500 zuletzt angesehene; „Diesen Kartenausschnitt sichern“ schützt angesehene Kacheln (Zoom ±2) vor dem Aufräumen, max. 3.000.

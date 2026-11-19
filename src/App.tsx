@@ -2,6 +2,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import Karte, { HAT_GOOGLE_KEY } from './map/Karte'
 import { useKarte, zugangsLink, einladungsLink, NAME_MAX, type Ich, type Nutzer } from './daten'
 import { HofPanel, HofEinrichten, ROLLEN } from './Hof'
+import { OfflineAbschnitt } from './OfflineAbschnitt'
 import { googleNaviLink, routeBerechnen, routeText } from './route'
 import { eintragDatum, tagText, monatText, istAusblendbar, TIERARTEN, tierText, tierSymbolHtml, tierSummen, type Einheit, type Tierart, FARBEN, FLAECHEN_FARBEN, FLAECHE_STANDARD, START, STANDARD_FARBE, datum, farbName, hektar, mitte, neueId, notizenSortiert, pinFarbe, gruppenVorschlag, gruppenFarbe, gruppenOrdnung, naechsteGruppenFarbe, tierKurz, GRUPPEN_FARBEN, type Gruppe, type Eintrag, type Notiz, type Fokus, type LatLng, type Route } from './types'
 
@@ -133,7 +134,7 @@ export default function App() {
 
   useEffect(() => {
     if (!meldung) return
-    const t = setTimeout(() => setMeldung(''), 3500)
+    const t = setTimeout(() => setMeldung(''), Math.max(3500, meldung.length * 65)) // lange Hinweise (z. B. Konflikte) länger zeigen
     return () => clearTimeout(t)
   }, [meldung])
 
@@ -287,7 +288,12 @@ export default function App() {
     return () => { aus = true; document.removeEventListener('visibilitychange', sichtbar); clearInterval(t); clearTimeout(t0) }
   }, [])
 
-  const statusText = { lokal: 'Nur auf diesem Gerät', verbunden: 'Live geteilt', offline: 'Offline – wird später synchronisiert', verbinde: 'Verbinde …' }[k.status]
+  // Status: offline / X Änderungen warten / synchronisiert
+  const aend = (n: number) => `${n} ${n === 1 ? 'Änderung wartet' : 'Änderungen warten'}`
+  const statusText = k.status === 'lokal' ? 'Nur auf diesem Gerät'
+    : k.status === 'offline' ? (k.wartend ? `Offline · ${aend(k.wartend)}` : 'Offline · alles gespeichert')
+    : k.wartend ? `Sende ${aend(k.wartend).replace(' wartet', '').replace(' warten', '')} …`
+    : k.status === 'verbinde' ? 'Verbinde …' : 'Live · synchronisiert'
 
   return (
     <div className={`app${panel === 'liste' ? ' liste-offen' : ''}`}>
@@ -298,7 +304,7 @@ export default function App() {
             {k.kartenName && <span className="marke-wort" aria-hidden="true">FlockMap</span>}
             <h1 className="kopf-titel" title={k.kartenName || 'FlockMap'}>{k.kartenName || 'FlockMap'}</h1>
           </div>
-          <small className={`status ${k.status}`}><span className="status-punkt" aria-hidden="true" />{statusText}{k.karteId && k.ich && <> · <button className="name-knopf" title="Meinen Namen ändern" onClick={() => setPanel(panel === 'profil' ? null : 'profil')}>{k.ich.name}{k.hof?.rolle ? ` (${ROLLEN[k.hof.rolle].name})` : k.ich.rolle === 'admin' ? ' (Admin)' : ''} <Icon name="stift" /></button></>}{!k.darfBearbeiten && !(k.ich?.rolle === 'ansehen') && ' · nur ansehen'}</small>
+          <small className={`status ${k.status}${k.wartend ? ' wartend' : ''}`} role="status" aria-live="polite"><span className="status-punkt" aria-hidden="true" />{statusText}{k.karteId && k.ich && <> · <button className="name-knopf" title="Meinen Namen ändern" onClick={() => setPanel(panel === 'profil' ? null : 'profil')}>{k.ich.name}{k.hof?.rolle ? ` (${ROLLEN[k.hof.rolle].name})` : k.ich.rolle === 'admin' ? ' (Admin)' : ''} <Icon name="stift" /></button></>}{!k.darfBearbeiten && !(k.ich?.rolle === 'ansehen') && ' · nur ansehen'}</small>
         </div>
         <nav>
           <button className="kopf-knopf mit-text" aria-pressed={panel === 'liste'} title="Liste" aria-label="Liste" onClick={() => setPanel(panel === 'liste' ? null : 'liste')}><Icon name="liste" /><span>Liste</span></button>
@@ -1122,6 +1128,8 @@ function Einstellungen(p: { k: ReturnType<typeof useKarte>; onSchliessen: () => 
           <label>Name/Gerät für deine Notizen (optional)<input defaultValue={localStorage.getItem('wt-autor') ?? ''} placeholder="z. B. Henning" onChange={(e) => (e.target.value.trim() ? localStorage.setItem('wt-autor', e.target.value.trim()) : localStorage.removeItem('wt-autor'))} /></label>
         </>
       )}
+
+      <OfflineAbschnitt k={k} meldung={p.meldung} />
 
       <h3>Darstellung</h3>
       <div className="kopf-farbe">

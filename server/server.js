@@ -239,6 +239,28 @@ app.get('/api/karten/:id', mitKarte(), (req, res) => {
   res.json({ ...oeffentlich(k), ich: ichInfo(n), darfBearbeiten: !!n && n.rolle !== 'ansehen', ...(h ? { hof: { id: h.id, name: h.name, ...(m ? { rolle: m.rolle } : {}) } } : {}) })
 })
 
+// ---- Gleichzeitige Änderungen (Offline-Modus) ----
+// Der Client schickt basisGeaendert = Änderungszeitpunkt des Eintrags, wie sein Gerät ihn kannte.
+// Weicht der Serverstand davon ab und der Inhalt ist verschieden, gilt die NEUERE Änderung (nach Änderungszeitpunkt),
+// die andere Fassung wird als Notiz am Eintrag gesichert – so geht nichts still verloren.
+const TIER_WORT = { schaf: ['Schaf', 'Schafe'], bock: ['Bock', 'Böcke'], lamm: ['Lamm', 'Lämmer'] }
+const inhalt = (e) => JSON.stringify([e.titel ?? '', e.farbe ?? '', e.herde ?? '', e.datum ?? '', e.tierlisteModus ?? '', e.position ?? null, e.punkte ?? null, (e.einheiten ?? []).map((x) => [x.art, x.anzahl])])
+function fassungText(e) {
+  const teile = [`Name „${e.titel || '(ohne Namen)'}“`]
+  const tiere = TIERARTEN.map((t) => [t, (e.einheiten ?? []).filter((x) => x.art === t).reduce((a, x) => a + x.anzahl, 0)]).filter(([, n]) => n > 0).map(([t, n]) => `${n} ${TIER_WORT[t][n === 1 ? 0 : 1]}`)
+  if (tiere.length) teile.push(`Tiere: ${tiere.join(', ')}`)
+  if (e.farbe) teile.push(`Farbe ${e.farbe}`)
+  if (e.herde) teile.push(`Herde „${e.herde}“`)
+  if (e.datum) teile.push(`Datum ${e.datum}`)
+  if (e.typ === 'pin' && e.position) teile.push(`Position ${Number(e.position.lat).toFixed(5)}, ${Number(e.position.lng).toFixed(5)}`)
+  if (e.typ === 'flaeche' && Array.isArray(e.punkte)) teile.push(`${e.punkte.length} Eckpunkte`)
+  return teile.join(' · ')
+}
+const nutzerName = (k, id) => k.nutzer.find((n) => n.id === id)?.name
+function konfliktNotiz(von, zeit, e, gewonnen) {
+  return { id: 'konflikt-' + zufall(10), text: `⚠️ Gleichzeitig geändert – ${gewonnen ? 'überschriebene' : 'nicht übernommene'} Fassung von ${von || 'unbekannt'} (${new Date(zeit || Date.now()).toLocaleString('de-DE', { timeZone: 'Europe/Berlin' })}): ${fassungText(e)}`, zeitpunkt: new Date().toISOString(), autor: 'FlockMap' }
+}
+
 // Eintrag anlegen/ändern
 app.put('/api/karten/:id/eintraege/:eid', mitKarte('nutzer'), (req, res) => {
   const k = req.karte, ich = req.nutzer
@@ -250,23 +272,40 @@ app.put('/api/karten/:id/eintraege/:eid', mitKarte('nutzer'), (req, res) => {
   const i = k.eintraege.findIndex((x) => x.id === e.id)
   // Notizen eines bestehenden Eintrags werden nur über die Notiz-Endpunkte geändert,
   // damit ein Bearbeiten (Name/Farbe …) nie gleichzeitig hinzugefügte Notizen überschreibt.
+  const basisG = typeof body.basisGeaendert === 'string' ? body.basisGeaendert : null
+  delete e.basisGeaendert
+  let konflikt = null
   if (i >= 0) {
     const alt = k.eintraege[i]
     if (!darfEintrag(ich, alt)) return res.status(403).json({ fehler: 'Nur eigene Einträge bearbeiten (oder Admin)' })
+    if (basisG && alt.geaendert && alt.geaendert !== basisG && inhalt(alt) !== inhalt({ ...e, einheiten: body.einheiten === undefined ? alt.einheiten : e.einheiten })) {
+      const mit = nutzerName(k, alt.geaendertVon ?? alt.erstelltVon)
+      const clientNeuer = (Date.parse(e.geaendert) || 0) >= (Date.parse(alt.geaendert) || 0)
+      konflikt = { art: 'geaendert', titel: (clientNeuer ? e.titel : alt.titel) || '', mit, gewonnen: clientNeuer }
+      if (!clientNeuer) {
+        // Serverfassung ist neuer: bleibt; die Fassung dieses Geräts wird als Notiz gesichert
+        alt.notizen = [...(alt.notizen ?? []), konfliktNotiz(ich.name, e.geaendert, { ...e, einheiten: e.einheiten }, false)]
+        speichern(k)
+        return res.json({ ok: true, version: k.version, konflikt })
+      }
+      alt.notizen = [...(alt.notizen ?? []), konfliktNotiz(mit, alt.geaendert, alt, true)]
+    }
     const einheiten = ohneEinheiten ? alt.einheiten ?? [] : einheitenMergen(alt.einheiten ?? [], e.einheiten, body.einheitenBasis)
     // ältere App-Versionen kennen tierlisteModus nicht -> bisherigen Wert behalten
     const modus = body.tierlisteModus === undefined && alt.tierlisteModus ? { tierlisteModus: alt.tierlisteModus } : {}
     if (body.datum === undefined && alt.datum) modus.datum = alt.datum
     // Gruppe wird nur über /gruppe-zuordnen geändert (Merge-sicher: Bearbeiten überschreibt keine gleichzeitige Gruppierung)
-    k.eintraege[i] = { ...e, ...modus, einheiten, erstelltVon: alt.erstelltVon, notizen: alt.notizen ?? [] }
+    k.eintraege[i] = { ...e, ...modus, einheiten, erstelltVon: alt.erstelltVon, geaendertVon: ich.id, notizen: alt.notizen ?? [] }
     if (alt.gruppe) k.eintraege[i].gruppe = alt.gruppe; else delete k.eintraege[i].gruppe
   } else {
     // neue Notizen beim Anlegen bekommen den Nutzer als Autor
     const notizen = e.notizen.filter(notizOk).map((n) => ({ id: n.id, text: n.text.slice(0, 5000), zeitpunkt: n.zeitpunkt, autor: ich.name, autorId: ich.id }))
-    k.eintraege.push(gruppeGueltig(k, { ...e, erstelltVon: ich.id, notizen }))
+    // basisGeaendert gesetzt, Eintrag aber weg: war inzwischen gelöscht -> wird wiederhergestellt (nichts geht verloren)
+    if (basisG) konflikt = { art: 'wiederhergestellt', titel: e.titel || '' }
+    k.eintraege.push(gruppeGueltig(k, { ...e, erstelltVon: ich.id, geaendertVon: ich.id, notizen }))
   }
   speichern(k)
-  res.json({ ok: true, version: k.version })
+  res.json({ ok: true, version: k.version, ...(konflikt ? { konflikt } : {}) })
 })
 
 app.delete('/api/karten/:id/eintraege/:eid', mitKarte('nutzer'), (req, res) => {
@@ -274,6 +313,11 @@ app.delete('/api/karten/:id/eintraege/:eid', mitKarte('nutzer'), (req, res) => {
   const e = k.eintraege.find((x) => x.id === req.params.eid)
   if (!e) return res.json({ ok: true, version: k.version })
   if (!darfEintrag(req.nutzer, e)) return res.status(403).json({ fehler: 'Nur eigene Einträge löschen (oder Admin)' })
+  // Offline gelöscht, aber inzwischen von jemand anderem geändert -> nicht löschen, Nutzer informieren
+  const basis = typeof req.query.basis === 'string' ? req.query.basis : null
+  if (basis && e.geaendert && e.geaendert !== basis && e.geaendertVon && e.geaendertVon !== req.nutzer.id) {
+    return res.status(409).json({ fehler: 'Inzwischen geändert – nicht gelöscht', konflikt: { art: 'nicht-geloescht', titel: e.titel || '', mit: nutzerName(k, e.geaendertVon) } })
+  }
   k.eintraege = k.eintraege.filter((x) => x.id !== req.params.eid)
   speichern(k)
   res.json({ ok: true, version: k.version })

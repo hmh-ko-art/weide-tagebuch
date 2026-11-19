@@ -385,3 +385,12 @@ select { font: inherit; border: 1px solid #c9d3c4; border-radius: 10px; padding:
 .einstieg-karte form { display: flex; flex-direction: column; gap: 4px; }
 .einstieg-karte form > button { margin-top: 14px; }
 .pin-chip { font-size: .7rem; font-weight: 700; letter-spacing: .04em; color: #1e4d2b; background: #e8f5e9; border: 1px solid #b9dcbc; border-radius: 6px; padding: 1px 5px; }
+
+/* ---- Offline-Modus ---- */
+.kopf .status.wartend { color: #ffd2b8; opacity: 1; font-weight: 600; }
+.kopf-hell .status.wartend, .kopf-hell .status.offline { color: #b8461a; }
+.offline-text { color: #b8461a; }
+.gebiete-liste li { padding: 6px 0; }
+.klein-knopf { padding: 5px 10px !important; font-size: .82rem; margin-left: auto; }
+.konflikt-liste { margin: 0; padding-left: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
+.konflikt-liste li { background: #fff4ec; border-radius: 8px; padding: 8px 10px; color: #6b3a1f; }

@@ -4,6 +4,7 @@ import 'leaflet/dist/leaflet.css'
 import { START, START_ZOOM, istAusblendbar, pinFarbe, tierSummen, tierSymbolHtml, type Eintrag } from '../types'
 import { NADEL_BREITE, NADEL_HOEHE, nadelHtml } from './nadel'
 import { FARBE_AKTIV, ROUTE_FARBE, type KartenProps } from './props'
+import { ansichtSetzen, letzteAnsicht } from '../offline'
 
 // Beschriftung: Name und – falls gesetzt – dezent Symbol + Tierzahl
 // Tierliste 'ausblendbar': kleiner Knopf ▾/▸ im Schild klappt sie ein/aus (Zustand pro Gerät)
@@ -38,13 +39,16 @@ export default function LeafletKarte(p: KartenProps) {
 
   useEffect(() => {
     const m = L.map(el.current!, { zoomControl: false }).setView([START.lat, START.lng], START_ZOOM)
-    const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' })
-    const sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: '© Esri' })
+    // Ohne Netz dort starten, wo zuletzt geschaut wurde – dort liegen die gespeicherten Kartenkacheln
+    const zuletzt = navigator.onLine === false ? letzteAnsicht() : null
+    if (zuletzt?.lat != null && zuletzt.lng != null) m.setView([zuletzt.lat, zuletzt.lng], zuletzt.zoom)
+    const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap', crossOrigin: true })
+    const sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: '© Esri', crossOrigin: true })
     // Beschriftungen (Orte, Grenzen, Straßen) über dem Satellitenbild
-    const orte = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19 })
-    const strassen = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19 })
+    const orte = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, crossOrigin: true })
+    const strassen = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, crossOrigin: true })
     const satellit = L.layerGroup([sat, strassen, orte])
-    const satPur = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: '© Esri' })
+    const satPur = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: '© Esri', crossOrigin: true })
     satellit.addTo(m) // Standard: Satellit mit Beschriftung
     L.control.layers({ 'Satellit': satellit, 'Satellit ohne Beschriftung': satPur, 'Karte': osm }, undefined, { position: 'topright' }).addTo(m)
     L.control.zoom({ position: 'topright' }).addTo(m)
@@ -53,7 +57,11 @@ export default function LeafletKarte(p: KartenProps) {
     routeEbene.current = L.layerGroup().addTo(m)
     standortEbene.current = L.layerGroup().addTo(m)
     m.on('click', (e) => cb.current.onKlick({ lat: e.latlng.lat, lng: e.latlng.lng }))
-    m.on('moveend', () => { const c = m.getCenter(); cb.current.onMitte({ lat: c.lat, lng: c.lng }) })
+    let ebeneName = 'Satellit'
+    const ansichtMerken = () => { const b = m.getBounds(), c = m.getCenter(); ansichtSetzen({ nord: b.getNorth(), sued: b.getSouth(), west: b.getWest(), ost: b.getEast(), zoom: m.getZoom(), ebene: ebeneName, lat: c.lat, lng: c.lng }) }
+    m.on('baselayerchange', (e) => { ebeneName = e.name; ansichtMerken() })
+    m.on('moveend', () => { const c = m.getCenter(); cb.current.onMitte({ lat: c.lat, lng: c.lng }); ansichtMerken() })
+    ansichtMerken()
     map.current = m
     return () => { m.remove() }
   }, [])

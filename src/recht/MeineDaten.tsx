@@ -15,6 +15,7 @@ interface Auskunft {
   gruppen: { karte: string; name: string }[]
   umtriebe?: { karte: string; art: string; datum: string; herde: string; von: string | null; nach: string | null }[]
   pruefungen?: { karte: string; geraet: string; datum: string; kv: number | null; stand: string | null }[]
+  fristen?: { karte: string; flaeche: string; frist: string; termin: string; am: string | null }[]
 }
 const ROLLE: Record<string, string> = { inhaber: 'Inhaber', admin: 'Admin', mitarbeiter: 'Mitarbeiter', nutzer: 'Nutzer', ansehen: 'Nur ansehen' }
 const mb = (b: number) => (b / 1048576).toLocaleString('de-DE', { maximumFractionDigits: 1 }) + ' MB'
@@ -55,7 +56,7 @@ export function MeineDaten(p: { k: K; onSchliessen: () => void; meldung: (s: str
               {daten.person.seit && <><dt>Dabei seit</dt><dd>{new Date(daten.person.seit).toLocaleDateString('de-DE', { timeZone: 'Europe/Berlin' })}</dd></>}
               {daten.hof && <><dt>PIN</dt><dd>{daten.hof.pinEingerichtet ? 'eingerichtet (nur als verschlüsselter Prüfwert gespeichert)' : 'keine'}</dd></>}
               <dt>Persönlicher Link</dt><dd>gespeichert (geheim – nicht weitergeben)</dd>
-              <dt>Von dir angelegt</dt><dd>{daten.eintraege.length} Nadeln/Flächen · {daten.notizen.length} Notizen · {daten.gruppen.length} Gruppen{daten.umtriebe?.length ? ` · ${daten.umtriebe.length} Umtriebe` : ''}{daten.pruefungen?.length ? ` · ${daten.pruefungen.length} Geräte-Prüfungen` : ''}{daten.hof && daten.hof.karten.length > 1 ? ` (auf ${daten.hof.karten.length} Karten)` : ''}</dd>
+              <dt>Von dir angelegt</dt><dd>{daten.eintraege.length} Nadeln/Flächen · {daten.notizen.length} Notizen · {daten.gruppen.length} Gruppen{daten.umtriebe?.length ? ` · ${daten.umtriebe.length} Umtriebe` : ''}{daten.pruefungen?.length ? ` · ${daten.pruefungen.length} Geräte-Prüfungen` : ''}{daten.fristen?.length ? ` · ${daten.fristen.length} erledigte Fristen` : ''}{daten.hof && daten.hof.karten.length > 1 ? ` (auf ${daten.hof.karten.length} Karten)` : ''}</dd>
             </dl>
             <p className="hinweis klein">Dazu kommt bei jeder Änderung ein Vermerk, wer sie gemacht hat. Deine IP-Adresse wird von FlockMap nicht gespeichert (nur kurz im Arbeitsspeicher gezählt, um Missbrauch abzuwehren).</p>
             <button onClick={() => herunterladen(new Blob([JSON.stringify(daten, null, 2)], { type: 'application/json' }), dateiName('Meine-Daten-' + daten.person.name, 'json'))}>⬇️ Meine Daten herunterladen (Datei)</button>

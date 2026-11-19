@@ -58,6 +58,15 @@ Nach dem Umzug: `STAND` in `betreiber.ts` aktualisieren, AVV mit Hetzner abschli
   `pin.geraet`). Neue personenbezogene Angabe: Prüfprotokoll der Weidezaungeräte (`geraet.pruefungen[]`, max. 30: Datum, kV,
   Ladestand, `autor`/`autorId`, Zeitpunkt). Beim Zugang-Löschen: `autorId` entfernt, `autor` → „ehemaliger Nutzer“.
   JSON-Sicherung und KML-Export ohne `autorId`; „Meine Daten“ listet eigene Prüfungen. Erinnerungen nur in der App.
+- **Flächen-Steckbrief & Pacht:** `flaeche.steckbrief` (art, besitz, flik, schlag, programme[], fristen[] mit `erledigt` =
+  {datum, `autor`/`autorId`, zeit}; `erledigt` nur über `POST …/fristen/:fid/erledigt`, Server führt zusammen). Pachtdaten liegen
+  getrennt auf Kartenebene (`karte.pacht[flaecheId]`: Verpächter-**Name** = Daten Dritter, Preis €/ha, ha, Beginn/Ende,
+  Kündigungsfrist, Erinnerung, Notiz) und werden **nur an Admins/Inhaber** ausgeliefert (`GET /api/karten/:id` als Admin,
+  `GET/PUT /api/karten/:id/pacht`); SSE überträgt nur einen Zähler `pachtVersion`. Nicht-Admins: lokale Kopie wird gelöscht,
+  Exporte ohne Pacht. Admin-Exporte (Excel/PDF/KML) mit abschaltbarer Option „Pachtdaten mitnehmen“. Beim Zugang-Löschen:
+  `erledigt.autorId` entfernt, `autor` → „ehemaliger Nutzer“. „Meine Daten“ listet eigene erledigte Fristen. Rechtsgrundlage
+  für den Verpächter-Namen: berechtigtes Interesse des Betriebs (Art. 6 Abs. 1 lit. f DSGVO, Vertragsverwaltung) –
+  Datenminimierung: Formular nennt ausdrücklich „nur Name“.
 - **Server-Protokolle:** FlockMap schreibt keine Zugriffsprotokolle. IP-Adressen nur im Arbeitsspeicher (max. 1 Stunde)
   für die Begrenzung von Fehlversuchen. Plattform-Logs des Hosters siehe Datenschutzerklärung.
 

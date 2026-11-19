@@ -6,6 +6,8 @@ import type { useKarte } from '../daten'
 import { TIERARTEN, type Eintrag } from '../types'
 import { geraeteFaellig, istNormal } from '../../server/infrastruktur.js'
 import { geraetZeile } from '../infra/Infra'
+import { FristKarten, fristenListe } from '../flaechen/Flaechen'
+import * as FL from '../../server/flaechen.js'
 import { tagKurz, tagLang, tiereText, tageText, neueId, statusText, STATUS_NAMEN } from './hilfen'
 
 type K = ReturnType<typeof useKarte>
@@ -27,6 +29,9 @@ export function WeideplanPanel(p: { k: K; onSchliessen: () => void; meldung: (s:
   // Weidezaungeräte: Prüfung überfällig/heute/morgen oder Akku leer
   const geraete = useMemo(() => geraeteFaellig(k.eintraege, heute), [k.eintraege, heute])
   const geraeteDran = geraete.filter((g) => g.stufe !== 'bald').length
+  // Flächen-Fristen + Pacht-Erinnerungen (Pacht nur für Admin/Inhaber)
+  const fristen = useMemo(() => fristenListe(k.eintraege, k.istAdmin ? k.pacht : null, k.weideplan, heute), [k.eintraege, k.pacht, k.istAdmin, k.weideplan, heute])
+  const fristenDran = fristen.filter((f) => f.stufe !== 'bald').length
   const darf = k.darfBearbeiten
   const name = (id?: string) => (id ? k.eintraege.find((e) => e.id === id)?.titel || 'ohne Namen' : '')
 
@@ -72,7 +77,7 @@ export function WeideplanPanel(p: { k: K; onSchliessen: () => void; meldung: (s:
         </div>
       )}
       <div className="tabs wp-reiter" role="tablist">
-        {([['jetzt', `Jetzt${faellig.some((f) => f.stufe !== 'bald') || geraeteDran ? ` (${faellig.filter((f) => f.stufe !== 'bald').length + geraeteDran})` : ''}`], ['zeitplan', 'Zeitplan'], ['flaechen', 'Flächen'], ['verlauf', 'Verlauf']] as const).map(([w, t]) => (
+        {([['jetzt', `Jetzt${faellig.some((f) => f.stufe !== 'bald') || geraeteDran || fristenDran ? ` (${faellig.filter((f) => f.stufe !== 'bald').length + geraeteDran + fristenDran})` : ''}`], ['zeitplan', 'Zeitplan'], ['flaechen', 'Flächen'], ['verlauf', 'Verlauf']] as const).map(([w, t]) => (
           <button key={w} role="tab" aria-selected={reiter === w} className={reiter === w ? 'aktiv' : ''} onClick={() => setReiter(w)}>{t}</button>
         ))}
       </div>
@@ -89,6 +94,9 @@ export function WeideplanPanel(p: { k: K; onSchliessen: () => void; meldung: (s:
               </ol>
             </div>
           )}
+          <FristKarten liste={fristen} darf={darf} istAdmin={k.istAdmin} onZeigen={p.onZeigen}
+            onErledigt={(eid, fid, d) => { k.fristErledigt(eid, fid, d); p.meldung('Frist erledigt ✓') }}
+            onPachtErledigt={(eid, d) => { const pa = k.pacht[eid]; if (pa) { k.pachtSpeichern(eid, { ...pa, erledigt: d }); p.meldung('Pacht-Erinnerung erledigt ✓') } }} />
           {geraete.length > 0 && <h3>⚡ Weidezaungeräte prüfen</h3>}
           {geraete.map((g) => (
             <div key={g.eintrag.id} className={`wp-karte wp-${g.stufe}`}>
@@ -179,14 +187,22 @@ function RuhezeitEinstellung({ k }: { k: K }) {
 }
 
 // Auswahl einer Fläche/Nadel mit Status im Text
+// Sperrfrist („frühestens beweiden ab“) einer Fläche, wenn sie noch in der Zukunft liegt
+function sperreBis(e: Eintrag): string | null {
+  if (e.typ !== 'flaeche') return null
+  const t = WP.heute()
+  const d = (e.steckbrief?.fristen ?? []).map((f) => FL.sperreBis(f, t)).filter((x): x is string => !!x).sort()[0]
+  return d ?? null
+}
 function FlaechenWahl(p: { k: K; status: Map<string, FlaechenStatus>; value: string; onChange: (v: string) => void; ohne?: string; leer: string; label: string }) {
   const liste = [...p.k.eintraege].filter((e) => e.id !== p.ohne && istNormal(e)).sort((a, b) => (a.typ === b.typ ? (a.titel || '').localeCompare(b.titel || '', 'de') : a.typ === 'flaeche' ? -1 : 1))
   return (
     <label>{p.label}
       <select value={p.value} onChange={(e) => p.onChange(e.target.value)}>
         <option value="">{p.leer}</option>
-        {liste.map((e) => { const s = p.status.get(e.id); return <option key={e.id} value={e.id}>{e.typ === 'flaeche' ? '⬠ ' : '📍 '}{e.titel || 'ohne Namen'}{s ? ` – ${statusText(s, true)}` : ''}</option> })}
+        {liste.map((e) => { const s = p.status.get(e.id); const sp = sperreBis(e); return <option key={e.id} value={e.id}>{e.typ === 'flaeche' ? '⬠ ' : '📍 '}{e.titel || 'ohne Namen'}{s ? ` – ${statusText(s, true)}` : ''}{sp ? ` – gesperrt bis ${tagKurz(sp)}` : ''}</option> })}
       </select>
+      {(() => { const e = p.k.eintraege.find((x) => x.id === p.value); const sp = e && sperreBis(e); return sp ? <small className="wp-warn">⚠️ Laut Steckbrief frühestens ab {tagLang(sp)} beweiden.</small> : null })()}
     </label>
   )
 }

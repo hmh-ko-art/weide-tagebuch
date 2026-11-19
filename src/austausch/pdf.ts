@@ -9,6 +9,9 @@ import type { Gruppe, Eintrag } from '../types'
 import * as WP from '../../server/weideplan.js'
 import type { Weideplan } from '../../server/weideplan.js'
 import { tiereText, statusText } from '../weideplan/hilfen'
+import * as FL from '../../server/flaechen.js'
+import type { PachtListe } from '../../server/flaechen.js'
+import { flaechenZeilen } from './flaechenliste'
 
 // Standard-PDF-Schriften kennen nur westeuropäische Zeichen -> Sonderzeichen ersetzen, Emojis entfernen
 export const pdfText = (s: string) => s
@@ -17,7 +20,7 @@ export const pdfText = (s: string) => s
 const rgb = (hex: string): [number, number, number] => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)) as [number, number, number]
 const GRUEN: [number, number, number] = [30, 77, 43]
 
-export interface BerichtOptionen { karte: string; hof?: string; autor?: string; filterText?: string; gesamtAnzahl: number; jeGruppe: boolean; mitKarte: boolean; weideplan?: { plan: Weideplan; eintraege: Eintrag[] }; technik?: Eintrag[] }
+export interface BerichtOptionen { karte: string; hof?: string; autor?: string; filterText?: string; gesamtAnzahl: number; jeGruppe: boolean; mitKarte: boolean; weideplan?: { plan: Weideplan; eintraege: Eintrag[] }; technik?: Eintrag[]; flaechen?: { eintraege: Eintrag[]; pacht: PachtListe | null } }
 
 export async function pdfErzeugen(zeilen: Zeile[], gruppen: Gruppe[], o: BerichtOptionen): Promise<Blob> {
   const doc = new jsPDF({ unit: 'mm', format: 'a4', compress: true })
@@ -192,6 +195,8 @@ export async function pdfErzeugen(zeilen: Zeile[], gruppen: Gruppe[], o: Bericht
     }
   }
 
+  if (o.flaechen && o.flaechen.eintraege.some((e) => e.typ === 'flaeche')) { doc.addPage(); flaechenKapitel(doc, o.flaechen.eintraege, o.flaechen.pacht, 16) }
+
   // Fußzeile auf jeder Seite
   const n = doc.getNumberOfPages()
   for (let i = 1; i <= n; i++) {
@@ -199,5 +204,43 @@ export async function pdfErzeugen(zeilen: Zeile[], gruppen: Gruppe[], o: Bericht
     doc.text(pdfText(`FlockMap · ${o.karte || ''} · ${stand}`), rand, 290)
     doc.text(`Seite ${i} von ${n}`, B - rand, 290, { align: 'right' })
   }
+  return doc.output('blob')
+}
+
+// ---- Flächenverzeichnis (Kapitel bzw. eigenes PDF): Summen, Tabelle aller Flächen, Fristen; Pacht nur wenn übergeben ----
+function flaechenKapitel(doc: jsPDF, eintraege: Eintrag[], pacht: PachtListe | null, y: number) {
+  const rand = 14
+  const z = flaechenZeilen(eintraege, pacht), sm = FL.flaechenSummen(eintraege, pacht)
+  const gruen = { fillColor: GRUEN }, st = { fontSize: 7.6, cellPadding: 1.3, overflow: 'linebreak' as const, valign: 'top' as const }
+  const nachY = () => (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 7
+  const datum = (d?: string | null) => (d ? d.split('-').reverse().join('.') : '')
+  doc.setTextColor(30, 40, 30); doc.setFontSize(13); doc.setFont('helvetica', 'bold'); doc.text(pdfText('Flächenverzeichnis'), rand, y); doc.setFont('helvetica', 'normal')
+  doc.setFontSize(9); doc.setTextColor(60)
+  const teile = [`${z.length} ${z.length === 1 ? 'Fläche' : 'Flächen'} · ${zahl(sm.ha, 2)} ha gesamt`, `Eigentum ${zahl(sm.eigentumHa, 2)} ha`, `Pacht ${zahl(sm.pachtHa, 2)} ha`, ...(pacht ? [`Pacht ${zahl(Math.round(sm.pachtEuro))} € pro Jahr`] : [])]
+  doc.text(pdfText(teile.join(' · ')), rand, y + 6)
+  const arten = Object.entries(sm.nachArt).map(([a, ha]) => `${a === 'ohne' ? 'ohne Art' : FL.flaechenArt(a)?.name}: ${zahl(ha, 2)} ha`).join(' · ')
+  doc.text(pdfText(arten), rand, y + 10.5)
+  autoTable(doc, {
+    startY: y + 14, margin: { left: rand, right: rand, bottom: 16 }, headStyles: gruen, styles: st,
+    head: [['Fläche', 'Art', 'Besitz', 'ha', 'Umfang', 'FLIK / Schlag', 'Förderung / Fristen', ...(pacht ? ['Pacht'] : [])]],
+    body: z.map((r) => [pdfText(r.name || '(ohne Namen)') + (r.ueberschneidet ? '\n(!) Umriss prüfen' : ''), pdfText(r.art), pdfText(r.besitz), zahl(r.ha, 2), pdfText(FL.umfangText(r.umfang)), pdfText([r.flik, r.schlag && `Schlag ${r.schlag}`].filter(Boolean).join('\n')), pdfText([r.programme, r.fristen].filter(Boolean).join('\n')),
+      ...(pacht ? [pdfText(r.pacht ? [r.pacht.verpaechter, r.pacht.preisHa !== undefined ? `${zahl(r.pacht.preisHa, 0)} €/ha = ${zahl(r.pachtEuro ?? 0, 0)} €/J.` : '', r.pacht.ende ? `bis ${datum(r.pacht.ende)}` : '', r.kuendigenBis ? `kündigen bis ${datum(r.kuendigenBis)}` : ''].filter(Boolean).join('\n') : '')] : [])]),
+    foot: [['Summe', '', '', zahl(sm.ha, 2), '', '', '', ...(pacht ? [`${zahl(Math.round(sm.pachtEuro))} €/Jahr`] : [])]],
+    footStyles: { fillColor: [232, 240, 227], textColor: 30, fontStyle: 'bold' },
+    columnStyles: { 0: { cellWidth: 28 }, 1: { cellWidth: 17 }, 2: { cellWidth: 15 }, 3: { cellWidth: 12, halign: 'right' }, 4: { cellWidth: 14, halign: 'right' }, 5: { cellWidth: 31 } },
+  })
+  return nachY()
+}
+export async function flaechenverzeichnisPdf(o: { karte: string; hof?: string; autor?: string; eintraege: Eintrag[]; pacht: PachtListe | null }): Promise<Blob> {
+  const doc = new jsPDF({ unit: 'mm', format: 'a4', compress: true })
+  const B = 210, rand = 14
+  const stand = new Date().toLocaleString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+  doc.setFillColor(...GRUEN); doc.rect(0, 0, B, 22, 'F')
+  doc.setTextColor(244, 236, 216); doc.setFontSize(9); doc.text(pdfText(`FLOCKMAP · FLÄCHENVERZEICHNIS${o.hof ? ` · Hof ${o.hof}` : ''}`), rand, 8)
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(16); doc.text(pdfText(o.karte || 'Weidekarte'), rand, 17); doc.setFont('helvetica', 'normal')
+  doc.setTextColor(40); doc.setFontSize(9); doc.text(pdfText(`Stand: ${stand}${o.autor ? ` · erstellt von ${o.autor}` : ''}${o.pacht ? ' · enthält vertrauliche Pachtdaten' : ''}`), rand, 28)
+  flaechenKapitel(doc, o.eintraege, o.pacht, 36)
+  const n = doc.getNumberOfPages()
+  for (let i = 1; i <= n; i++) { doc.setPage(i); doc.setFontSize(7.5); doc.setTextColor(120); doc.text(pdfText(`FlockMap · Flächenverzeichnis · ${o.karte || ''} · ${stand} · Flächen gemessen aus den gezeichneten Umrissen`), rand, 290); doc.text(`Seite ${i} von ${n}`, B - rand, 290, { align: 'right' }) }
   return doc.output('blob')
 }

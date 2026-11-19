@@ -1,6 +1,8 @@
 // KML-Export (Google Earth / Google My Maps) und Import von KML/KMZ (My Maps), GeoJSON und CSV.
 import { GRUPPEN_FARBEN, type LatLng } from '../types'
 import type { TechnikZeile, Zeile } from './zeilen'
+import * as FL from '../../server/flaechen.js'
+import type { Pacht, PachtListe, Steckbrief } from '../../server/flaechen.js'
 import { INFRA_ARTEN, infraArt, infraRaten, laengeText, linienArt, linienArtRaten, type Geraet, type InfraArt, type LinienArt, type Tor } from '../../server/infrastruktur.js'
 
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
@@ -9,12 +11,25 @@ const kmlFarbe = (hex: string, alpha = 'ff') => { const h = hex.replace('#', '')
 const hexAusKml = (c: string) => { const h = c.trim().toLowerCase().replace(/^#/, ''); return /^[0-9a-f]{8}$/.test(h) ? `#${h.slice(6, 8)}${h.slice(4, 6)}${h.slice(2, 4)}` : null }
 
 // ---------------- Export ----------------
-export function kmlErzeugen(titel: string, zeilen: Zeile[], gruppenReihe: { id: string | null; name: string; farbe: string }[], technik: TechnikZeile[] = []): string {
+export function kmlErzeugen(titel: string, zeilen: Zeile[], gruppenReihe: { id: string | null; name: string; farbe: string }[], technik: TechnikZeile[] = [], pacht: PachtListe | null = null): string {
   const farben = [...new Set(zeilen.map((z) => z.farbe))]
   const styles = farben.map((f) => `<Style id="f-${f.slice(1)}"><IconStyle><color>${kmlFarbe(f)}</color><scale>1.1</scale><Icon><href>https://maps.google.com/mapfiles/kml/paddle/wht-blank.png</href></Icon><hotSpot x="32" y="1" xunits="pixels" yunits="pixels"/></IconStyle><LabelStyle><scale>0.9</scale></LabelStyle><LineStyle><color>${kmlFarbe(f)}</color><width>2</width></LineStyle><PolyStyle><color>${kmlFarbe(f, '59')}</color></PolyStyle></Style>`)
   const placemark = (z: Zeile) => {
     const daten: [string, string | number][] = [['flockmap_id', z.e.id], ['Name', z.name], ['Typ', z.typ], ['Gruppe', z.gruppe], ['Nr', z.nr ?? ''], ['Schafe', z.schafe], ['Böcke', z.boecke], ['Lämmer', z.laemmer], ['Herde', z.herde], ['Farbe', z.farbe], ['Datum', z.datum], ...(z.typ === 'Fläche' ? [['Hektar', z.ha.toFixed(2)] as [string, string]] : [])]
-    const beschreibung = [z.kurz && `Tiere: ${z.kurz}`, z.herde && `Herde: ${z.herde}`, `Datum: ${z.datum.split('-').reverse().join('.')}`, z.typ === 'Fläche' ? `Fläche: ${z.ha.toLocaleString('de-DE', { maximumFractionDigits: 2 })} ha` : '', z.notizen && `Notizen:\n${z.notizen}`].filter(Boolean).join('\n')
+    // Flächen: Steckbrief lesbar + exakt (flockmap_steckbrief); Pacht nur, wenn ausdrücklich mit exportiert
+    const sb = z.e.typ === 'flaeche' ? z.e.steckbrief : undefined
+    const pa = z.e.typ === 'flaeche' && pacht ? pacht[z.e.id] : undefined
+    if (sb) {
+      daten.push(['flockmap_steckbrief', JSON.stringify({ ...sb, fristen: sb.fristen?.map((f) => (f.erledigt ? { ...f, erledigt: { datum: f.erledigt.datum, ...(f.erledigt.autor ? { autor: f.erledigt.autor } : {}) } } : f)) })])
+      if (sb.art) daten.push(['Flächenart', FL.flaechenArt(sb.art)?.name ?? ''])
+      if (sb.besitz) daten.push(['Eigentum/Pacht', sb.besitz === 'pacht' ? 'Pacht' : 'Eigentum'])
+      if (sb.flik) daten.push(['FLIK', sb.flik])
+      if (sb.schlag) daten.push(['Schlag', sb.schlag])
+      if (sb.programme?.length) daten.push(['Förderprogramme', sb.programme.join(', ')])
+    }
+    if (pa) daten.push(['flockmap_pacht', JSON.stringify(pa)])
+    const sbText = sb ? [sb.art && FL.flaechenArt(sb.art)?.name, sb.besitz && (sb.besitz === 'pacht' ? 'Pacht' : 'Eigentum'), sb.flik && `FLIK ${sb.flik}`, sb.schlag && `Schlag ${sb.schlag}`, sb.programme?.join(', ')].filter(Boolean).join(' · ') : ''
+    const beschreibung = [z.kurz && `Tiere: ${z.kurz}`, z.herde && `Herde: ${z.herde}`, `Datum: ${z.datum.split('-').reverse().join('.')}`, z.typ === 'Fläche' ? `Fläche: ${z.ha.toLocaleString('de-DE', { maximumFractionDigits: 2 })} ha` : '', sbText, z.notizen && `Notizen:\n${z.notizen}`].filter(Boolean).join('\n')
     const name = [z.nr ? `${z.nr}.` : '', z.name, z.kurz].filter(Boolean).join(' ')
     const geo = z.e.typ === 'pin'
       ? `<Point><coordinates>${z.e.position.lng.toFixed(7)},${z.e.position.lat.toFixed(7)},0</coordinates></Point>`
@@ -64,6 +79,8 @@ export interface Vorschlag {
   datum?: string
   herde?: string
   flockmapId?: string // Export aus FlockMap (Rundreise)
+  steckbrief?: Steckbrief // Flächen: Art, FLIK/Schlag, Förderung (aus FlockMap exakt, sonst aus Feldern wie FLIK/SCHLAG_NR erkannt)
+  pacht?: Pacht // nur aus FlockMap-Export mit Pachtdaten; übernommen nur von Admins
 }
 export interface ImportErgebnis { vorschlaege: Vorschlag[]; uebersprungen: { name: string; grund: string }[]; titel: string; format: string }
 
@@ -186,13 +203,38 @@ export function kmlLesen(xml: string): ImportErgebnis {
       if (daten.Gruppe !== undefined) v.ebene = daten.Gruppe
       const n = beschr.indexOf('Notizen:\n'); v.notiz = n >= 0 ? beschr.slice(n + 9).trim() : ''
       if (daten.flockmap_technik) technikUebernehmen(v, daten.flockmap_technik)
+      if (v.typ === 'flaeche') flaechenDatenUebernehmen(v, daten.flockmap_steckbrief, daten.flockmap_pacht)
     } else {
       const zusatz = Object.entries(daten).filter(([k, w]) => w && !/^(name|description|beschreibung|gx_media_links)$/i.test(k)).map(([k, w]) => `${k}: ${w}`)
       v.notiz = [beschr, ...zusatz].filter(Boolean).join('\n')
+      if (v.typ === 'flaeche') steckbriefAusFeldern(v, daten)
     }
     vorschlaege.push(v)
   }
   return { vorschlaege, uebersprungen, titel, format: 'KML' }
+}
+
+// Flächen-Steckbrief/Pacht aus einem FlockMap-Export (JSON-Text oder Objekt)
+function flaechenDatenUebernehmen(v: Vorschlag, sb: unknown, pa: unknown) {
+  const json = (x: unknown) => { if (typeof x !== 'string') return x; try { return JSON.parse(x) } catch { return null } }
+  const s = FL.steckbriefSauber(json(sb))
+  if (s) v.steckbrief = { ...s, fristen: s.fristen?.map((f) => (f.erledigt ? { ...f, erledigt: { datum: f.erledigt.datum, ...(f.erledigt.autor ? { autor: f.erledigt.autor } : {}) } } : f)) }
+  const p = FL.pachtSauber(json(pa))
+  if (p) v.pacht = p
+}
+// Fremde Dateien (Agrarantrag, GIS): FLIK/Feldblock, Schlag-Nr., Schlagname und Nutzung an üblichen Feldnamen erkennen
+export function steckbriefAusFeldern(v: Vorschlag, felder: Record<string, unknown>) {
+  // Feldnamen vereinheitlichen: „Schlag-Nr.“, „SCHLAG_NR“, „schlagnr“ -> „schlagnr“
+  const norm = (k: string) => k.trim().toLowerCase().replace(/[^a-z0-9äöüß]/g, '')
+  const finde = (re: RegExp) => { for (const [k, w] of Object.entries(felder)) if (re.test(norm(k)) && w !== null && w !== undefined && String(w).trim()) return String(w).trim(); return '' }
+  const flik = finde(/^(flik|flek|feldblock|feldblockident|feldblockid|fbident|fbi|fbnr|feldblocknr|feldblocknummer)$/)
+  const schlag = finde(/^(schlag|schlagnr|schlagnummer|slnr|schlagid|teilschlag)$/)
+  const name = finde(/^(schlagname|schlagbez|bezeichnung|bezeichnun|flurname|name)$/)
+  const nutzung = finde(/^(nutzung|nutzart|nutzungsart|kultur|codebez|ncbez|hnf|bodennutzung|nutzungbez)$/).toLowerCase()
+  const art = /deich/.test(nutzung) ? 'deich' : /vorland|salzwiese/.test(nutzung) ? 'vorland' : /gr[uü]n|wiese|weide|mähweide|maehweide/.test(nutzung) ? 'gruenland' : /klee|feldgras|ackergras|ackerfutter|luzerne/.test(nutzung) ? 'ackerfutter' : undefined
+  const s = FL.steckbriefSauber({ ...(v.steckbrief ?? {}), flik: flik || undefined, schlag: schlag || undefined, art })
+  if (s) v.steckbrief = s
+  if (!v.rohName.trim()) { const t = name || (schlag ? `Schlag ${schlag}` : flik ? `Feldblock ${flik}` : ''); if (t) { v.rohName = t; v.titel = t } }
 }
 
 // Exakte Felder aus einem FlockMap-Export (Zäune & Wasser) übernehmen; ungültiges wird ignoriert (Server prüft zusätzlich)
@@ -235,6 +277,7 @@ export function geojsonLesen(json: unknown): ImportErgebnis {
   const vorschlaege: Vorschlag[] = [], uebersprungen: ImportErgebnis['uebersprungen'] = []
   for (const f of features) {
     const pr = f.properties ?? {}
+    const teilflaechen: Vorschlag[] = []
     const name = String(pr.name ?? pr.Name ?? pr.title ?? pr.titel ?? '')
     const g = f.geometry
     const farbe = typeof pr['marker-color'] === 'string' ? pr['marker-color'] : typeof pr.fill === 'string' ? pr.fill : null
@@ -244,6 +287,12 @@ export function geojsonLesen(json: unknown): ImportErgebnis {
       const ring = (g.type === 'Polygon' ? (g.coordinates as number[][][])[0] : (g.coordinates as number[][][][])[0][0]) ?? []
       v.typ = 'flaeche'; v.punkte = ohneSchluss(ring.map(([lng, lat]) => ({ lat, lng })))
       if (v.punkte.length < 3) { uebersprungen.push({ name, grund: 'Fläche mit zu wenigen Eckpunkten' }); continue }
+      if (pr.flockmap_steckbrief || pr.flockmap_pacht) flaechenDatenUebernehmen(v, pr.flockmap_steckbrief, pr.flockmap_pacht); else steckbriefAusFeldern(v, pr)
+      // MultiPolygon: weitere Teilflächen als eigene Flächen
+      if (g.type === 'MultiPolygon') for (const [i, poly] of (g.coordinates as number[][][][]).slice(1).entries()) {
+        const pk = ohneSchluss((poly[0] ?? []).map(([lng, lat]) => ({ lat, lng })))
+        if (pk.length >= 3) teilflaechen.push({ ...v, rohName: `${v.rohName || 'Fläche'} (${i + 2})`, titel: `${v.titel || 'Fläche'} (${i + 2})`, punkte: pk })
+      }
     } else if (g?.type === 'LineString' || g?.type === 'MultiLineString') {
       const teile = (g.type === 'LineString' ? [g.coordinates as number[][]] : (g.coordinates as number[][][])).map((l) => (l ?? []).map(([lng, lat]) => ({ lat, lng })).filter((q) => Number.isFinite(q.lat) && Number.isFinite(q.lng))).filter((l) => l.length >= 2)
       if (!teile.length) { uebersprungen.push({ name: name || '(ohne Namen)', grund: 'Linie mit zu wenigen Punkten' }); continue }
@@ -256,7 +305,7 @@ export function geojsonLesen(json: unknown): ImportErgebnis {
     const n = (k: string[]) => { for (const x of k) if (pr[x] !== undefined && Number.isFinite(+pr[x]!)) return Math.max(0, Math.round(+pr[x]!)); return 0 }
     v.schafe = n(['Schafe', 'schafe']); v.boecke = n(['Böcke', 'boecke', 'Boecke']); v.laemmer = n(['Lämmer', 'laemmer', 'Laemmer'])
     v.feldZahlen = ['Schafe', 'schafe', 'Böcke', 'boecke', 'Boecke', 'Lämmer', 'laemmer', 'Laemmer'].some((k) => pr[k] !== undefined)
-    vorschlaege.push(v)
+    vorschlaege.push(v, ...teilflaechen)
   }
   return { vorschlaege, uebersprungen, titel: String(j.name ?? ''), format: 'GeoJSON' }
 }
@@ -291,11 +340,38 @@ export function csvLesen(roh: string): ImportErgebnis {
 export async function dateiLesen(f: File): Promise<ImportErgebnis> {
   const n = f.name.toLowerCase()
   if (n.endsWith('.kmz')) return kmzLesen(new Uint8Array(await f.arrayBuffer()))
+  if (n.endsWith('.zip')) return shapefileLesen(new Uint8Array(await f.arrayBuffer()))
+  if (n.endsWith('.shp')) throw new Error('Bitte die Shapefile als ZIP importieren (mit .shp, .dbf und .prj zusammen gepackt)')
   const t = await f.text()
   if (n.endsWith('.kml') || /^\s*<\?xml|<kml/i.test(t.slice(0, 500))) return kmlLesen(t)
   if (n.endsWith('.geojson') || (n.endsWith('.json') && /"FeatureCollection"|"Feature"/.test(t.slice(0, 2000)))) return geojsonLesen(JSON.parse(t))
   if (n.endsWith('.csv') || n.endsWith('.txt') || n.endsWith('.tsv')) return csvLesen(t)
-  throw new Error('Unbekanntes Dateiformat – erlaubt sind KML, KMZ, GeoJSON und CSV')
+  throw new Error('Unbekanntes Dateiformat – erlaubt sind KML, KMZ, GeoJSON, Shapefile (ZIP) und CSV')
+}
+
+// Shapefile im ZIP (z. B. Flächen aus dem Agrarantrag) -> Vorschläge; Attribute werden zur Notiz, FLIK/Schlag zum Steckbrief
+export async function shapefileLesen(daten: Uint8Array): Promise<ImportErgebnis> {
+  const { shpZipLesen } = await import('./shp')
+  const r = await shpZipLesen(daten)
+  const vorschlaege: Vorschlag[] = [], uebersprungen: ImportErgebnis['uebersprungen'] = []
+  if (r.uebersprungen) uebersprungen.push({ name: `${r.uebersprungen} Objekte`, grund: 'Geometrie-Typ wird nicht unterstützt' })
+  for (const o of r.objekte) {
+    const felder = o.felder
+    const zusatz = Object.entries(felder).filter(([, w]) => w).map(([k, w]) => `${k}: ${w}`).join('\n')
+    const basis: Vorschlag = { typ: 'pin', rohName: '', titel: '', ebene: '', farbe: null, schafe: 0, boecke: 0, laemmer: 0, ausName: false, feldZahlen: true, notiz: zusatz }
+    o.teile.forEach((t, i) => {
+      const ok = t.every((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng) && Math.abs(p.lat) <= 90 && Math.abs(p.lng) <= 180)
+      const v: Vorschlag = { ...basis }
+      steckbriefAusFeldern(v, felder)
+      if (i > 0) { v.rohName = `${v.rohName || 'Fläche'} (${i + 1})`; v.titel = v.rohName }
+      if (!ok) { uebersprungen.push({ name: v.rohName || '(ohne Namen)', grund: 'ungültige Koordinaten' }); return }
+      if (o.typ === 'punkt') { v.position = t[0]; delete v.steckbrief }
+      else if (o.typ === 'linie') { if (t.length < 2) return; v.typ = 'linie'; v.punkte = t; v.linienArt = linienArtRaten(v.rohName); delete v.steckbrief }
+      else { if (t.length < 3) { uebersprungen.push({ name: v.rohName || '(ohne Namen)', grund: 'Fläche mit zu wenigen Eckpunkten' }); return } v.typ = 'flaeche'; v.punkte = t }
+      vorschlaege.push(v)
+    })
+  }
+  return { vorschlaege, uebersprungen, titel: r.system, format: 'Shapefile' }
 }
 
 // Tierzahlen aus Namen anwenden (nur wenn keine Zahlen aus Feldern kamen)

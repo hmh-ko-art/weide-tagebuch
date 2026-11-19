@@ -9,6 +9,9 @@ import { MeineDaten } from './recht/MeineDaten'
 import { WeideplanPanel, PlanZeile, type PlanStart } from './weideplan/Weideplan'
 import { planFarben as planFarbenAnwenden, faelligAnzahl } from './weideplan/hilfen'
 import { STATUS_FARBEN, heute } from '../server/weideplan.js'
+import { FlaechenUebersicht, MessText, SteckbriefDetail, SteckbriefFormular, fristenListe, pachtAusForm, pachtFormAus } from './flaechen/Flaechen'
+import * as FL from '../server/flaechen.js'
+import type { Pacht } from '../server/flaechen.js'
 import { InfraDetail, InfraFormular, InfraListe, InfraSymbol, LinienSymbol, useInfraAus, type PruefNeu } from './infra/Infra'
 import { geraeteFaellig, istInfra, istLinie, istNormal, laengeText, linienArt, linienLaenge, naechsteStelle, netzAnzahl, pruefungEintragen, zaunUmFlaeche, TOR_BREITE, gesamtLaenge } from '../server/infrastruktur.js'
 import { KarteLoeschenAbschnitt, GeloeschtHinweis } from './recht/Loeschen'
@@ -16,7 +19,7 @@ import { googleNaviLink, routeBerechnen, routeText } from './route'
 import { eintragDatum, tagText, monatText, istAusblendbar, TIERARTEN, tierText, tierSymbolHtml, tierSummen, type Einheit, type Tierart, FARBEN, FLAECHEN_FARBEN, FLAECHE_STANDARD, START, STANDARD_FARBE, datum, farbName, hektar, mitte, neueId, notizenSortiert, pinFarbe, gruppenVorschlag, gruppenFarbe, gruppenOrdnung, naechsteGruppenFarbe, tierKurz, GRUPPEN_FARBEN, type Gruppe, type Eintrag, type Notiz, type Fokus, type LatLng, type Route } from './types'
 
 type Modus = 'ansicht' | 'pin' | 'flaeche' | 'linie' | 'punkte' | 'tor'
-type Panel = null | 'liste' | 'einstellungen' | 'nutzer' | 'profil' | 'hof' | 'austausch' | 'meinedaten' | 'weideplan'
+type Panel = null | 'liste' | 'einstellungen' | 'nutzer' | 'profil' | 'hof' | 'austausch' | 'meinedaten' | 'weideplan' | 'flaechen'
 
 // Aktuell angemeldeter Nutzer (geteilte Karte) – für Autor neuer Notizen
 let aktuellerNutzer: Ich | null = null
@@ -139,7 +142,9 @@ export default function App() {
   const setPlanFarben = (b: boolean) => { setPlanFarbenRoh(b); localStorage.setItem('wt-planfarben', b ? 'an' : 'aus') }
   // Fällige Geräte-Prüfungen (überfällig, heute, Akku leer) zählen im Weideplan-Abzeichen mit
   const geraeteDran = useMemo(() => geraeteFaellig(k.eintraege).filter((x) => x.stufe !== 'bald'), [k.eintraege])
-  const faellig = useMemo(() => faelligAnzahl(k.weideplan), [k.weideplan]) + geraeteDran.length
+  // Flächen-Fristen (Antrag, Schnitt, Sperrfrist-Verstoß) und – nur Admins – Pacht-Erinnerungen
+  const fristenDran = useMemo(() => FL.fristenDran(fristenListe(k.eintraege, k.istAdmin ? k.pacht : null, k.weideplan)), [k.eintraege, k.pacht, k.istAdmin, k.weideplan])
+  const faellig = useMemo(() => faelligAnzahl(k.weideplan), [k.weideplan]) + geraeteDran.length + fristenDran.length
   const planAn = planFarben && !!k.weideplan?.belegungen.length
   // Zuletzt verschobene Nadel (für „Rückgängig“)
   const [verschoben, setVerschoben] = useState<{ id: string; alt: LatLng; nr: number } | null>(null)
@@ -472,7 +477,7 @@ export default function App() {
 
         {modus === 'flaeche' && (
           <div className="leiste">
-            <p>Tippe die Eckpunkte der Fläche an ({zeichenPunkte.length} gesetzt{zeichenPunkte.length >= 3 ? `, ca. ${hektar(zeichenPunkte).toLocaleString('de-DE', { maximumFractionDigits: 2 })} ha` : ''}).</p>
+            <p>Tippe die Eckpunkte der Fläche an ({zeichenPunkte.length} gesetzt){zeichenPunkte.length >= 3 && <> · <MessText punkte={zeichenPunkte} /></>}</p>
             <div className="knoepfe">
               <button className="primaer" onClick={flaecheFertig}>Fertig</button>
               <button onClick={() => setZeichenPunkte((l) => l.slice(0, -1))} disabled={!zeichenPunkte.length}>Rückgängig</button>
@@ -500,7 +505,7 @@ export default function App() {
           const m = e?.typ === 'linie' ? linienLaenge({ ...e, punkte: bearbeiten.punkte }) : 0
           return (
             <div className="leiste">
-              <p><strong>Punkte ziehen</strong> zum Verschieben · <strong>＋</strong> fügt einen Punkt ein · Punkt antippen und „Punkt löschen“{e?.typ === 'linie' ? <> · {laengeText(m)}</> : e?.typ === 'flaeche' ? <> · ≈ {hektar(bearbeiten.punkte).toLocaleString('de-DE', { maximumFractionDigits: 2 })} ha</> : ''}</p>
+              <p><strong>Punkte ziehen</strong> zum Verschieben · <strong>＋</strong> fügt einen Punkt ein · Punkt antippen und „Punkt löschen“{e?.typ === 'linie' ? <> · {laengeText(m)}</> : e?.typ === 'flaeche' ? <> · <MessText punkte={bearbeiten.punkte} /></> : ''}</p>
               <div className="knoepfe">
                 <button className="primaer" onClick={punkteFertig}>Fertig</button>
                 <button disabled={bearbeiten.sel == null} onClick={() => setBearbeiten((b) => (b && b.sel != null ? { ...b, punkte: b.punkte.filter((_, j) => j !== b.sel), sel: null } : b))}>Punkt löschen</button>
@@ -547,20 +552,41 @@ export default function App() {
                 onGeprueft={(x) => { k.geprueft(auswahl.id, x); setMeldung('Prüfung eingetragen ✓') }}
                 onPunkte={() => punkteStart(auswahl)} onTore={() => { setTorId(auswahl.id); setModus('tor') }} onZaun={() => zaunUm(auswahl)}
                 onWahl={(id) => { const e = k.eintraege.find((x) => x.id === id); if (e) { fliege(mitte(e)); waehle(id) } }} />
+              {auswahl.typ === 'flaeche' && <SteckbriefDetail e={auswahl} pacht={k.pacht[auswahl.id]} istAdmin={k.istAdmin} darfBearbeiten={k.darfBearbeiten} onErledigt={(fid, d) => { k.fristErledigt(auswahl.id, fid, d); setMeldung(d ? 'Frist erledigt ✓' : 'Wieder offen') }} />}
               {auswahl.typ === 'flaeche' && k.darfBearbeiten && kannEintrag(auswahl) && <button className="link-knopf punkte-link" onClick={() => punkteStart(auswahl)}>✏️ Eckpunkte bearbeiten</button>}
             </>}
           />
         )}
 
-        {formular && <Formular gruppeName={k.gruppen.find((g) => g.id === formular.e.gruppe)?.name} start={formular.e} neu={formular.neu} onSpeichern={speichern} onAbbrechen={() => setFormular(null)} onLoeschen={formular.neu || !kannEintrag(formular.e) ? undefined : () => loeschen(formular.e)} />}
+        {formular && <Formular gruppeName={k.gruppen.find((g) => g.id === formular.e.gruppe)?.name} start={formular.e} neu={formular.neu} istAdmin={k.istAdmin} pacht={k.pacht[formular.e.id]} onPacht={(p) => k.pachtSpeichern(formular.e.id, p)} onSpeichern={speichern} onAbbrechen={() => setFormular(null)} onLoeschen={formular.neu || !kannEintrag(formular.e) ? undefined : () => loeschen(formular.e)} />}
 
         {panel === 'liste' && (
           <Liste eintraege={anzeige.eintraege} gruppen={k.gruppen} nummern={anzeige.nummern} gruppenAus={gruppenAus}
             onSichtbar={(gid) => setGruppenAus((l) => (l.includes(gid) ? l.filter((x) => x !== gid) : [...l, gid]))} onReihenfolge={k.reihenfolge} onSchliessen={() => setPanel(null)} onWahl={(e) => { fliege(mitte(e), e.typ === 'pin' ? 15 : undefined); waehle(e.id) }}
             darfBearbeiten={k.darfBearbeiten} kannEintrag={kannEintrag} kannGruppe={kannGruppe} ichId={k.ich?.id}
             onGruppeSpeichern={k.gruppeSpeichern} onGruppeLoeschen={k.gruppeLoeschen} onInGruppe={inGruppe} neueGruppe={neueGruppe}
-            onExport={(f) => { setExportFilter(f); setPanel('austausch') }}
+            onExport={(f) => { setExportFilter(f); setPanel('austausch') }} onUebersicht={() => setPanel('flaechen')}
             infraAus={infraAus.aus} onInfraUmschalten={infraAus.umschalten} onGeprueft={(id) => { k.geprueft(id, { datum: heute() }); setMeldung('Prüfung eingetragen ✓') }} />
+        )}
+        {panel === 'flaechen' && (
+          <section className="panel flaechen-panel">
+            <div className="sheet-kopf"><h2>⬠ Flächen-Übersicht</h2><button className="x" onClick={() => setPanel(null)} aria-label="Schließen"><Icon name="x" /></button></div>
+            <FlaechenUebersicht eintraege={k.eintraege} pacht={k.pacht} istAdmin={k.istAdmin} onWahl={(e) => { fliege(mitte(e)); waehle(e.id) }} onExport={async (art) => {
+              const pacht = k.istAdmin && Object.keys(k.pacht).length ? k.pacht : null
+              const { dateiName, herunterladen } = await import('./austausch/zeilen')
+              const name = k.kartenName || 'FlockMap'
+              try {
+                if (art === 'xlsx') {
+                  const [{ xlsxErzeugen }, { flaechenBlaetter }] = await Promise.all([import('./austausch/xlsx'), import('./austausch/flaechenliste')])
+                  herunterladen(new Blob([xlsxErzeugen(flaechenBlaetter(k.eintraege, pacht)) as BlobPart], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), dateiName(`${name}-Flaechenverzeichnis`, 'xlsx'))
+                } else {
+                  const { flaechenverzeichnisPdf } = await import('./austausch/pdf')
+                  herunterladen(await flaechenverzeichnisPdf({ karte: name, hof: k.hof?.name, autor: k.ich?.name, eintraege: k.eintraege, pacht }), dateiName(`${name}-Flaechenverzeichnis`, 'pdf'))
+                }
+                setMeldung(`Flächenverzeichnis erstellt${pacht ? ' (mit Pachtdaten – vertraulich)' : ''}`)
+              } catch (x) { setMeldung(`Export fehlgeschlagen: ${(x as Error).message}`) }
+            }} />
+          </section>
         )}
         {panel === 'austausch' && <Austausch k={k} eintraege={anzeige.eintraege} filter={exportFilter} meldung={setMeldung} onSchliessen={() => setPanel(null)} />}
         {panel === 'einstellungen' && <Einstellungen k={k} onMeineDaten={() => setPanel('meinedaten')} onAustausch={() => { setExportFilter(null); setPanel('austausch') }} onSchliessen={() => setPanel(null)} meldung={setMeldung} onNutzer={() => setPanel(k.hof?.rolle ? 'hof' : 'nutzer')} onHof={() => setPanel('hof')} onProfil={() => setPanel('profil')} kopfFarbe={kopfFarbe} setKopfFarbe={setKopfFarbe} />}
@@ -620,7 +646,7 @@ function Detail(p: { e: Eintrag; routeInfo: string; darfBearbeiten: boolean; kan
             </button>
           : <span className="tier-gesamt"><TierAnzeige summen={tierSummen([e])} /></span>)}
         {e.herde && <span>Herde: {e.herde}</span>}
-        {e.typ === 'flaeche' && <span>≈ {hektar(e.punkte).toLocaleString('de-DE', { maximumFractionDigits: 2 })} ha</span>}
+        {e.typ === 'flaeche' && <span>{FL.haText(hektar(e.punkte))}</span>}
         <span>Datum: {tagText(eintragDatum(e))}</span>
         <span>Geändert: {datum(e.geaendert)}</span>
       </div>
@@ -693,13 +719,14 @@ function Notizen(p: { e: Eintrag; darfBearbeiten: boolean; kannNotiz: (n: Notiz)
   )
 }
 
-function Formular(p: { gruppeName?: string; start: Eintrag; neu: boolean; onSpeichern: (e: Eintrag, basis?: Einheit[]) => void; onAbbrechen: () => void; onLoeschen?: () => void }) {
+function Formular(p: { gruppeName?: string; start: Eintrag; neu: boolean; istAdmin: boolean; pacht?: Pacht; onPacht: (p: Pacht | null) => void; onSpeichern: (e: Eintrag, basis?: Einheit[]) => void; onAbbrechen: () => void; onLoeschen?: () => void }) {
   const [e, setE] = useState<Eintrag>(p.start)
   // Tiereinheiten als Zeilen (Anzahl als Text, damit das Feld beim Tippen leer sein darf)
   const [zeilen, setZeilen] = useState(() => (p.start.einheiten ?? []).map((x) => ({ ...x, anzahl: String(x.anzahl) })))
   const zeileAendern = (id: string, teil: Partial<{ art: Tierart; anzahl: string }>) => setZeilen((l) => l.map((z) => (z.id === id ? { ...z, ...teil } : z)))
   const [ersteNotiz, setErsteNotiz] = useState('')
   const [pruef, setPruef] = useState<PruefNeu>({ an: true, kv: '', stand: '' })
+  const [pachtForm, setPachtForm] = useState(() => pachtFormAus(p.pacht))
   const normal = istNormal(e)
   const art = istInfra(e) ? 'Markierung' : e.typ === 'pin' ? 'Nadel' : e.typ === 'linie' ? 'Linie' : 'Fläche'
   return (
@@ -717,7 +744,11 @@ function Formular(p: { gruppeName?: string; start: Eintrag; neu: boolean; onSpei
           const v = Number(pruef.kv.replace(',', '.'))
           fertig = pruefungEintragen(fertig, { id: neueId(), datum: heute(), zeitpunkt: new Date().toISOString(), ...(pruef.kv.trim() && v >= 0 && v <= 20 ? { kv: Math.round(v * 10) / 10 } : {}), ...(pruef.stand ? { stand: pruef.stand } : {}), ...autorFelder() })
         }
+        // Flächen: leeren Steckbrief entfernen (alte App-Versionen: null = „bewusst leer“)
+        if (fertig.typ === 'flaeche') { const sb = FL.steckbriefSauber(fertig.steckbrief); fertig = { ...fertig, steckbrief: (sb ?? null) as never } }
         p.onSpeichern(fertig, p.start.einheiten ?? [])
+        // Pacht getrennt und nur für Admin/Inhaber speichern (vertraulich)
+        if (fertig.typ === 'flaeche' && p.istAdmin) { const neu = pachtAusForm(pachtForm, p.pacht); if (!FL.pachtGleich(neu, p.pacht ?? null)) p.onPacht(neu) }
       }}>
         <div className="sheet-kopf">
           <h2>{p.neu ? `Neue ${art}` : `${art} bearbeiten`}</h2>
@@ -760,6 +791,7 @@ function Formular(p: { gruppeName?: string; start: Eintrag; neu: boolean; onSpei
           </select></label>
           <button type="button" className="tiere-plus" onClick={() => setZeilen((l) => [...l, { id: neueId(), art: l.length ? l[l.length - 1].art : 'schaf', anzahl: '' }])}>＋ Tiere hinzufügen</button>
         </div>}
+        {e.typ === 'flaeche' && <SteckbriefFormular e={e} setE={(x) => setE(x)} istAdmin={p.istAdmin} pacht={pachtForm} setPacht={setPachtForm} />}
         <div className="zeile">
           <label>Datum<input type="date" required value={eintragDatum(e)} onChange={(x) => x.target.value && setE({ ...e, datum: x.target.value })} /></label>
           {normal && <label>Herde<input value={e.herde ?? ''} placeholder="optional" onChange={(x) => setE({ ...e, herde: x.target.value || undefined })} /></label>}
@@ -781,6 +813,7 @@ type ListeProps = {
   onInGruppe: (g: Gruppe | null, liste: Eintrag[]) => void; neueGruppe: () => Gruppe | null; ichId?: string
   nummern: Record<string, number>; gruppenAus: string[]; onSichtbar: (gid: string) => void; onReihenfolge: (gid: string, ids: string[]) => void
   onExport: (f: ExportFilter) => void
+  onUebersicht: () => void
   infraAus: string[]; onInfraUmschalten: (w: string) => void; onGeprueft: (id: string) => void
 }
 function Liste(p: ListeProps) {
@@ -1031,7 +1064,7 @@ function Liste(p: ListeProps) {
       {reiter === 'infra' ? <InfraListe eintraege={p.eintraege} aus={p.infraAus} onUmschalten={p.onInfraUmschalten} onWahl={p.onWahl} darfBearbeiten={p.darfBearbeiten} onGeprueft={p.onGeprueft} /> : <>
       <p className="hinweis summe">
         {zeitraumAktiv && <strong>{zeitraumText}: </strong>}{alle.length} {alle.length === 1 ? wort[0] : wort[1]}
-        {reiter === 'flaeche' && alle.length > 0 && <> · ≈ {ha.toLocaleString('de-DE', { maximumFractionDigits: 2 })} ha</>}
+        {reiter === 'flaeche' && alle.length > 0 && <> · {FL.haText(ha)} · <button className="link-knopf" onClick={p.onUebersicht}>📊 Übersicht, Pacht & Summen</button></>}
         {summen.length > 0 ? <> · <TierAnzeige summen={summen} /></> : reiter === 'pin' ? ' · 0 Tiere' : ''}
       </p>
       <div className="zeitraum">

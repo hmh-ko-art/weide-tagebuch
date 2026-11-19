@@ -4,6 +4,7 @@ import express from 'express'
 import fs from 'node:fs'
 import path from 'node:path'
 import * as WP from './weideplan.js'
+import * as FL from './flaechen.js'
 import * as IS from './infrastruktur.js'
 import crypto from 'node:crypto'
 import { fileURLToPath } from 'node:url'
@@ -175,9 +176,10 @@ function autorNamen(k) {
   for (const e of k.eintraege) for (const n of e.notizen ?? []) if (n.autorId) ids.add(n.autorId)
   for (const b of k.weideplan?.bewegungen ?? []) if (b.autorId) ids.add(b.autorId)
   for (const e of k.eintraege) for (const p of e.geraet?.pruefungen ?? []) if (p.autorId) ids.add(p.autorId)
+  for (const e of k.eintraege) for (const f of e.steckbrief?.fristen ?? []) if (f.erledigt?.autorId) ids.add(f.erledigt.autorId)
   return Object.fromEntries(k.nutzer.filter((n) => ids.has(n.id)).map((n) => [n.id, n.name]))
 }
-const oeffentlich = (k) => ({ id: k.id, name: k.name, version: k.version, nutzerVersion: k.nutzerVersion, namen: autorNamen(k), eintraege: k.eintraege, gruppen: (k.gruppen ?? []).map((g) => ({ id: g.id, name: g.name, farbe: g.farbe, reihenfolge: g.reihenfolge ?? [], von: g.von, erstellt: g.erstellt })), geaendert: k.geaendert, ...(k.weideplan ? { weideplan: k.weideplan } : {}), ...(k.hof && hofCache.has(k.hof) ? { hof: { id: k.hof, name: hofCache.get(k.hof).name } } : {}) })
+const oeffentlich = (k) => ({ id: k.id, name: k.name, version: k.version, nutzerVersion: k.nutzerVersion, namen: autorNamen(k), eintraege: k.eintraege, gruppen: (k.gruppen ?? []).map((g) => ({ id: g.id, name: g.name, farbe: g.farbe, reihenfolge: g.reihenfolge ?? [], von: g.von, erstellt: g.erstellt })), geaendert: k.geaendert, ...(k.weideplan ? { weideplan: k.weideplan } : {}), ...(k.pachtVersion ? { pachtVersion: k.pachtVersion } : {}), ...(k.hof && hofCache.has(k.hof) ? { hof: { id: k.hof, name: hofCache.get(k.hof).name } } : {}) })
 function senden(k) {
   const set = clients.get(k.id)
   if (!set) return
@@ -237,6 +239,8 @@ app.post('/api/karten', (req, res) => {
   }
   k.eintraege.forEach((e) => gruppeGueltig(k, e))
   if (req.body?.weideplan) WP.planErgaenzen(k, req.body.weideplan, new Set([admin.id]), jetzt)
+  k.eintraege.forEach((e) => FL.flaecheSauber(e))
+  pachtErgaenzen(k, req.body?.pacht, jetzt)
   cache.set(id, k)
   speichern(k)
   res.status(201).json({ ...oeffentlich(k), zugang: admin.zugang, ich: ichInfo(admin) })
@@ -247,7 +251,7 @@ app.get('/api/karten/:id', mitKarte(undefined, true), (req, res) => {
   if (k.geloescht && !darfLoeschen(k, n)) return res.status(410).json(GELOESCHT(k))
   const h = k.hof ? hofCache.get(k.hof) : null
   const m = h && n ? h.mitglieder.find((x) => x.id === n.id) : null
-  res.json({ ...oeffentlich(k), ich: ichInfo(n), darfBearbeiten: !!n && n.rolle !== 'ansehen' && !k.geloescht, ...(k.geloescht ? { geloescht: geloeschtInfo(k) } : {}), ...(n ? { darfLoeschen: darfLoeschen(k, n) } : {}), ...(h ? { hof: { id: h.id, name: h.name, ...(m ? { rolle: m.rolle } : {}) } } : {}) })
+  res.json({ ...oeffentlich(k), ...(istAdmin(n) && k.pacht ? { pacht: k.pacht } : {}), ich: ichInfo(n), darfBearbeiten: !!n && n.rolle !== 'ansehen' && !k.geloescht, ...(k.geloescht ? { geloescht: geloeschtInfo(k) } : {}), ...(n ? { darfLoeschen: darfLoeschen(k, n) } : {}), ...(h ? { hof: { id: h.id, name: h.name, ...(m ? { rolle: m.rolle } : {}) } } : {}) })
 })
 
 // ---- Gleichzeitige Änderungen (Offline-Modus) ----
@@ -256,7 +260,7 @@ app.get('/api/karten/:id', mitKarte(undefined, true), (req, res) => {
 // die andere Fassung wird als Notiz am Eintrag gesichert – so geht nichts still verloren.
 const TIER_WORT = { schaf: ['Schaf', 'Schafe'], bock: ['Bock', 'Böcke'], lamm: ['Lamm', 'Lämmer'] }
 // Inhalt für die Konflikt-Erkennung (Prüfungen des Weidezaungeräts nicht – die werden zusammengeführt)
-const inhalt = (e) => JSON.stringify([e.titel ?? '', e.farbe ?? '', e.herde ?? '', e.datum ?? '', e.tierlisteModus ?? '', e.position ?? null, e.punkte ?? null, (e.einheiten ?? []).map((x) => [x.art, x.anzahl]), e.linienArt ?? '', !!e.geschlossen, e.tore ?? null, e.infra ?? '', e.geraet ? { ...e.geraet, pruefungen: undefined, geprueft: undefined, kv: undefined, stand: undefined } : null])
+const inhalt = (e) => JSON.stringify([e.titel ?? '', e.farbe ?? '', e.herde ?? '', e.datum ?? '', e.tierlisteModus ?? '', e.position ?? null, e.punkte ?? null, (e.einheiten ?? []).map((x) => [x.art, x.anzahl]), e.linienArt ?? '', !!e.geschlossen, e.tore ?? null, e.infra ?? '', e.geraet ? { ...e.geraet, pruefungen: undefined, geprueft: undefined, kv: undefined, stand: undefined } : null, ...(e.steckbrief ? [{ ...e.steckbrief, fristen: (e.steckbrief.fristen ?? []).map((f) => ({ ...f, erledigt: undefined })) }] : [])])
 function fassungText(e) {
   const teile = [`Name „${e.titel || '(ohne Namen)'}“`]
   const tiere = TIERARTEN.map((t) => [t, (e.einheiten ?? []).filter((x) => x.art === t).reduce((a, x) => a + x.anzahl, 0)]).filter(([, n]) => n > 0).map(([t, n]) => `${n} ${TIER_WORT[t][n === 1 ? 0 : 1]}`)
@@ -268,6 +272,7 @@ function fassungText(e) {
   if (e.typ === 'flaeche' && Array.isArray(e.punkte)) teile.push(`${e.punkte.length} Eckpunkte`)
   if (e.typ === 'linie' && Array.isArray(e.punkte)) teile.push(`${IS.linienArt(e.linienArt).name}, ${e.punkte.length} Punkte, ${IS.laengeText(IS.linienLaenge(e))}`)
   if (e.infra) teile.push(IS.infraArt(e.infra)?.name ?? '')
+  if (e.steckbrief) teile.push([FL.flaechenArt(e.steckbrief.art)?.name, e.steckbrief.besitz === 'pacht' ? 'Pacht' : e.steckbrief.besitz === 'eigentum' ? 'Eigentum' : '', e.steckbrief.flik ? `FLIK ${e.steckbrief.flik}` : '', e.steckbrief.fristen?.length ? `${e.steckbrief.fristen.length} Fristen` : ''].filter(Boolean).join(', '))
   return teile.join(' · ')
 }
 const nutzerName = (k, id) => k.nutzer.find((n) => n.id === id)?.name
@@ -285,8 +290,11 @@ app.put('/api/karten/:id/eintraege/:eid', mitKarte('nutzer'), (req, res) => {
     // Alte App-Versionen kennen Weide-Technik nicht -> Art/Gerätedaten behalten, wenn das Feld fehlt
     const alt0 = k.eintraege.find((x) => x.id === e.id)
     if (alt0?.infra && body.typ === 'pin' && !('infra' in body)) { e.infra = alt0.infra; if (alt0.geraet) e.geraet = alt0.geraet }
-    const f = IS.eintragSauber(e)
+    // … und keinen Flächen-Steckbrief -> behalten
+    if (alt0?.steckbrief && body.typ === 'flaeche' && !('steckbrief' in body)) e.steckbrief = alt0.steckbrief
+    const f = IS.eintragSauber(e) || FL.flaecheSauber(e)
     if (f) return res.status(400).json({ fehler: f })
+    FL.erledigtUebernehmen(e, alt0)
     // Prüfungen: bekannte bleiben so, wie der Server sie hat (Autor nicht fälschbar), neue bekommen den Absender als Autor,
     // Prüfungen anderer Geräte werden nie überschrieben (zusammenführen, neueste zählt)
     if (e.infra === 'geraet') {
@@ -351,6 +359,7 @@ app.delete('/api/karten/:id/eintraege/:eid', mitKarte('nutzer'), (req, res) => {
     return res.status(409).json({ fehler: 'Inzwischen geändert – nicht gelöscht', konflikt: { art: 'nicht-geloescht', titel: e.titel || '', mit: nutzerName(k, e.geaendertVon) } })
   }
   k.eintraege = k.eintraege.filter((x) => x.id !== req.params.eid)
+  pachtEntfernen(k, req.params.eid)
   speichern(k)
   res.json({ ok: true, version: k.version })
 })
@@ -359,7 +368,8 @@ app.delete('/api/karten/:id/eintraege/:eid', mitKarte('nutzer'), (req, res) => {
 app.put('/api/karten/:id/eintraege', mitKarte('admin'), (req, res) => {
   const k = req.karte
   if (!Array.isArray(req.body)) return res.status(400).json({ fehler: 'Liste erwartet' })
-  k.eintraege = req.body.map((e) => gruppeGueltig(k, { erstelltVon: req.nutzer.id, ...migrieren(e) })).filter((e) => !IS.eintragSauber(e))
+  k.eintraege = req.body.map((e) => gruppeGueltig(k, { erstelltVon: req.nutzer.id, ...migrieren(e) })).filter((e) => !IS.eintragSauber(e) && !FL.flaecheSauber(e))
+  for (const id of Object.keys(k.pacht ?? {})) if (!k.eintraege.some((e) => e.id === id && e.typ === 'flaeche')) pachtEntfernen(k, id)
   speichern(k)
   res.json({ ok: true, version: k.version })
 })
@@ -394,8 +404,9 @@ app.post('/api/karten/:id/stapel', mitKarte('admin'), (req, res) => {
     if (r.typ === 'flaeche' && !(Array.isArray(r.punkte) && r.punkte.length >= 3 && r.punkte.every((p) => p && Number.isFinite(p.lat) && Number.isFinite(p.lng)))) { ungueltig++; continue }
     if (vorhanden.has(r.id)) { schon++; continue }
     const e = migrieren(r)
-    if (IS.eintragSauber(e)) { ungueltig++; continue }
+    if (IS.eintragSauber(e) || FL.flaecheSauber(e)) { ungueltig++; continue }
     for (const p of e.geraet?.pruefungen ?? []) if (p.autorId && !nutzerIds.has(p.autorId)) delete p.autorId
+    for (const f of e.steckbrief?.fristen ?? []) if (f.erledigt?.autorId && !nutzerIds.has(f.erledigt.autorId)) delete f.erledigt.autorId
     // Notizen behalten ihren Autor-Namen (z. B. aus einer Sicherung); Nutzer-ID nur, wenn es die Person auf dieser Karte gibt
     e.notizen = e.notizen.filter(notizOk).slice(0, 500).map((n) => ({ id: n.id, text: n.text.slice(0, 5000), zeitpunkt: n.zeitpunkt, ...(typeof n.autor === 'string' && n.autor ? { autor: n.autor.slice(0, 60) } : {}), ...(n.autorId && nutzerIds.has(n.autorId) ? { autorId: n.autorId } : {}) }))
     e.titel = typeof e.titel === 'string' ? e.titel.slice(0, 200) : ''
@@ -416,8 +427,9 @@ app.post('/api/karten/:id/stapel', mitKarte('admin'), (req, res) => {
     g.reihenfolge = [...(g.reihenfolge ?? []), ...dazu]
   }
   const planNeu = req.body?.weideplan ? WP.planErgaenzen(k, req.body.weideplan, nutzerIds, jetzt).neu : 0
-  if (neu || gruppenNeu || planNeu) speichern(k)
-  res.json({ ok: true, version: k.version, neu, schon, ungueltig, gruppenNeu, planNeu })
+  const pachtNeu = pachtErgaenzen(k, req.body?.pacht, jetzt)
+  if (neu || gruppenNeu || planNeu || pachtNeu) speichern(k)
+  res.json({ ok: true, version: k.version, neu, schon, ungueltig, gruppenNeu, planNeu, pachtNeu })
 })
 
 // ---- Weideplan (Belegungen, Umtriebe, Ruhezeiten) – Logik gemeinsam mit der App in server/weideplan.js ----
@@ -489,6 +501,66 @@ app.post('/api/karten/:id/eintraege/:eid/geprueft', mitKarte('nutzer'), (req, re
   k.eintraege[i] = IS.pruefungEintragen(alt, { id: b.id, datum: b.datum, kv: b.kv, stand: b.stand, autor: ich.name, autorId: ich.id, zeitpunkt: new Date().toISOString() })
   speichern(k)
   res.json({ ok: true, version: k.version })
+})
+
+// ---- Flächen: Fristen erledigt (alle mit Schreibrecht, z. B. Mitarbeiter hat gemäht) ----
+app.post('/api/karten/:id/eintraege/:eid/fristen/:fid/erledigt', mitKarte('nutzer'), (req, res) => {
+  const k = req.karte, ich = req.nutzer
+  const e = k.eintraege.find((x) => x.id === req.params.eid && x.typ === 'flaeche')
+  const f = e?.steckbrief?.fristen?.find((x) => x.id === req.params.fid)
+  if (!f) return res.status(409).json({ fehler: 'Frist gibt es nicht mehr', konflikt: { art: 'frist-weg', titel: e?.titel || '' } })
+  const datum = req.body?.datum
+  if (datum === null) { if (!f.erledigt) return res.json({ ok: true, version: k.version }); delete f.erledigt }
+  else {
+    if (!WP.tagOk(datum)) return res.status(400).json({ fehler: 'Ungültiges Datum' })
+    if (f.erledigt && f.erledigt.datum >= datum) return res.json({ ok: true, version: k.version }) // schon erledigt (z. B. doppelt gesendet)
+    f.erledigt = { datum, am: new Date().toISOString(), autor: ich.name, autorId: ich.id }
+  }
+  speichern(k)
+  res.json({ ok: true, version: k.version })
+})
+
+// ---- Pacht (Verpächter, Preis, Laufzeit, Kündigung): vertraulich, NUR Admin/Inhaber – nie im öffentlichen Stand/Live-Stream ----
+// Versions-Stempel statt Zähler: darf beim Leeren ganz verschwinden, ohne dass ein späterer Wert mit einem alten verwechselt wird
+const pachtStempel = (k) => { k.pachtVersion = Math.max(Date.now(), (k.pachtVersion ?? 0) + 1) }
+function pachtEntfernen(k, id) {
+  if (!k.pacht?.[id]) return
+  delete k.pacht[id]
+  if (!Object.keys(k.pacht).length) { delete k.pacht; delete k.pachtVersion } else pachtStempel(k)
+}
+function pachtErgaenzen(k, roh, jetzt) {
+  if (!roh || typeof roh !== 'object' || Array.isArray(roh)) return 0
+  let n = 0
+  for (const [id, p] of Object.entries(roh).slice(0, 3000)) {
+    if (!k.eintraege.some((e) => e.id === id && e.typ === 'flaeche') || k.pacht?.[id]) continue
+    const s = FL.pachtSauber(p)
+    if (!s) continue
+    k.pacht ??= {}
+    k.pacht[id] = { ...s, geaendert: s.geaendert ?? jetzt }
+    n++
+  }
+  if (n) pachtStempel(k)
+  return n
+}
+app.get('/api/karten/:id/pacht', mitKarte('admin'), (req, res) => res.json({ pacht: req.karte.pacht ?? {}, pachtVersion: req.karte.pachtVersion ?? 0 }))
+app.put('/api/karten/:id/pacht/:fid', mitKarte('admin'), (req, res) => {
+  const k = req.karte, fid = req.params.fid
+  const e = k.eintraege.find((x) => x.id === fid && x.typ === 'flaeche')
+  if (!e) return res.status(409).json({ fehler: 'Fläche gibt es nicht mehr', konflikt: { art: 'pacht-weg', titel: '' } })
+  const neu = FL.pachtSauber({ ...(req.body?.pacht ?? {}), geaendert: req.body?.pacht?.geaendert ?? new Date().toISOString() })
+  const alt = k.pacht?.[fid] ?? null
+  const basis = typeof req.body?.basisGeaendert === 'string' ? req.body.basisGeaendert : null
+  let konflikt = null
+  // Gleichzeitig (offline) von zwei Admins geändert: neuere Fassung gilt
+  if (alt && alt.geaendert !== basis && !FL.pachtGleich(alt, neu)) {
+    const clientNeuer = (Date.parse(neu?.geaendert ?? '') || Date.now()) >= (Date.parse(alt.geaendert ?? '') || 0)
+    konflikt = { art: 'pacht-geaendert', titel: e.titel || '', gewonnen: clientNeuer }
+    if (!clientNeuer) return res.json({ ok: true, version: k.version, konflikt })
+  }
+  if (!neu) pachtEntfernen(k, fid)
+  else { k.pacht ??= {}; k.pacht[fid] = neu; pachtStempel(k) }
+  speichern(k)
+  res.json({ ok: true, version: k.version, ...(konflikt ? { konflikt } : {}) })
 })
 
 // Notiz anlegen/ändern (per Notiz-ID zusammengeführt -> gleichzeitige Notizen gehen nicht verloren)
@@ -1092,6 +1164,7 @@ function personAnonymisieren(k, id, name) {
   }
   for (const g of k.gruppen ?? []) if (g.von === id) delete g.von
   for (const e of k.eintraege) for (const p of e.geraet?.pruefungen ?? []) if (p.autorId === id) { p.autor = EHEMALIG; delete p.autorId }
+  for (const e of k.eintraege) for (const f of e.steckbrief?.fristen ?? []) if (f.erledigt?.autorId === id) { f.erledigt.autor = EHEMALIG; delete f.erledigt.autorId }
   if (k.einladung?.von === id) delete k.einladung.von
   WP.planAnonymisieren(k, id, EHEMALIG)
 }
@@ -1102,12 +1175,13 @@ app.get('/api/karten/:id/ich/daten', mitKarte('angemeldet', true), (req, res) =>
   const h = hofVon(k)
   const m = h?.mitglieder.find((x) => x.id === n.id)
   const karten = h ? h.karten.map((id) => cache.get(id)).filter(Boolean) : [k]
-  const eintraege = [], notizen = [], gruppen = [], umtriebe = [], pruefungen = []
+  const eintraege = [], notizen = [], gruppen = [], umtriebe = [], pruefungen = [], fristen = []
   for (const kk of karten) {
     for (const e of kk.eintraege) {
       if (e.erstelltVon === n.id) eintraege.push({ karte: kk.name, id: e.id, titel: e.titel || '', typ: e.typ, erstellt: e.erstellt })
       for (const x of e.notizen ?? []) if (x.autorId === n.id) notizen.push({ karte: kk.name, eintrag: e.titel || '', text: x.text, zeitpunkt: x.zeitpunkt })
       for (const x of e.geraet?.pruefungen ?? []) if (x.autorId === n.id) pruefungen.push({ karte: kk.name, geraet: e.titel || '', datum: x.datum, kv: x.kv ?? null, stand: x.stand ?? null })
+      for (const x of e.steckbrief?.fristen ?? []) if (x.erledigt?.autorId === n.id) fristen.push({ karte: kk.name, flaeche: e.titel || '', frist: FL.fristArt(x.art).name, termin: x.erledigt.datum, am: x.erledigt.am ?? null })
     }
     for (const g of kk.gruppen ?? []) if (g.von === n.id) gruppen.push({ karte: kk.name, name: g.name })
     for (const b of kk.weideplan?.bewegungen ?? []) if (b.autorId === n.id) umtriebe.push({ karte: kk.name, art: b.art, datum: b.datum, herde: b.herdeName, von: b.von?.name ?? null, nach: b.nach?.name ?? null })
@@ -1118,7 +1192,7 @@ app.get('/api/karten/:id/ich/daten', mitKarte('angemeldet', true), (req, res) =>
     hof: h ? { name: h.name, rolle: m?.rolle ?? null, pinEingerichtet: !!m?.pin, perEinladung: !!m?.perEinladung, karten: karten.map((x) => x.name) } : null,
     karte: { name: k.name },
     zugang: 'Dein persönlicher Link (Zugangsschlüssel) ist gespeichert, wird hier aber nicht angezeigt.',
-    eintraege, notizen, gruppen, umtriebe, pruefungen,
+    eintraege, notizen, gruppen, umtriebe, pruefungen, fristen,
     technisch: 'IP-Adressen werden nur kurzzeitig (höchstens 1 Stunde, nur im Arbeitsspeicher) für den Schutz vor Missbrauch gezählt. Der Hoster speichert Zugriffsprotokolle (siehe Datenschutzerklärung).',
   })
 })

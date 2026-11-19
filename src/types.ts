@@ -1,4 +1,5 @@
 import { linienArt, punktBei, gesamtLaenge, type LinienArt, type InfraArt, type Geraet, type Tor } from '../server/infrastruktur.js'
+import { messen, type Steckbrief } from '../server/flaechen.js'
 export type LatLng = { lat: number; lng: number }
 
 // Ein Tagebuch-Eintrag (Notiz) an einer Nadel oder Fläche
@@ -67,6 +68,7 @@ export const farbName = (f: string) => FLAECHEN_FARBEN.find((x) => x.wert === f.
 export interface Flaeche extends Basis {
   typ: 'flaeche'
   punkte: LatLng[]
+  steckbrief?: Steckbrief // Flächenart, Eigentum/Pacht, FLIK/Schlag, Förderprogramme + Fristen (Pacht-Details: vertraulich, getrennt)
 }
 export type Eintrag = Pin | Flaeche | Linie
 
@@ -153,18 +155,8 @@ export function datum(iso: string) {
   return new Date(iso).toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' })
 }
 
-// Fläche in Hektar (sphärische Näherung)
-export function hektar(punkte: LatLng[]) {
-  if (punkte.length < 3) return 0
-  const R = 6378137
-  const rad = (d: number) => (d * Math.PI) / 180
-  let s = 0
-  for (let i = 0; i < punkte.length; i++) {
-    const a = punkte[i], b = punkte[(i + 1) % punkte.length]
-    s += rad(b.lng - a.lng) * (2 + Math.sin(rad(a.lat)) + Math.sin(rad(b.lat)))
-  }
-  return Math.abs((s * R * R) / 2) / 10000
-}
+// Fläche in Hektar (WGS84-Ellipsoid, siehe server/flaechen.js)
+export const hektar = (punkte: LatLng[]) => (punkte.length < 3 ? 0 : messen(punkte).ha)
 
 // ---- Tierart / Symbol zur Tierzahl ----
 export type Tierart = 'schaf' | 'bock' | 'lamm'

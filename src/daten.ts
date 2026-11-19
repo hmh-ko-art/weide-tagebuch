@@ -4,6 +4,8 @@ import { lesen, schreiben, schreibenJetzt, entfernen } from './speicher'
 import * as WP from '../server/weideplan.js'
 import * as IS from '../server/infrastruktur.js'
 import type { Pruefung } from '../server/infrastruktur.js'
+import * as FL from '../server/flaechen.js'
+import type { Pacht, PachtListe } from '../server/flaechen.js'
 import type { Weideplan, Herde, Belegung, UmtriebOp } from '../server/weideplan.js'
 
 // Geteilte Karte: ?karte=ID (ansehen) bzw. ?karte=ID&zugang=KEY (persönlicher Zugang; alt: &schluessel=KEY).
@@ -47,7 +49,10 @@ type Ausstehend =
   // Weidezaungerät geprüft (ein Tipp; auch an fremden Geräten erlaubt)
   | { art: 'geprueft'; eintragId: string; pruefung: Pruefung }
   // Import/Wiederherstellen: viele Einträge + Gruppen in EINER Änderung (nur Neues wird ergänzt, Vorhandenes bleibt unverändert)
-  | { art: 'stapel'; eintraege: Eintrag[]; gruppen: Gruppe[]; weideplan?: Weideplan }
+  | { art: 'stapel'; eintraege: Eintrag[]; gruppen: Gruppe[]; weideplan?: Weideplan; pacht?: PachtListe }
+  // Flächen: Frist erledigt (alle mit Schreibrecht) bzw. Pacht (nur Admin/Inhaber; vertraulich)
+  | { art: 'frist-erledigt'; eintragId: string; fristId: string; datum: string | null; autor?: string; autorId?: string }
+  | { art: 'pacht'; id: string; pacht: Pacht | null; basisGeaendert?: string }
   // Weideplan (gemeinsame Logik mit dem Server: server/weideplan.js)
   | { art: 'plan-herde'; herde: Pick<Herde, 'id' | 'name'> & { farbe?: string } }
   | { art: 'plan-herde-delete'; id: string }
@@ -91,7 +96,7 @@ function anwenden(liste: Eintrag[], a: Ausstehend): Eintrag[] {
       const neu = migrieren(a.eintrag)
       // Notizen nie über das Eintragsformular überschreiben – nur über Notiz-Aktionen
       // Gruppe ebenso nur über „zuordnen“ ändern (der Server macht es genauso)
-      const e = alt ? { ...neu, notizen: alt.notizen, gruppe: alt.gruppe } : neu
+      const e = alt ? FL.erledigtUebernehmen({ ...neu, notizen: alt.notizen, gruppe: alt.gruppe }, alt) : neu
       return alt ? liste.map((x) => (x.id === e.id ? e : x)) : [...liste, e]
     }
     case 'delete':
@@ -102,6 +107,8 @@ function anwenden(liste: Eintrag[], a: Ausstehend): Eintrag[] {
       return liste.map((x) => (x.id === a.eintragId ? { ...x, notizen: x.notizen.filter((n) => n.id !== a.notizId) } : x))
     case 'geprueft':
       return liste.map((x) => (x.id === a.eintragId ? IS.pruefungEintragen(x, a.pruefung) : x))
+    case 'frist-erledigt':
+      return liste.map((x) => (x.id === a.eintragId && x.typ === 'flaeche' && x.steckbrief?.fristen ? { ...x, steckbrief: { ...x.steckbrief, fristen: x.steckbrief.fristen.map((f) => (f.id !== a.fristId ? f : a.datum === null ? { ...f, erledigt: undefined } : { ...f, erledigt: { datum: a.datum, am: new Date().toISOString(), ...(a.autor ? { autor: a.autor } : {}), ...(a.autorId ? { autorId: a.autorId } : {}) } })) } } : x))
     case 'gruppe-put':
     case 'reihenfolge':
       return liste
@@ -116,6 +123,13 @@ function anwenden(liste: Eintrag[], a: Ausstehend): Eintrag[] {
     default:
       return liste // Weideplan-Änderungen: siehe planAnwenden
   }
+}
+// Pacht-Änderung anwenden (Overlay über den Serverstand)
+function pachtAnwenden(pacht: PachtListe, a: Ausstehend, liste: Eintrag[]): PachtListe {
+  if (a.art === 'pacht') { const n = { ...pacht }; if (a.pacht) n[a.id] = a.pacht; else delete n[a.id]; return n }
+  if (a.art === 'delete' && pacht[a.id]) { const n = { ...pacht }; delete n[a.id]; return n }
+  if (a.art === 'stapel' && a.pacht) { const n = { ...pacht }; for (const [id, x] of Object.entries(a.pacht)) if (!n[id] && liste.some((e) => e.id === id)) n[id] = x; return n }
+  return pacht
 }
 function gruppenAnwenden(gruppen: Gruppe[], a: Ausstehend): Gruppe[] {
   if (a.art === 'gruppe-put') {
@@ -161,6 +175,7 @@ const ausgangKey = (id: string) => `wt-ausgang-${id}`
 const gruppenKey = (id: string | null) => (id ? `wt-gruppen-${id}` : 'wt-lokal-gruppen')
 const metaKey = (id: string) => `wt-meta-${id}`
 const planKey = (id: string | null) => (id ? `wt-plan-${id}` : 'wt-lokal-plan')
+const pachtKey = (id: string | null) => (id ? `wt-pacht-${id}` : 'wt-lokal-pacht')
 interface Meta { name?: string; ich?: Ich | null; hof?: HofKurz | null; sync?: string }
 function queueLaden(id: string): Ausstehend[] {
   try { const v = localStorage.getItem(queueKey(id)); if (v) return JSON.parse(v) } catch { /* kaputt */ }
@@ -172,7 +187,7 @@ async function mitZeitlimit(url: string, init: RequestInit, ms = 15000) {
   const t = setTimeout(() => ac.abort(), ms)
   try { return await fetch(url, { ...init, signal: ac.signal }) } finally { clearTimeout(t) }
 }
-export interface Konflikt { art: 'geaendert' | 'wiederhergestellt' | 'nicht-geloescht' | 'plan-geaendert' | 'umtrieb-doppelt' | 'umtrieb-weg' | 'umtrieb-zurueck' | 'geprueft-weg'; titel: string; mit?: string; gewonnen?: boolean }
+export interface Konflikt { art: 'geaendert' | 'wiederhergestellt' | 'nicht-geloescht' | 'plan-geaendert' | 'umtrieb-doppelt' | 'umtrieb-weg' | 'umtrieb-zurueck' | 'geprueft-weg' | 'frist-weg' | 'pacht-weg' | 'pacht-geaendert'; titel: string; mit?: string; gewonnen?: boolean }
 export function konfliktText(k: Konflikt): string {
   const wer = k.mit ? k.mit : 'jemand anderes'
   const t = k.titel ? `„${k.titel}“` : 'Ein Eintrag'
@@ -180,6 +195,9 @@ export function konfliktText(k: Konflikt): string {
   if (k.art === 'umtrieb-weg') return 'Ein Umtrieb wurde nicht gespeichert, weil die Belegung inzwischen gelöscht wurde.'
   if (k.art === 'umtrieb-zurueck') return `Umtrieb von „${k.titel}“ kann nicht mehr rückgängig gemacht werden – die Herde wurde inzwischen weiter umgetrieben.`
   if (k.art === 'plan-geaendert') return k.gewonnen ? `Weideplan „${k.titel}“: ${wer} hatte gleichzeitig geändert – deine Fassung ist neuer und gilt.` : `Weideplan „${k.titel}“: ${wer} hat später geändert – diese Fassung gilt, deine Änderung wurde verworfen.`
+  if (k.art === 'frist-weg') return `Eine Frist${k.titel ? ` an „${k.titel}“` : ''} wurde nicht als erledigt gespeichert, weil es sie inzwischen nicht mehr gibt.`
+  if (k.art === 'pacht-weg') return 'Pachtdaten wurden nicht gespeichert, weil die Fläche inzwischen gelöscht wurde.'
+  if (k.art === 'pacht-geaendert') return k.gewonnen ? `Pacht „${k.titel}“: wurde gleichzeitig auf einem anderen Gerät geändert – deine Fassung ist neuer und gilt.` : `Pacht „${k.titel}“: wurde auf einem anderen Gerät später geändert – diese Fassung gilt, deine Änderung wurde verworfen.`
   if (k.art === 'geprueft-weg') return 'Eine Geräte-Prüfung wurde nicht gespeichert, weil das Weidezaungerät inzwischen gelöscht wurde.'
   if (k.art === 'nicht-geloescht') return `${t} wurde nicht gelöscht, weil ${wer} den Eintrag inzwischen geändert hat.`
   if (k.art === 'wiederhergestellt') return `${t} war inzwischen gelöscht worden – deine Änderung hat den Eintrag wiederhergestellt.`
@@ -193,7 +211,7 @@ export interface Geloescht { am: string; bis: string; hof?: boolean }
 // Alles, was dieses Gerät zu einer Karte gespeichert hat, entfernen (Zugang, Kopie, Postausgang)
 export async function geraetVergessen(id: string) {
   for (const key of [zugangKey(id), queueKey(id)]) localStorage.removeItem(key)
-  for (const key of [cacheKey(id), gruppenKey(id), metaKey(id), ausgangKey(id), planKey(id)]) entfernen(key)
+  for (const key of [cacheKey(id), gruppenKey(id), metaKey(id), ausgangKey(id), planKey(id), pachtKey(id)]) entfernen(key)
   await schreibenJetzt()
 }
 
@@ -203,6 +221,10 @@ export function useKarte() {
   const [eintraege, setEintraege] = useState<Eintrag[]>(() => lesen<Eintrag[]>(cacheKey(karteId), []).map(migrieren))
   const [gruppen, setGruppen] = useState<Gruppe[]>(() => lesen<Gruppe[]>(gruppenKey(karteId), []))
   const [weideplan, setWeideplan] = useState<Weideplan | null>(() => lesen<Weideplan | null>(planKey(karteId), null))
+  // Pacht (Verpächter, Preise, Laufzeiten): nur Admin/Inhaber bekommen sie vom Server; lokale Karte: immer
+  const [pacht, setPacht] = useState<PachtListe>(() => lesen<PachtListe>(pachtKey(karteId), {}))
+  const pachtVersion = useRef<number | null>(null)
+  const pachtHolenRef = useRef<() => void>(() => {})
   const [status, setStatus] = useState<SyncStatus>(karteId ? (navigator.onLine === false ? 'offline' : 'verbinde') : 'lokal')
   // Name/Rolle vom letzten Kontakt mit dem Server: so kann man auch nach einem Neustart ohne Netz weiterarbeiten
   const [ich, setIch] = useState<Ich | null>(zugang ? meta0.ich ?? null : null)
@@ -223,6 +245,8 @@ export function useKarte() {
   eintraegeRef.current = eintraege
   const planRef = useRef(weideplan)
   planRef.current = weideplan
+  const pachtRef = useRef(pacht)
+  pachtRef.current = pacht
   // Wer ändert? (für das Umtriebs-Protokoll; lokale Karte: Name aus den Einstellungen)
   const ichRef = useRef<{ id?: string; name?: string } | null>(null)
   ichRef.current = karteId ? ich : { name: localStorage.getItem('wt-autor') || '' }
@@ -257,6 +281,13 @@ export function useKarte() {
         setGruppen(gl)
         setWeideplan(plan)
       }
+      // Pacht nur für Admins/Inhaber (sonst auch die Kopie auf dem Gerät leeren, z. B. nach Rollenwechsel)
+      if (k.ich?.rolle === 'admin') {
+        pachtVersion.current = k.pachtVersion ?? 0
+        let pa: PachtListe = k.pacht ?? {}
+        for (const a of queue.current) pa = pachtAnwenden(pa, a, eintraegeRef.current)
+        setPacht(pa)
+      } else { pachtVersion.current = null; setPacht({}) }
     } catch { /* offline */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [karteId, zugang])
@@ -265,6 +296,7 @@ export function useKarte() {
   useEffect(() => { schreiben(cacheKey(karteId), eintraege) }, [eintraege, karteId])
   useEffect(() => { schreiben(gruppenKey(karteId), gruppen) }, [gruppen, karteId])
   useEffect(() => { schreiben(planKey(karteId), weideplan) }, [weideplan, karteId])
+  useEffect(() => { schreiben(pachtKey(karteId), pacht) }, [pacht, karteId])
 
   const queueSpeichern = () => {
     if (!karteId) return
@@ -292,7 +324,9 @@ export function useKarte() {
       : a.art === 'gruppe-put' ? [`/api/karten/${karteId}/gruppen/${a.gruppe.id}`, 'PUT', { name: a.gruppe.name, ...(a.gruppe.farbe ? { farbe: a.gruppe.farbe } : {}) }]
       : a.art === 'reihenfolge' ? [`/api/karten/${karteId}/gruppen/${a.gruppe}/reihenfolge`, 'PUT', { ids: a.ids }]
       : a.art === 'gruppe-delete' ? [`/api/karten/${karteId}/gruppen/${a.id}`, 'DELETE', undefined]
-      : a.art === 'stapel' ? [`/api/karten/${karteId}/stapel`, 'POST', { eintraege: a.eintraege, gruppen: a.gruppen, ...(a.weideplan ? { weideplan: a.weideplan } : {}) }]
+      : a.art === 'stapel' ? [`/api/karten/${karteId}/stapel`, 'POST', { eintraege: a.eintraege, gruppen: a.gruppen, ...(a.weideplan ? { weideplan: a.weideplan } : {}), ...(a.pacht ? { pacht: a.pacht } : {}) }]
+      : a.art === 'frist-erledigt' ? [`${basis}${a.eintragId}/fristen/${a.fristId}/erledigt`, 'POST', { datum: a.datum }]
+      : a.art === 'pacht' ? [`/api/karten/${karteId}/pacht/${a.id}`, 'PUT', { pacht: a.pacht, ...(a.basisGeaendert ? { basisGeaendert: a.basisGeaendert } : {}) }]
       : a.art === 'plan-herde' ? [`${wp}/herden/${a.herde.id}`, 'PUT', a.herde]
       : a.art === 'plan-herde-delete' ? [`${wp}/herden/${a.id}`, 'DELETE', undefined]
       : a.art === 'plan-belegung' ? [`${wp}/belegungen/${a.belegung.id}`, 'PUT', { belegung: a.belegung, ...(a.basisGeaendert ? { basisGeaendert: a.basisGeaendert } : {}) }]
@@ -313,6 +347,8 @@ export function useKarte() {
     if (r.status === 403 || r.status === 404) throw Object.assign(new Error('Nur Lesezugriff'), { endgueltig: true })
     if (!r.ok) throw new Error('Serverfehler ' + r.status)
     if (j.konflikt) konfliktMelden(j.konflikt as Konflikt)
+    // Pacht-Konflikt verloren: Serverfassung holen (sonst bliebe die verworfene lokale Fassung stehen)
+    if (a.art === 'pacht' && j.konflikt && !j.konflikt.gewonnen) setTimeout(() => pachtHolenRef.current(), 0)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [karteId, zugang])
 
@@ -342,6 +378,22 @@ export function useKarte() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [senden, ichLaden])
 
+  const pachtHolen = useCallback(async () => {
+    if (!karteId || !zugang) return
+    try {
+      const r = await mitZeitlimit(`/api/karten/${karteId}/pacht`, { headers })
+      if (r.status === 403) { setPacht({}); return }
+      if (!r.ok) return
+      const j = await r.json()
+      pachtVersion.current = j.pachtVersion ?? 0
+      let pa: PachtListe = j.pacht ?? {}
+      for (const a of queue.current) pa = pachtAnwenden(pa, a, eintraegeRef.current)
+      setPacht(pa)
+    } catch { /* offline */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [karteId, zugang])
+  useEffect(() => { pachtHolenRef.current = pachtHolen }, [pachtHolen])
+
   // Live-Verbindung (SSE) zum Server
   useEffect(() => {
     if (!karteId) return
@@ -363,6 +415,8 @@ export function useKarte() {
       setEintraege(liste)
       setGruppen(gl)
       setWeideplan(plan)
+      // Pacht kommt nie über den (öffentlichen) Live-Stream – nur der Zähler; Admins holen den neuen Stand mit ihrem Zugang
+      if (pachtVersion.current !== null && (k.pachtVersion ?? 0) !== pachtVersion.current) pachtHolen()
       if (queue.current.length) queueAbarbeiten()
     })
     // Verbindung endgültig abgelehnt (z. B. Karte gelöscht) -> Stand vom Server holen
@@ -382,12 +436,16 @@ export function useKarte() {
       const r = planAnwenden(anwenden(eintraegeRef.current, a), planRef.current, a, ichRef.current)
       eintraegeRef.current = r.liste; planRef.current = r.plan
       setEintraege(r.liste); setWeideplan(r.plan)
-      if (a.art === 'stapel') setGruppen((g) => gruppenAnwenden(g, a))
+      if (a.art === 'stapel') { setGruppen((g) => gruppenAnwenden(g, a)); const pa = pachtAnwenden(pachtRef.current, a, r.liste); pachtRef.current = pa; setPacht(pa) }
       if (karteId) { queue.current.push(a); queueSpeichern(); queueAbarbeiten() }
       return
     }
-    setEintraege((l) => anwenden(l, a))
+    const liste = anwenden(eintraegeRef.current, a)
+    eintraegeRef.current = liste
+    setEintraege(liste)
     setGruppen((g) => gruppenAnwenden(g, a))
+    const pa = pachtAnwenden(pachtRef.current, a, liste)
+    if (pa !== pachtRef.current) { pachtRef.current = pa; setPacht(pa) }
     if (karteId) { queue.current.push(a); queueSpeichern(); queueAbarbeiten() }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [karteId, queueAbarbeiten])
@@ -408,16 +466,28 @@ export function useKarte() {
     ausfuehren({ art: 'geprueft', eintragId, pruefung: { ...p, id: Date.now().toString(36) + Math.random().toString(36).slice(2, 8), zeitpunkt: new Date().toISOString(), ...(ich?.name ? { autor: ich.name } : {}), ...(ich?.id ? { autorId: ich.id } : {}) } })
   }, [ausfuehren])
 
+  // Frist erledigt / wieder offen (datum = Termin, der erledigt ist)
+  const fristErledigt = useCallback((eintragId: string, fristId: string, datum: string | null) => {
+    const ich = ichRef.current
+    ausfuehren({ art: 'frist-erledigt', eintragId, fristId, datum, ...(ich?.name ? { autor: ich.name } : {}), ...(ich?.id ? { autorId: ich.id } : {}) })
+  }, [ausfuehren])
+  // Pacht einer Fläche speichern (null = löschen); nur Admin/Inhaber
+  const pachtSpeichern = useCallback((id: string, p: Pacht | null) => {
+    const alt = pachtRef.current[id]
+    const neu = p ? FL.pachtSauber({ ...p, geaendert: new Date().toISOString() }) : null
+    ausfuehren({ art: 'pacht', id, pacht: neu, ...(alt?.geaendert ? { basisGeaendert: alt.geaendert } : {}) })
+  }, [ausfuehren])
+
   // Eigene Gruppen: anlegen/umbenennen, löschen (Nadeln bleiben, werden ungruppiert), Nadeln zuordnen
   const gruppeSpeichern = useCallback((g: Gruppe) => ausfuehren({ art: 'gruppe-put', gruppe: g }), [ausfuehren])
   const gruppeLoeschen = useCallback((id: string) => ausfuehren({ art: 'gruppe-delete', id }), [ausfuehren])
   const reihenfolge = useCallback((gruppe: string, ids: string[]) => ausfuehren({ art: 'reihenfolge', gruppe, ids }), [ausfuehren])
   const zuordnen = useCallback((gruppe: string | null, ids: string[]) => { if (ids.length) ausfuehren({ art: 'zuordnen', gruppe, ids }) }, [ausfuehren])
   // Import/Wiederherstellen (Admin): ergänzt nur fehlende Einträge/Gruppen – geht offline in den Postausgang
-  const stapel = useCallback((eintraege: Eintrag[], gruppen: Gruppe[], plan?: Weideplan) => { if (eintraege.length || gruppen.length || plan) ausfuehren({ art: 'stapel', eintraege, gruppen, ...(plan ? { weideplan: plan } : {}) }) }, [ausfuehren])
+  const stapel = useCallback((eintraege: Eintrag[], gruppen: Gruppe[], plan?: Weideplan, pa?: PachtListe) => { const mitPacht = pa && Object.keys(pa).length ? pa : undefined; if (eintraege.length || gruppen.length || plan || mitPacht) ausfuehren({ art: 'stapel', eintraege, gruppen, ...(plan ? { weideplan: plan } : {}), ...(mitPacht ? { pacht: mitPacht } : {}) }) }, [ausfuehren])
   // Sicherung als NEUE geteilte Karte anlegen (braucht Netz); danach wird die neue Karte geöffnet
-  const alsNeueKarte = useCallback(async (name: string, eintraege: Eintrag[], gruppen: Gruppe[], plan?: Weideplan) => {
-    const r = await fetch('/api/karten', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, eintraege, gruppen, ...(plan ? { weideplan: plan } : {}), ...(ich?.name ? { adminName: ich.name } : {}) }) })
+  const alsNeueKarte = useCallback(async (name: string, eintraege: Eintrag[], gruppen: Gruppe[], plan?: Weideplan, pa?: PachtListe) => {
+    const r = await fetch('/api/karten', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, eintraege, gruppen, ...(plan ? { weideplan: plan } : {}), ...(pa && Object.keys(pa).length ? { pacht: pa } : {}), ...(ich?.name ? { adminName: ich.name } : {}) }) })
     if (!r.ok) throw new Error('Server nicht erreichbar – zum Anlegen einer neuen Karte wird Netz gebraucht')
     const k = await r.json()
     localStorage.setItem(zugangKey(k.id), k.zugang)
@@ -434,16 +504,17 @@ export function useKarte() {
 
   // Lokale Karte in eine geteilte Server-Karte umwandeln
   const teilen = useCallback(async (name: string) => {
-    const r = await fetch('/api/karten', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, eintraege, gruppen, ...(weideplan ? { weideplan } : {}) }) })
+    const r = await fetch('/api/karten', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, eintraege, gruppen, ...(weideplan ? { weideplan } : {}), ...(Object.keys(pacht).length ? { pacht } : {}) }) })
     if (!r.ok) throw new Error('Server nicht erreichbar')
     const k = await r.json()
     schreiben(cacheKey(k.id), eintraege)
     schreiben(gruppenKey(k.id), gruppen)
     if (k.weideplan) schreiben(planKey(k.id), k.weideplan)
+    if (Object.keys(pacht).length) schreiben(pachtKey(k.id), pacht)
     schreibenJetzt()
     localStorage.setItem(zugangKey(k.id), k.zugang)
     location.href = `${location.pathname}?karte=${k.id}`
-  }, [eintraege, gruppen, weideplan])
+  }, [eintraege, gruppen, weideplan, pacht])
 
   const abmelden = useCallback(() => {
     if (karteId) localStorage.removeItem(zugangKey(karteId))
@@ -544,5 +615,5 @@ export function useKarte() {
   }
   const einladungVerwalten = { laden: () => einladungApi('GET'), erzeugen: () => einladungApi('POST'), deaktivieren: () => einladungApi('DELETE') }
 
-  return { geprueft, weideplan, plan, geloescht, darfLoeschen, datenschutz, stapel, alsNeueKarte, jetztSenden: queueAbarbeiten, wartend, letzteSync, konflikte, hof, setHof, eintraege, gruppen, gruppeSpeichern, gruppeLoeschen, zuordnen, reihenfolge, speichern, loeschen, notizSpeichern, notizLoeschen, alleErsetzen, teilen, abmelden, nameAendern, einladung, einladungPruefen, beitreten, kartenNameAendern, einladungVerwalten, nutzerStand, status, darfBearbeiten, istAdmin, ich, ichLaden, hinweis, setHinweis, nutzer, karteId, zugang, kartenName }
+  return { geprueft, fristErledigt, pacht, pachtSpeichern, weideplan, plan, geloescht, darfLoeschen, datenschutz, stapel, alsNeueKarte, jetztSenden: queueAbarbeiten, wartend, letzteSync, konflikte, hof, setHof, eintraege, gruppen, gruppeSpeichern, gruppeLoeschen, zuordnen, reihenfolge, speichern, loeschen, notizSpeichern, notizLoeschen, alleErsetzen, teilen, abmelden, nameAendern, einladung, einladungPruefen, beitreten, kartenNameAendern, einladungVerwalten, nutzerStand, status, darfBearbeiten, istAdmin, ich, ichLaden, hinweis, setHinweis, nutzer, karteId, zugang, kartenName }
 }

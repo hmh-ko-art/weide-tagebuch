@@ -77,6 +77,18 @@ Code: `server/infrastruktur.js` (gemeinsam für Server **und** App: Arten, Läng
 - **Alte App-Versionen**: sehen Linien als Umriss, Technik als normale Nadel; speichern sie eine Technik-Nadel, behält der Server `infra`/`geraet` (Feld fehlt ≠ `infra: null`). Prüfungen werden beim Speichern zusammengeführt, nie überschrieben.
 - **Export/Import**: Excel-Blätter „Zäune & Wasser“ und „Geräte-Prüfungen“, PDF-Kapitel, KML-Ordner „Zäune & Wege“ (LineStrings mit Stil) und „Wasser & Technik“ (ExtendedData `flockmap_technik` für die exakte Rundreise). Import: KML/GeoJSON-LineString/MultiLineString → Linie (Art aus Name/Ebene geraten, Farbe aus dem Linienstil), Technik-Punkte optional am Namen erkannt.
 
+## Flächen, Pacht & Förderfristen
+
+Code: `server/flaechen.js` (gemeinsam für Server **und** App: Messen, Steckbrief/Pacht prüfen, Fristen-Fälligkeit, Summen; Typen in `flaechen.d.ts`), `src/flaechen/Flaechen.tsx`, `src/austausch/flaechenliste.ts`, `src/austausch/shp.ts`.
+
+- **Messen**: Fläche (m²/ha) und Umfang auf dem WGS84-Ellipsoid (lokale Projektion), live beim Zeichnen und Punkte-Bearbeiten; Warnung bei sich kreuzendem Umriss. Löcher werden nicht abgezogen.
+- **Steckbrief** (`flaeche.steckbrief`): art (gruenland, deich, vorland, ackerfutter, sonstiges), besitz (eigentum/pacht), flik, schlag, programme[], fristen[] ({id, art: beweiden_ab|schnitt_bis|antrag_bis|sonstige, datum, jaehrlich, programm, text, erledigt: {datum, autor, autorId, am}}). Jährliche Fristen rollen nach „erledigt“ bzw. 30 Tage nach Ablauf ins Folgejahr. `beweiden_ab` = Sperre bis zum Termin (jährlich: 1.1. bis Termin); belegte gesperrte Fläche = überfällig.
+- **Frist erledigt**: `POST /api/karten/:id/eintraege/:eid/fristen/:fid/erledigt` {datum} bzw. {datum: null} (rückgängig) – jede Person mit Schreibrecht, idempotent, offline über den Postausgang; 409 `frist-weg`.
+- **Pacht** (nur Admin/Inhaber): `karte.pacht[flaecheId]` {verpaechter, preisHa, ha, beginn, ende, kuendigungMonate, erinnerung, erledigt, notiz, geaendert}. `GET /api/karten/:id/pacht`, `PUT /api/karten/:id/pacht/:fid` {pacht|null, basisGeaendert} (Konflikt: neuere Fassung gewinnt, Meldung). Nie in `oeffentlich()`/SSE – nur `pachtVersion`. Erinnerung an `erinnerung` bzw. „kündigen bis“ (Ende − Frist) − 60 Tage.
+- **Fällig**: Fristen ≤ 30 Tage und Pacht-Erinnerungen zählen im Weideplan-Badge und stehen unter „Jetzt“.
+- **Übersicht**: Liste → Flächen → „📊 Übersicht, Pacht & Summen“ (Summen gesamt/Pacht/€ je Jahr/je Art, sortierbare Tabelle, Excel/PDF „Flächenverzeichnis“).
+- **Export/Import**: Excel-Blätter „Flächenverzeichnis“, „Flächen-Summen“, „Fristen“; PDF-Kapitel; KML-ExtendedData `flockmap_steckbrief` (+ `flockmap_pacht` nur mit Admin-Option); JSON-Sicherung inkl. Pacht (nur Admin). Import: KML/GeoJSON (FLIK/Schlag/Nutzung aus Attributen geraten, MultiPolygon → mehrere Flächen) und Shapefile-ZIP (.shp/.dbf/.prj; WGS84 oder ETRS89/UTM 32/33 – Gauß-Krüger nicht unterstützt; nur Außenringe).
+
 ## Rechtliches & Datenschutz
 
 **Entwurf – vor Verkauf anwaltlich prüfen lassen.** Details, Entscheidungen und Prüfliste: [`docs/RECHTLICHES.md`](docs/RECHTLICHES.md).

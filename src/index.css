@@ -585,3 +585,63 @@ button.klein { padding: 6px 10px; font-size: .88rem; flex: none; }
 .liste-panel { overflow-x: hidden; }
 @media (max-width: 480px) { .tabs.reiter button { font-size: .8rem; padding: 7px 4px; } }
 @media (max-width: 400px) { .reiter button { white-space: normal; } .nur-breit { display: none; } }
+
+/* ---- Flächen: Messen, Steckbrief, Pacht, Übersicht ---- */
+.mess-text { white-space: normal; }
+.mess-warn { color: var(--rot); font-weight: 600; }
+.steckbrief { display: flex; flex-direction: column; gap: 4px; margin: 4px 0; padding: 8px 10px; background: #f4f8f1; border-radius: 10px; font-size: .92rem; }
+.steckbrief p { margin: 0; }
+.steck-kopf { font-weight: 600; color: var(--gruen-dunkel); }
+.programme { display: flex; flex-wrap: wrap; gap: 4px; margin: 2px 0; }
+.programm-chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px; background: #e3eedc; color: #24451f; font-size: .82rem; }
+.programm-chip button { border: 0; background: none; padding: 0 2px; font-size: 1rem; line-height: 1; min-height: 0; cursor: pointer; }
+.fristen { list-style: none; margin: 2px 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.frist { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px; padding: 4px 8px; border-left: 4px solid #9e9e9e; background: #fff; border-radius: 6px; }
+.frist small { color: #555; }
+.frist.st-ueberfaellig, .frist.st-sperre { border-color: var(--rot); background: #fdecea; }
+.frist.st-heute { border-color: var(--orange); background: #fff3e0; }
+.frist.st-bald { border-color: #fbc02d; }
+.frist.st-ok, .frist.st-erledigt { border-color: var(--gruen); color: #4a5a4a; }
+.klein-knopf { padding: 4px 10px; min-height: 32px; font-size: .85rem; border-radius: 8px; }
+.pacht-box { margin-top: 4px; padding: 6px 10px; border: 1px dashed #b0896b; border-radius: 8px; background: #fffaf3; }
+.pacht-titel { font-weight: 700; color: #6d4c41; }
+.pacht-titel small { font-weight: 400; color: #8d6e63; }
+.steckbrief-form { border: 1px solid #d5dfcf; border-radius: 10px; padding: 6px 10px; background: #fafcf8; }
+.steckbrief-form > summary { cursor: pointer; font-weight: 600; color: var(--gruen-dunkel); padding: 4px 0; }
+.steckbrief-form[open] { display: flex; flex-direction: column; gap: 8px; }
+.fristen-form, .programme-form { display: flex; flex-direction: column; gap: 6px; }
+.frist-zeile { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 6px; border-radius: 8px; background: #fff; border: 1px solid #e0e6dc; }
+.frist-zeile select, .frist-zeile input[type=date] { flex: 1 1 140px; min-width: 0; }
+.frist-zeile input:not([type]) { flex: 1 1 100%; }
+.frist-zeile .check { display: flex; align-items: center; gap: 4px; font-size: .88rem; }
+.tag-eingabe { display: flex; gap: 6px; } .tag-eingabe input { flex: 1; min-width: 0; }
+.pacht-form { border: 1px dashed #b0896b; border-radius: 10px; padding: 8px 10px; display: flex; flex-direction: column; gap: 8px; background: #fffaf3; }
+.pacht-form legend { font-weight: 700; color: #6d4c41; padding: 0 4px; }
+.pacht-form legend small { font-weight: 400; }
+.pacht-option { background: #fffaf3; border: 1px dashed #b0896b; border-radius: 8px; padding: 6px 8px; }
+.flaechen-panel { width: min(760px, 100%); }
+.flaechen-uebersicht { display: flex; flex-direction: column; gap: 10px; }
+.summen-karten { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; }
+.summen-karten > div { display: flex; flex-direction: column; padding: 8px 10px; border-radius: 10px; background: #eef5ea; }
+.summen-karten strong { font-size: 1.25rem; color: var(--gruen-dunkel); }
+.summen-karten small { color: #555; font-size: .8rem; }
+.summen-karten .pacht-summe { background: #fff3e6; } .summen-karten .pacht-summe strong { color: #6d4c41; }
+.nach-art { display: flex; flex-wrap: wrap; gap: 4px; margin: 0; }
+.tabelle-rahmen { overflow-x: auto; -webkit-overflow-scrolling: touch; border: 1px solid #e0e6dc; border-radius: 8px; }
+.flaechen-tabelle { border-collapse: collapse; width: 100%; font-size: .86rem; }
+.flaechen-tabelle th, .flaechen-tabelle td { padding: 6px 8px; border-bottom: 1px solid #eef1ec; text-align: left; white-space: nowrap; }
+.flaechen-tabelle td:first-child { white-space: normal; min-width: 110px; }
+.flaechen-tabelle .r { text-align: right; font-variant-numeric: tabular-nums; }
+.flaechen-tabelle th { background: #e8f0e3; position: sticky; top: 0; }
+.flaechen-tabelle th button { all: unset; cursor: pointer; font-weight: 700; color: var(--gruen-dunkel); }
+.flaechen-tabelle th button:focus-visible { outline: 2px solid var(--gruen); }
+.flaechen-tabelle tbody tr { cursor: pointer; } .flaechen-tabelle tbody tr:hover { background: #f6faf3; }
+.flaechen-tabelle tfoot td { font-weight: 700; background: #f4f8f1; }
+.wp-warn { display: block; color: var(--rot); font-weight: 600; margin-top: 2px; }
+.steckbrief-form, .pacht-form { min-width: 0; }
+.steckbrief-form .zeile > label { min-width: 0; flex: 1 1 0; }
+.steckbrief-form select, .steckbrief-form input { min-width: 0; max-width: 100%; width: 100%; box-sizing: border-box; }
+.steckbrief-form .frist-zeile select, .steckbrief-form .frist-zeile input[type=date] { width: auto; }
+.steckbrief-form input[type=checkbox] { width: auto; }
+.frist-zeile .x { margin-left: auto; }
+.frist-zeile input:not([type]) { flex: 1 1 60%; }

@@ -55,6 +55,17 @@ Panel „Export & Import“ (Liste → „⬇️ Export“ oder Einstellungen �
 - **Import (nur Admin)**: KML/KMZ (Google My Maps: Ebenen → Gruppen, Stilfarben, Beschreibung + Zusatzfelder → Notiz, Tierzahlen aus Namen wie „50 + 1“, „+12 L“, „80 Schafe“), GeoJSON, CSV. Vorschau mit Häkchen je Eintrag, Duplikaterkennung (gleicher Name < 15 m).
 - Geschrieben wird über `POST /api/karten/:id/stapel` (Admin): ergänzt nur neue IDs, ändert nie Vorhandenes → idempotent, läuft über den Offline-Postausgang.
 
+## Weideplan
+
+Kalender-Knopf in der Kopfleiste (rotes Badge = heute fällige/überfällige Umtriebe). Code: `server/weideplan.js` (gemeinsame Logik für Server **und** App, Typen in `weideplan.d.ts`), `src/weideplan/`.
+
+- **Daten** (`karte.weideplan`, nur vorhanden wenn genutzt – alte Karten bleiben byte-gleich): `herden[]` (id, name, farbe), `belegungen[]` (herde, flaeche = Eintrags-ID einer Fläche *oder* Nadel, tiere {schaf,bock,lamm}, von, bis = geplant bis, ende, naechste, status geplant/aktiv/beendet), `bewegungen[]` (Protokoll: art auftrieb/umtrieb/abtrieb, datum, von/nach als Orts-Schnappschuss {id,name,lat,lng}, tiere, autor/autorId, zeitpunkt, optional `karte` = Delta der Tierzahl-Einheiten), `ruhetage` (Standard 28) und `ruhe{flaecheId: Tage}`.
+- **Bewegungs-Protokoll** ist bewusst so gebaut, dass der spätere Schritt „Tierbewegungen“ (HI-Tier-Meldungen, Bestandsregister) direkt darauf aufsetzen kann.
+- **API**: `PUT/DELETE /api/karten/:id/weideplan/herden/:hid`, `PUT/DELETE …/belegungen/:bid` (mit `basisGeaendert` → Konflikt-Erkennung), `POST …/umtrieb` (idempotent über `op.id`), `POST …/umtrieb/:bid/zurueck` (nur letzter Umtrieb einer Herde), `DELETE …/bewegungen/:bid` (Admin), `PUT …/einstellungen`. Alles über den Offline-Postausgang; doppelte Umtriebe von zwei Geräten → 409 mit Hinweis.
+- **Status**: belegt (blau) · ruht seit X Tagen (gelb) · bereit (grün, Ruhezeit erreicht) · keine Daten (grau). Optional als Kartenfarben („Status auf der Karte“).
+- **Erinnerungen** nur in der App (Badge + Liste „Fällig“). Kein Web-Push: Render-Free schläft (kein verlässlicher Zeitgeber), Push braucht VAPID + gespeicherte Abos (neue personenbezogene Daten), unter iOS nur als installierte App. Auf Hetzner mit `web-push` kostenlos nachrüstbar.
+- **Export**: JSON-Sicherung inkl. Plan (ohne Personen-IDs), Excel-Blätter „Weideplan“ und „Umtriebe“, PDF-Abschnitt „Weideplan“.
+
 ## Rechtliches & Datenschutz
 
 **Entwurf – vor Verkauf anwaltlich prüfen lassen.** Details, Entscheidungen und Prüfliste: [`docs/RECHTLICHES.md`](docs/RECHTLICHES.md).

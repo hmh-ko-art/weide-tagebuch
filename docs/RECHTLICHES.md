@@ -50,6 +50,10 @@ Nach dem Umzug: `STAND` in `betreiber.ts` aktualisieren, AVV mit Hetzner abschli
 - **Gerät:** keine Cookies; localStorage/IndexedDB/Cache Storage sind technisch notwendig (§ 25 Abs. 2 Nr. 2 TDDDG) →
   kein Einwilligungsbanner, nur ein einmaliger Info-Hinweis. „Daten auf diesem Gerät löschen“ entfernt alles mit Präfix `wt-`,
   die IndexedDB `flockmap` und alle Caches `flockmap-*`.
+- **Weideplan:** neue Datenkategorie „Umtriebs-Protokoll“ (`weideplan.bewegungen[]`: Datum, Herde, Von/Nach mit Name+Koordinate,
+  Tierzahl, `autor`/`autorId`, Zeitpunkt). Beim Zugang-Löschen: `autorId` entfernt, `autor` → „ehemaliger Nutzer“, `erstelltVon` → `ehemalig`.
+  JSON-Sicherungen enthalten den Plan ohne interne Personen-IDs (nur Namen als Text). Keine Web-Push-Benachrichtigungen
+  (würde Push-Abos = Geräte-Kennungen speichern, VAPID-Schlüssel und einen dauerhaft laufenden Server erfordern) – Erinnerungen nur in der App.
 - **Server-Protokolle:** FlockMap schreibt keine Zugriffsprotokolle. IP-Adressen nur im Arbeitsspeicher (max. 1 Stunde)
   für die Begrenzung von Fehlversuchen. Plattform-Logs des Hosters siehe Datenschutzerklärung.
 

@@ -4,7 +4,10 @@ import { jsPDF } from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import { kartenbild } from './kartenbild'
 import { summenBauen, zahl, type Zeile } from './zeilen'
-import type { Gruppe } from '../types'
+import type { Gruppe, Eintrag } from '../types'
+import * as WP from '../../server/weideplan.js'
+import type { Weideplan } from '../../server/weideplan.js'
+import { tiereText, statusText } from '../weideplan/hilfen'
 
 // Standard-PDF-Schriften kennen nur westeuropäische Zeichen -> Sonderzeichen ersetzen, Emojis entfernen
 export const pdfText = (s: string) => s
@@ -13,7 +16,7 @@ export const pdfText = (s: string) => s
 const rgb = (hex: string): [number, number, number] => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)) as [number, number, number]
 const GRUEN: [number, number, number] = [30, 77, 43]
 
-export interface BerichtOptionen { karte: string; hof?: string; autor?: string; filterText?: string; gesamtAnzahl: number; jeGruppe: boolean; mitKarte: boolean }
+export interface BerichtOptionen { karte: string; hof?: string; autor?: string; filterText?: string; gesamtAnzahl: number; jeGruppe: boolean; mitKarte: boolean; weideplan?: { plan: Weideplan; eintraege: Eintrag[] } }
 
 export async function pdfErzeugen(zeilen: Zeile[], gruppen: Gruppe[], o: BerichtOptionen): Promise<Blob> {
   const doc = new jsPDF({ unit: 'mm', format: 'a4', compress: true })
@@ -75,6 +78,46 @@ export async function pdfErzeugen(zeilen: Zeile[], gruppen: Gruppe[], o: Bericht
   doc.addPage()
   doc.setFontSize(13); doc.setFont('helvetica', 'bold'); doc.text(pdfText(`Alle Einträge (${zeilen.length})`), rand, 16); doc.setFont('helvetica', 'normal')
   tabelle(zeilen, false, 20)
+
+  // ---- Optional: Weideplan (aktuelle Belegung, Flächenstatus, letzte Umtriebe) ----
+  if (o.weideplan && (o.weideplan.plan.belegungen.length || o.weideplan.plan.bewegungen.length)) {
+    const { plan, eintraege } = o.weideplan
+    const heute = WP.heute()
+    const gruen = { fillColor: GRUEN }, st = { fontSize: 8, cellPadding: 1.4, overflow: 'linebreak' as const, valign: 'top' as const }
+    const datum = (d?: string) => (d ? d.split('-').reverse().join('.') : '')
+    const nachY = () => (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 8
+    doc.addPage()
+    doc.setTextColor(30, 40, 30); doc.setFontSize(13); doc.setFont('helvetica', 'bold'); doc.text(pdfText(`Weideplan – Stand ${datum(heute)}`), rand, 16); doc.setFont('helvetica', 'normal')
+    doc.setFontSize(9); doc.text(pdfText(`Ruhezeit Standard: ${plan.ruhetage ?? WP.RUHE_STANDARD} Tage`), rand, 22)
+    const aktiv = plan.belegungen.filter((b) => b.status !== 'beendet').sort((a, b) => a.von.localeCompare(b.von))
+    doc.setFontSize(11); doc.setFont('helvetica', 'bold'); doc.text(pdfText('Aktuelle und geplante Belegungen'), rand, 30); doc.setFont('helvetica', 'normal')
+    autoTable(doc, {
+      startY: 32, margin: { left: rand, right: rand, bottom: 16 }, headStyles: gruen, styles: st,
+      head: [['Herde', 'Fläche', 'Tiere', 'Seit / ab', 'Geplant bis', 'Danach', 'Status']],
+      body: aktiv.length ? aktiv.map((b) => [pdfText(WP.herdeVon(plan, b.herde)?.name ?? b.herdeName ?? ''), pdfText(b.flaecheName), pdfText(tiereText(b.tiere)), datum(b.von), datum(b.bis), pdfText(b.naechste ? eintraege.find((e) => e.id === b.naechste)?.titel || '' : ''), b.status === 'geplant' || b.von > heute ? 'geplant' : 'auf der Fläche']) : [['Keine', '', '', '', '', '', '']],
+    })
+    const status = WP.flaechenStatus(plan, eintraege, heute)
+    const fl = [...status.entries()].map(([id, x]) => ({ e: eintraege.find((e) => e.id === id)!, x })).filter((z) => z.e).sort((a, b) => (a.e.titel || '').localeCompare(b.e.titel || '', 'de'))
+    let y = nachY()
+    doc.setFontSize(11); doc.setFont('helvetica', 'bold'); doc.text(pdfText('Flächen – Status'), rand, y); doc.setFont('helvetica', 'normal')
+    autoTable(doc, {
+      startY: y + 2, margin: { left: rand, right: rand, bottom: 16 }, headStyles: gruen, styles: st,
+      head: [['Fläche', 'Status', 'Ruhezeit', 'Herde(n)']],
+      body: fl.map(({ e, x }) => [pdfText(e.titel || '(ohne Namen)'), pdfText(statusText(x)), `${x.ruhezeit} T`, pdfText(x.belegungen.map((b) => b.herdeName).join(', '))]),
+      didDrawCell: (d) => { if (d.section === 'body' && d.column.index === 1) { doc.setFillColor(...rgb(WP.STATUS_FARBEN[fl[d.row.index].x.status])); doc.rect(d.cell.x, d.cell.y, 1.2, d.cell.height, 'F') } },
+    })
+    const bew = [...plan.bewegungen].sort((a, b) => b.datum.localeCompare(a.datum) || b.zeitpunkt.localeCompare(a.zeitpunkt)).slice(0, 60)
+    if (bew.length) {
+      y = nachY()
+      doc.setFontSize(11); doc.setFont('helvetica', 'bold'); doc.text(pdfText(`Letzte Auf-, Um- und Abtriebe (${bew.length}${plan.bewegungen.length > bew.length ? ` von ${plan.bewegungen.length}` : ''})`), rand, y); doc.setFont('helvetica', 'normal')
+      const ART = { auftrieb: 'Auftrieb', umtrieb: 'Umtrieb', abtrieb: 'Abtrieb' }
+      autoTable(doc, {
+        startY: y + 2, margin: { left: rand, right: rand, bottom: 16 }, headStyles: gruen, styles: st,
+        head: [['Datum', 'Art', 'Herde', 'Von', 'Nach', 'Tiere', 'Erfasst von']],
+        body: bew.map((b) => [datum(b.datum), ART[b.art], pdfText(b.herdeName), pdfText(b.von?.name ?? ''), pdfText(b.nach?.name ?? ''), pdfText(tiereText(b.tiere)), pdfText(b.autor ?? '')]),
+      })
+    }
+  }
 
   // ---- Optional: je Gruppe eine Seite ----
   if (o.jeGruppe) {

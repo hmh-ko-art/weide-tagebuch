@@ -6,12 +6,15 @@ import { OfflineAbschnitt } from './OfflineAbschnitt'
 import { Austausch, type ExportFilter } from './Austausch'
 import { RechtLinks } from './recht/Recht'
 import { MeineDaten } from './recht/MeineDaten'
+import { WeideplanPanel, PlanZeile, type PlanStart } from './weideplan/Weideplan'
+import { planFarben as planFarbenAnwenden, faelligAnzahl } from './weideplan/hilfen'
+import { STATUS_FARBEN } from '../server/weideplan.js'
 import { KarteLoeschenAbschnitt, GeloeschtHinweis } from './recht/Loeschen'
 import { googleNaviLink, routeBerechnen, routeText } from './route'
 import { eintragDatum, tagText, monatText, istAusblendbar, TIERARTEN, tierText, tierSymbolHtml, tierSummen, type Einheit, type Tierart, FARBEN, FLAECHEN_FARBEN, FLAECHE_STANDARD, START, STANDARD_FARBE, datum, farbName, hektar, mitte, neueId, notizenSortiert, pinFarbe, gruppenVorschlag, gruppenFarbe, gruppenOrdnung, naechsteGruppenFarbe, tierKurz, GRUPPEN_FARBEN, type Gruppe, type Eintrag, type Notiz, type Fokus, type LatLng, type Route } from './types'
 
 type Modus = 'ansicht' | 'pin' | 'flaeche'
-type Panel = null | 'liste' | 'einstellungen' | 'nutzer' | 'profil' | 'hof' | 'austausch' | 'meinedaten'
+type Panel = null | 'liste' | 'einstellungen' | 'nutzer' | 'profil' | 'hof' | 'austausch' | 'meinedaten' | 'weideplan'
 
 // Aktuell angemeldeter Nutzer (geteilte Karte) – für Autor neuer Notizen
 let aktuellerNutzer: Ich | null = null
@@ -42,6 +45,7 @@ const ICONS: Record<string, string> = {
   zahnrad: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z',
   stift: 'M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z',
   x: 'M18 6 6 18M6 6l12 12',
+  kalender: 'M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z',
   etikett: 'M20.59 13.41 13.42 20.58a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82ZM7 7h.01',
 }
 function Icon({ name }: { name: string }) {
@@ -121,6 +125,11 @@ export default function App() {
   const hervorUmschalten = (f: string) => setHervorWahl((l) => (l.includes(f) ? l.filter((x) => x !== f) : [...l, f]))
   const [fokus, setFokus] = useState<Fokus | null>(null)
   const [meldung, setMeldung] = useState<string>('')
+  const [planStart, setPlanStart] = useState<PlanStart>(null)
+  const [planFarben, setPlanFarbenRoh] = useState(() => localStorage.getItem('wt-planfarben') === 'an')
+  const setPlanFarben = (b: boolean) => { setPlanFarbenRoh(b); localStorage.setItem('wt-planfarben', b ? 'an' : 'aus') }
+  const faellig = useMemo(() => faelligAnzahl(k.weideplan), [k.weideplan])
+  const planAn = planFarben && !!k.weideplan?.belegungen.length
   // Zuletzt verschobene Nadel (für „Rückgängig“)
   const [verschoben, setVerschoben] = useState<{ id: string; alt: LatLng; nr: number } | null>(null)
   useEffect(() => {
@@ -314,6 +323,7 @@ export default function App() {
         </div>
         <nav>
           <button className="kopf-knopf mit-text" aria-pressed={panel === 'liste'} title="Liste" aria-label="Liste" onClick={() => setPanel(panel === 'liste' ? null : 'liste')}><Icon name="liste" /><span>Liste</span></button>
+          <button className="kopf-knopf wp-kopf" aria-pressed={panel === 'weideplan'} title={faellig ? `Weideplan – ${faellig} fällig` : 'Weideplan'} aria-label={faellig ? `Weideplan, ${faellig} fällig` : 'Weideplan'} onClick={() => { setPlanStart(null); setPanel(panel === 'weideplan' ? null : 'weideplan') }}><Icon name="kalender" />{faellig > 0 && <span className="wp-badge" aria-hidden="true">{faellig}</span>}</button>
           {k.karteId && k.hof?.rolle && <button className="kopf-knopf" aria-pressed={panel === 'hof'} title="Mein Hof" aria-label="Mein Hof" onClick={() => setPanel(panel === 'hof' ? null : 'hof')}><Icon name="nutzer" /></button>}
           {k.karteId && !k.hof && k.istAdmin && <button className="kopf-knopf" aria-pressed={panel === 'nutzer'} title="Nutzer verwalten" aria-label="Nutzer verwalten" onClick={() => setPanel(panel === 'nutzer' ? null : 'nutzer')}><Icon name="nutzer" /></button>}
           <button className="kopf-knopf" aria-pressed={panel === 'einstellungen'} title="Einstellungen" aria-label="Einstellungen" onClick={() => setPanel(panel === 'einstellungen' ? null : 'einstellungen')}><Icon name="zahnrad" /></button>
@@ -322,7 +332,7 @@ export default function App() {
 
       <main className="haupt">
         <Karte
-          eintraege={aufKarte}
+          eintraege={planAn ? planFarbenAnwenden(aufKarte, k.weideplan) : aufKarte}
           nummern={anzeige.nummern}
           ausgewaehlt={ausgewaehlt}
           zeichenPunkte={zeichenPunkte}
@@ -353,6 +363,12 @@ export default function App() {
                 <button key={farbe} className={`farb-chip${hervor.includes(farbe) ? ' aktiv' : ''}`} style={{ background: farbe }} aria-pressed={hervor.includes(farbe)}
                   title={`${farbName(farbe)} (${n}) ${hervor.includes(farbe) ? '– Hervorhebung aufheben' : 'hervorheben'}`} aria-label={`${farbName(farbe)} hervorheben`} onClick={() => hervorUmschalten(farbe)} />
               ))}
+            </div>
+          )}
+          {planAn && (
+            <div className="wp-karten-legende" role="note" aria-label="Weideplan-Farben">
+              {(['belegt', 'ruht', 'bereit', 'frei'] as const).map((st) => <span key={st}><i style={{ background: STATUS_FARBEN[st] }} />{st === 'frei' ? 'k. A.' : st}</span>)}
+              <button className="link-knopf" onClick={() => setPlanFarben(false)}>aus</button>
             </div>
           )}
         </div>
@@ -415,6 +431,7 @@ export default function App() {
             nummer={anzeige.nummern[auswahl.id]}
             kannGruppieren={k.darfBearbeiten && kannEintrag(auswahl)}
             onGruppe={(v) => { const g = v === '__neu' ? neueGruppe() : v ? k.gruppen.find((x) => x.id === v) ?? null : null; if (v === '__neu' && !g) return; inGruppe(g, [auswahl]) }}
+            planZeile={<PlanZeile k={k} e={auswahl} onOeffnen={(s) => { setPlanStart(s); setPanel('weideplan') }} />}
           />
         )}
 
@@ -429,6 +446,8 @@ export default function App() {
         )}
         {panel === 'austausch' && <Austausch k={k} eintraege={anzeige.eintraege} filter={exportFilter} meldung={setMeldung} onSchliessen={() => setPanel(null)} />}
         {panel === 'einstellungen' && <Einstellungen k={k} onMeineDaten={() => setPanel('meinedaten')} onAustausch={() => { setExportFilter(null); setPanel('austausch') }} onSchliessen={() => setPanel(null)} meldung={setMeldung} onNutzer={() => setPanel(k.hof?.rolle ? 'hof' : 'nutzer')} onHof={() => setPanel('hof')} onProfil={() => setPanel('profil')} kopfFarbe={kopfFarbe} setKopfFarbe={setKopfFarbe} />}
+        {panel === 'weideplan' && <WeideplanPanel k={k} start={planStart} meldung={setMeldung} planFarben={planFarben} setPlanFarben={setPlanFarben} onSchliessen={() => { setPanel(null); setPlanStart(null) }}
+          onZeigen={(id) => { const e = k.eintraege.find((x) => x.id === id); if (e) { fliege(mitte(e), e.typ === 'pin' ? 15 : undefined); waehle(e.id) } }} />}
         {panel === 'meinedaten' && <MeineDaten k={k} meldung={setMeldung} onSchliessen={() => setPanel(null)} />}
         {k.geloescht && panel !== 'austausch' && <GeloeschtHinweis k={k} meldung={setMeldung} onExport={() => { setExportFilter(null); setPanel('austausch') }} />}
         {k.einladung && !k.ich && k.status !== 'verbinde' && <Beitreten k={k} />}
@@ -457,7 +476,7 @@ function TierAnzeige(p: { summen: { art: Tierart; n: number }[] }) {
   return <>{p.summen.map((x, i) => <Fragment key={x.art}>{i > 0 && ' · '}<span className="tierzahl"><TierSymbol art={x.art} /> {tierText(x.n, x.art)}</span></Fragment>)}</>
 }
 
-function Detail(p: { e: Eintrag; routeInfo: string; darfBearbeiten: boolean; kannBearbeiten: boolean; kannNotiz: (n: Notiz) => boolean; onSchliessen: () => void; onBearbeiten: () => void; onLoeschen: () => void; onRoute: () => void; onRouteAus: () => void; onNotizSpeichern: (n: Notiz) => void; onNotizLoeschen: (id: string) => void; tiereZu: boolean; onTiereUmschalten: () => void; gruppen: Gruppe[]; nummer?: number; kannGruppieren: boolean; onGruppe: (v: string) => void }) {
+function Detail(p: { e: Eintrag; routeInfo: string; darfBearbeiten: boolean; kannBearbeiten: boolean; kannNotiz: (n: Notiz) => boolean; onSchliessen: () => void; onBearbeiten: () => void; onLoeschen: () => void; onRoute: () => void; onRouteAus: () => void; onNotizSpeichern: (n: Notiz) => void; onNotizLoeschen: (id: string) => void; tiereZu: boolean; onTiereUmschalten: () => void; gruppen: Gruppe[]; nummer?: number; kannGruppieren: boolean; onGruppe: (v: string) => void; planZeile?: React.ReactNode }) {
   const { e } = p
   const gruppe = e.gruppe ? p.gruppen.find((g) => g.id === e.gruppe) : undefined
   const gf = gruppe ? gruppenFarbe(gruppe, p.gruppen) : null
@@ -487,6 +506,7 @@ function Detail(p: { e: Eintrag; routeInfo: string; darfBearbeiten: boolean; kan
         <span>Datum: {tagText(eintragDatum(e))}</span>
         <span>Geändert: {datum(e.geaendert)}</span>
       </div>
+      {p.planZeile}
       {p.routeInfo && <p className="route-info">🚗 {p.routeInfo}</p>}
       <div className="knoepfe">
         {p.routeInfo ? <button onClick={p.onRouteAus}>Route ausblenden</button> : <button onClick={p.onRoute}>Route anzeigen</button>}

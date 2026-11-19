@@ -6,6 +6,32 @@ import { FLAECHE_STANDARD, STANDARD_FARBE, isoTag, tierText, mitte, neueId, type
 import { dateiName, herunterladen, summenBauen, zahl, zeilenBauen } from './austausch/zeilen'
 import { sicherungErzeugen, sicherungLesen } from './austausch/sicherung'
 import type { ImportErgebnis, Vorschlag } from './austausch/kml'
+import * as WP from '../server/weideplan.js'
+import type { Weideplan } from '../server/weideplan.js'
+import type { Blatt } from './austausch/xlsx'
+
+// Excel: Blatt „Weideplan“ (alle Belegungen) und „Umtriebe“ (Protokoll – Grundlage für Tierbewegungen)
+function planBlaetter(plan: Weideplan, eintraege: Eintrag[]): Blatt[] {
+  const heute = WP.heute()
+  const name = (id?: string) => (id ? eintraege.find((e) => e.id === id)?.titel || '' : '')
+  const st = (b: Weideplan['belegungen'][number]) => (b.status === 'beendet' ? 'beendet' : b.status === 'geplant' || b.von > heute ? 'geplant' : 'auf der Fläche')
+  const t = (x: { schaf?: number; bock?: number; lamm?: number }) => [x.schaf ?? 0, x.bock ?? 0, x.lamm ?? 0]
+  const ART = { auftrieb: 'Auftrieb', umtrieb: 'Umtrieb', abtrieb: 'Abtrieb' }
+  return [
+    {
+      name: 'Weideplan',
+      kopf: ['Herde', 'Fläche', 'Status', 'Von', 'Geplant bis', 'Beendet am', 'Tage', 'Schafe', 'Böcke', 'Lämmer', 'Danach', 'Notiz'],
+      breiten: [18, 24, 14, 11, 11, 11, 7, 8, 8, 8, 22, 40],
+      zeilen: [...plan.belegungen].sort((a, b) => b.von.localeCompare(a.von)).map((b) => [WP.herdeVon(plan, b.herde)?.name ?? b.herdeName ?? '', b.flaecheName, st(b), { datum: b.von }, b.bis ? { datum: b.bis } : null, b.ende ? { datum: b.ende } : null, b.status === 'geplant' ? null : Math.max(0, WP.tageZwischen(b.von, b.ende ?? heute)), ...t(b.tiere), name(b.naechste), b.notiz ?? '']),
+    },
+    {
+      name: 'Umtriebe',
+      kopf: ['Datum', 'Art', 'Herde', 'Von', 'Nach', 'Schafe', 'Böcke', 'Lämmer', 'Breite (nach)', 'Länge (nach)', 'Erfasst von', 'Erfasst am'],
+      breiten: [11, 10, 18, 24, 24, 8, 8, 8, 12, 12, 16, 17],
+      zeilen: [...plan.bewegungen].sort((a, b) => b.datum.localeCompare(a.datum) || b.zeitpunkt.localeCompare(a.zeitpunkt)).map((b) => [{ datum: b.datum }, ART[b.art], b.herdeName, b.von?.name ?? '', b.nach?.name ?? '', ...t(b.tiere), b.nach?.lat !== undefined ? { zahl: b.nach.lat, format: 'koord' } : null, b.nach?.lng !== undefined ? { zahl: b.nach.lng, format: 'koord' } : null, b.autor ?? '', new Date(b.zeitpunkt).toLocaleString('de-DE')]),
+    },
+  ]
+}
 
 type K = ReturnType<typeof useKarte>
 export type ExportFilter = { ids: string[]; text: string } | null
@@ -18,6 +44,8 @@ export function Austausch(p: { k: K; eintraege: Eintrag[]; filter: ExportFilter;
   const [nurGefiltert, setNurGefiltert] = useState(!!p.filter)
   const [mitKarte, setMitKarte] = useState(true)
   const [jeGruppe, setJeGruppe] = useState(false)
+  const [mitPlan, setMitPlan] = useState(true)
+  const hatPlan = !!(k.weideplan && (k.weideplan.belegungen.length || k.weideplan.bewegungen.length))
   const [laeuft, setLaeuft] = useState<string | null>(null)
   const auswahl = useMemo(() => (nurGefiltert && p.filter ? p.eintraege.filter((e) => p.filter!.ids.includes(e.id)) : p.eintraege), [nurGefiltert, p.filter, p.eintraege])
   const zeilen = useMemo(() => zeilenBauen(auswahl, k.gruppen), [auswahl, k.gruppen])
@@ -55,6 +83,7 @@ export function Austausch(p: { k: K; eintraege: Eintrag[]; filter: ExportFilter;
         breiten: [26, 18, 17, 16, 80],
         zeilen: zeilen.flatMap((z) => [...z.e.notizen].sort((a, b) => b.zeitpunkt.localeCompare(a.zeitpunkt)).map((n) => [z.name, z.gruppe, new Date(n.zeitpunkt).toLocaleString('de-DE'), n.autor ?? '', n.text])),
       },
+      ...(hatPlan ? planBlaetter(k.weideplan!, k.eintraege) : []),
     ])
     herunterladen(new Blob([daten as BlobPart], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), dateiName(name, 'xlsx'))
     p.meldung(`Excel-Liste mit ${zeilen.length} Einträgen erstellt`)
@@ -62,7 +91,7 @@ export function Austausch(p: { k: K; eintraege: Eintrag[]; filter: ExportFilter;
 
   const pdf = () => mit('PDF-Bericht', async () => {
     const { pdfErzeugen } = await import('./austausch/pdf')
-    const blob = await pdfErzeugen(zeilen, k.gruppen, { karte: name, hof: k.hof?.name, autor: k.ich?.name, filterText, gesamtAnzahl: p.eintraege.length, jeGruppe, mitKarte })
+    const blob = await pdfErzeugen(zeilen, k.gruppen, { karte: name, hof: k.hof?.name, autor: k.ich?.name, filterText, gesamtAnzahl: p.eintraege.length, jeGruppe, mitKarte, ...(mitPlan && hatPlan ? { weideplan: { plan: k.weideplan!, eintraege: k.eintraege } } : {}) })
     herunterladen(blob, dateiName(name, 'pdf'))
     p.meldung('PDF-Bericht erstellt')
   })
@@ -80,9 +109,9 @@ export function Austausch(p: { k: K; eintraege: Eintrag[]; filter: ExportFilter;
   })
 
   const sicherung = () => {
-    const s = sicherungErzeugen({ id: k.karteId, name, ...(k.hof ? { hof: k.hof.name } : {}) }, k.eintraege, k.gruppen)
+    const s = sicherungErzeugen({ id: k.karteId, name, ...(k.hof ? { hof: k.hof.name } : {}) }, k.eintraege, k.gruppen, k.weideplan)
     herunterladen(new Blob([JSON.stringify(s, null, 1)], { type: 'application/json' }), dateiName(`${name}-Sicherung`, 'json'))
-    p.meldung(`Sicherung mit ${s.eintraege.length} Einträgen und ${s.gruppen.length} Gruppen gespeichert`)
+    p.meldung(`Sicherung mit ${s.eintraege.length} Einträgen und ${s.gruppen.length} Gruppen${s.weideplan ? ` sowie Weideplan (${s.weideplan.belegungen.length} Belegungen, ${s.weideplan.bewegungen.length} Umtriebe)` : ''} gespeichert`)
   }
 
   return (
@@ -103,11 +132,12 @@ export function Austausch(p: { k: K; eintraege: Eintrag[]; filter: ExportFilter;
 
       <div className="export-karte">
         <button className="primaer" disabled={leer || !!laeuft} onClick={excel}>📊 {laeuft === 'Excel-Export' ? 'Erstelle …' : 'Excel-Liste (.xlsx)'}</button>
-        <p className="hinweis klein">Alle Nadeln und Flächen mit Gruppe, Nummer, Schafen, Böcken, Lämmern, Farbe, Koordinaten, Datum und Notizen. Dazu ein Blatt „Summen je Gruppe“ und ein Blatt mit allen Notizen. Öffnet sich in Excel, Numbers und LibreOffice.</p>
+        <p className="hinweis klein">Alle Nadeln und Flächen mit Gruppe, Nummer, Schafen, Böcken, Lämmern, Farbe, Koordinaten, Datum und Notizen. Dazu ein Blatt „Summen je Gruppe“, ein Blatt mit allen Notizen und – falls genutzt – die Blätter „Weideplan“ und „Umtriebe“. Öffnet sich in Excel, Numbers und LibreOffice.</p>
       </div>
       <div className="export-karte">
         <button className="primaer" disabled={leer || !!laeuft} onClick={pdf}>📄 {laeuft === 'PDF-Bericht' ? 'Erstelle … (Karte wird gezeichnet)' : 'PDF-Bericht'}</button>
         <label className="frei klein-option"><input type="checkbox" checked={mitKarte} onChange={(e) => setMitKarte(e.target.checked)} /> Übersichtskarte (Satellitenbild)</label>
+        {hatPlan && <label className="frei klein-option"><input type="checkbox" checked={mitPlan} onChange={(e) => setMitPlan(e.target.checked)} /> Weideplan (aktuelle Belegung, Flächenstatus, letzte Umtriebe)</label>}
         <label className="frei klein-option"><input type="checkbox" checked={jeGruppe} onChange={(e) => setJeGruppe(e.target.checked)} /> Je Gruppe eine eigene Seite (mit Karte und allen Notizen)</label>
         <p className="hinweis klein">Zum Ausdrucken oder Weitergeben (Deichverband, Tierarzt, Kontrolle): Hof- und Kartenname, Datum, Kennzahlen, Karte, Summen je Gruppe und eine Tabelle aller Einträge.</p>
       </div>
@@ -120,8 +150,8 @@ export function Austausch(p: { k: K; eintraege: Eintrag[]; filter: ExportFilter;
         <>
           <h3>Sicherung</h3>
           <div className="export-karte">
-            <button onClick={sicherung} disabled={!k.eintraege.length && !k.gruppen.length}>💾 Vollständige Sicherung herunterladen (JSON)</button>
-            <p className="hinweis klein">Die ganze Karte in einer Datei: alle Einträge, Notizen mit Autor, Tierzahlen, Gruppen mit Farben und Nummernfolge. Ohne persönliche Links – die Datei kann gefahrlos aufbewahrt werden. Tipp: einmal im Monat sichern.</p>
+            <button onClick={sicherung} disabled={!k.eintraege.length && !k.gruppen.length && !k.weideplan?.belegungen.length}>💾 Vollständige Sicherung herunterladen (JSON)</button>
+            <p className="hinweis klein">Die ganze Karte in einer Datei: alle Einträge, Notizen mit Autor, Tierzahlen, Gruppen mit Farben und Nummernfolge sowie der Weideplan (Herden, Belegungen, Umtriebs-Protokoll). Ohne persönliche Links – die Datei kann gefahrlos aufbewahrt werden. Tipp: einmal im Monat sichern.</p>
           </div>
           <Wiederherstellen k={k} meldung={p.meldung} />
           <h3>Importieren</h3>
@@ -147,25 +177,26 @@ function Wiederherstellen(p: { k: K; meldung: (s: string) => void }) {
   const vorhanden = s ? s.eintraege.filter((e) => k.eintraege.some((x) => x.id === e.id)).length : 0
   const fehlend = s ? s.eintraege.length - vorhanden : 0
   const gruppenNeu = s ? s.gruppen.filter((g) => !k.gruppen.some((x) => x.id === g.id)).length : 0
+  const planNeu = s?.weideplan ? s.weideplan.belegungen.filter((b) => !k.weideplan?.belegungen.some((x) => x.id === b.id)).length + s.weideplan.bewegungen.filter((b) => !k.weideplan?.bewegungen.some((x) => x.id === b.id)).length : 0
   return (
     <div className="export-karte">
       <label className="btn">♻️ Sicherung wiederherstellen …<input type="file" accept="application/json,.json" hidden onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) lesen(f) }} /></label>
       {fehler && <p className="fehler gefahr">{fehler}</p>}
       {s && (
         <div className="vorschau-box" role="region" aria-label="Sicherung – Vorschau">
-          <p><strong>Sicherung{s.name ? ` „${s.name}“` : ''}</strong>{s.exportiert ? ` vom ${new Date(s.exportiert).toLocaleString('de-DE')}` : ''}: {s.eintraege.length} Einträge, {s.gruppen.length} Gruppen.</p>
-          {k.eintraege.length > 0 && <p className="hinweis klein">Auf dieser Karte sind schon {k.eintraege.length} Einträge. {vorhanden ? `${vorhanden} aus der Sicherung gibt es hier bereits – die bleiben unverändert.` : ''} Übernommen werden nur die {fehlend} fehlenden{gruppenNeu ? ` und ${gruppenNeu} fehlende Gruppen` : ''}. Gelöscht oder überschrieben wird nichts.</p>}
+          <p><strong>Sicherung{s.name ? ` „${s.name}“` : ''}</strong>{s.exportiert ? ` vom ${new Date(s.exportiert).toLocaleString('de-DE')}` : ''}: {s.eintraege.length} Einträge, {s.gruppen.length} Gruppen{s.weideplan ? `, Weideplan mit ${s.weideplan.herden.length} Herden, ${s.weideplan.belegungen.length} Belegungen, ${s.weideplan.bewegungen.length} Umtrieben` : ''}.</p>
+          {k.eintraege.length > 0 && <p className="hinweis klein">Auf dieser Karte sind schon {k.eintraege.length} Einträge. {vorhanden ? `${vorhanden} aus der Sicherung gibt es hier bereits – die bleiben unverändert.` : ''} Übernommen werden nur die {fehlend} fehlenden{gruppenNeu ? ` und ${gruppenNeu} fehlende Gruppen` : ''}{planNeu ? ` sowie ${planNeu} fehlende Weideplan-Einträge` : ''}. Gelöscht oder überschrieben wird nichts.</p>}
           <div className="knoepfe">
-            <button className="primaer" disabled={laeuft || (!fehlend && !gruppenNeu)} onClick={() => {
+            <button className="primaer" disabled={laeuft || (!fehlend && !gruppenNeu && !planNeu)} onClick={() => {
               if (!confirm(`${fehlend} Einträge${gruppenNeu ? ` und ${gruppenNeu} Gruppen` : ''} in die Karte „${k.kartenName || 'diese Karte'}“ übernehmen?`)) return
-              k.stapel(s.eintraege.filter((e) => !k.eintraege.some((x) => x.id === e.id)), s.gruppen)
+              k.stapel(s.eintraege.filter((e) => !k.eintraege.some((x) => x.id === e.id)), s.gruppen, planNeu ? s.weideplan : undefined)
               p.meldung(`${fehlend} Einträge übernommen${k.karteId ? ' – werden gesendet' : ''}`); setS(null)
             }}>{k.eintraege.length ? `Fehlende ${fehlend} in diese Karte übernehmen` : `In diese (leere) Karte übernehmen`}</button>
             {k.karteId && <button disabled={laeuft} onClick={async () => {
               const n = prompt('Name der neuen Karte:', `${s.name || 'Weidekarte'} (wiederhergestellt)`)
               if (!n) return
               setLaeuft(true)
-              try { const r = await k.alsNeueKarte(n.slice(0, 100), s.eintraege, s.gruppen); location.href = `${location.pathname}?karte=${r.id}` } catch (e) { p.meldung((e as Error).message); setLaeuft(false) }
+              try { const r = await k.alsNeueKarte(n.slice(0, 100), s.eintraege, s.gruppen, s.weideplan); location.href = `${location.pathname}?karte=${r.id}` } catch (e) { p.meldung((e as Error).message); setLaeuft(false) }
             }}>{laeuft ? 'Lege an …' : 'Als neue Karte anlegen'}</button>}
             <button onClick={() => setS(null)}>Abbrechen</button>
           </div>

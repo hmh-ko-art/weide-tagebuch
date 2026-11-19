@@ -461,3 +461,74 @@ label.haken input { width: 20px; height: 20px; flex: none; margin: 1px 0 0; }
 .daten-liste dt { font-weight: 600; color: #445; }
 .daten-liste dd { margin: 0; }
 .mit-hinweis .einstieg { padding-bottom: 230px; }
+
+/* ---------- Weideplan ---------- */
+.wp-kopf { position: relative; }
+.wp-badge { position: absolute; top: -4px; right: -4px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: #d32f2f; color: #fff; font-size: .7rem; font-weight: 700; line-height: 18px; text-align: center; box-shadow: 0 0 0 2px #1e4d2b; }
+.weideplan-panel { width: min(480px, 100%); }
+.weideplan-panel .tabs button { padding: 8px 4px; font-size: .9rem; }
+.wp-leiste { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; }
+.wp-leiste .primaer { flex: 1 1 auto; }
+.haken { flex-direction: row; align-items: center; gap: 8px; font-weight: 500; }
+.haken input { width: 22px; height: 22px; flex: none; }
+.wp-farben { margin-top: 0; }
+.wp-zuletzt { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; background: #e8f5e9; border: 1px solid #a5d6a7; border-radius: 10px; padding: 8px 10px; font-size: .9rem; }
+.wp-zuletzt button { margin-left: auto; padding: 6px 12px; font-weight: 700; }
+.wp-leer { background: #f5f7f2; border-radius: 10px; padding: 4px 12px; font-size: .92rem; }
+.wp-leer ol { padding-left: 20px; margin: 4px 0 10px; } .wp-leer li { margin: 4px 0; }
+.wp-karte, .wp-herde { border: 1px solid #dfe6da; border-left: 6px solid #9e9e9e; border-radius: 10px; padding: 8px 10px; }
+.wp-karte p, .wp-herde p { margin: 2px 0; }
+.wp-karte .knoepfe button, .wp-herde .knoepfe button { padding: 10px 12px; }
+.wp-ueberfaellig { border-left-color: #d32f2f; background: #fff5f5; }
+.wp-heute { border-left-color: var(--orange); background: #fff8ef; }
+.wp-bald { border-left-color: #90a4ae; }
+.wp-stufe { font-weight: 700; font-size: .85rem; }
+.wp-ueberfaellig .wp-stufe { color: #c62828; } .wp-heute .wp-stufe { color: #b45309; }
+.wp-herde { border-left-color: var(--gruen); }
+.wp-herde-ort + .wp-herde-ort { border-top: 1px dashed #dfe6da; margin-top: 6px; padding-top: 6px; }
+.wp-punkt, .wp-status { display: inline-block; width: 12px; height: 12px; border-radius: 50%; vertical-align: middle; flex: none; border: 1px solid rgba(0,0,0,.25); }
+.wp-ruhe { margin-top: 6px; }
+.wp-dialog { position: absolute; inset: 0; z-index: 1150; background: rgba(0,0,0,.35); display: flex; align-items: flex-end; justify-content: center; }
+.wp-dialog-inhalt { background: #fff; width: min(520px, 100%); max-height: 92%; overflow: auto; border-radius: 18px 18px 0 0; padding: 14px 16px calc(16px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; }
+@media (min-width: 700px) { .wp-dialog { align-items: center; } .wp-dialog-inhalt { border-radius: 16px; } }
+.wp-dialog-inhalt select { width: 100%; }
+.wp-dialog-inhalt .tabs { margin-top: 10px; }
+.wp-dialog-inhalt .knoepfe { justify-content: flex-end; position: sticky; bottom: -16px; background: #fff; padding: 8px 0; }
+.wp-feld-titel { font-size: .85rem; font-weight: 600; margin-top: 10px; }
+.wp-tiere-felder { display: flex; gap: 8px; } .wp-tiere-felder label { flex: 1; margin-top: 4px; font-weight: 500; min-width: 0; }
+.wp-tiere .link-knopf { margin-top: 6px; font-size: .85rem; text-align: left; }
+.wp-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; } .wp-chips button { padding: 5px 10px; font-size: .85rem; border-radius: 16px; }
+.wp-warnung { margin: 6px 0 0; padding: 6px 10px; border-radius: 8px; background: #fff8e1; border: 1px solid #ffe082; font-size: .88rem; }
+.wp-zeitplan { display: flex; border: 1px solid #dfe6da; border-radius: 10px; overflow: hidden; font-size: .8rem; flex: none; }
+.wp-zp-namen { flex: 0 0 96px; border-right: 1px solid #dfe6da; background: #fafbf8; }
+.wp-zp-name { height: 34px; line-height: 34px; padding: 0 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; border-top: 1px solid #eef2ea; }
+.wp-zp-kopfzeile { height: 22px; position: relative; color: #667; }
+.wp-zp-kopfzeile span { position: absolute; top: 3px; padding-left: 3px; border-left: 1px solid #c9d3c4; white-space: nowrap; }
+.wp-zp-scroll { flex: 1; overflow-x: auto; overscroll-behavior-x: contain; }
+.wp-zp-reihe { position: relative; height: 34px; border-top: 1px solid #eef2ea; }
+.wp-zp-linie { position: absolute; top: 0; bottom: 0; border-left: 1px solid #eef2ea; }
+.wp-zp-balken { position: absolute; top: 5px; height: 24px; padding: 0 4px; border: 1px solid var(--f); border-radius: 6px; overflow: hidden; text-align: left; font-size: .75rem; font-weight: 600; color: #1d2a1d; white-space: nowrap;
+  background: linear-gradient(90deg, var(--f) var(--ist), color-mix(in srgb, var(--f) 30%, #fff) var(--ist)); }
+.wp-zp-balken span { position: relative; padding: 0 3px; background: rgba(255,255,255,.75); border-radius: 4px; }
+.wp-zp-balken.geplant { border-style: dashed; }
+.wp-zp-heute { position: absolute; top: 0; bottom: 0; width: 2px; background: #d32f2f; pointer-events: none; }
+.wp-termine, .wp-flaechen, .wp-verlauf { list-style: none; padding: 0; margin: 0; }
+.wp-termine li { padding: 6px 0; border-bottom: 1px solid #eef2ea; }
+.wp-termine .link-knopf { text-decoration: none; color: inherit; text-align: left; }
+.wp-termine li.heute { font-weight: 600; } .wp-termine li.vorbei .wp-termin-datum { color: #c62828; }
+.wp-termin-datum { font-weight: 700; color: var(--gruen-dunkel); }
+.wp-legende { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 4px 0; font-size: .85rem; }
+.wp-flaeche-zeile { display: grid; grid-template-columns: auto 1fr; gap: 2px 8px; align-items: center; width: 100%; text-align: left; border: 0; border-bottom: 1px solid #eef2ea; border-radius: 0; padding: 10px 2px; background: none; }
+.wp-flaeche-zeile small { grid-column: 2; color: #667; }
+.wp-flaeche-name { font-weight: 600; }
+.wp-flaeche-mehr { padding: 4px 4px 10px 22px; background: #fafbf8; }
+.wp-verlauf li { padding: 8px 0; border-bottom: 1px solid #eef2ea; font-size: .92rem; }
+.wp-verlauf .knoepfe { margin-top: 4px; } .wp-verlauf .knoepfe:empty { display: none; } .wp-verlauf .knoepfe button { padding: 6px 10px; font-size: .85rem; }
+.wp-detail { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: 8px; padding: 8px 10px; background: #f5f7f2; border-radius: 10px; font-size: .9rem; }
+.wp-detail-status { flex: 1 1 200px; }
+.wp-detail button { padding: 8px 14px; }
+.wp-karten-legende { display: flex; flex-direction: column; gap: 2px; background: rgba(255,255,255,.92); border-radius: 8px; padding: 6px 8px; font-size: .72rem; box-shadow: 0 1px 4px rgba(0,0,0,.25); }
+.wp-karten-legende span { display: flex; align-items: center; gap: 5px; } .wp-karten-legende i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+.wp-karten-legende .link-knopf { font-size: .72rem; }
+@media (max-width: 359px) { .wp-zp-namen { flex-basis: 74px; } .weideplan-panel .tabs button { font-size: .8rem; } .wp-tiere-felder { gap: 4px; } }
+.wp-zeile { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; } .wp-zeile label { flex: 1 1 160px; } .wp-zeile button { flex: none; }

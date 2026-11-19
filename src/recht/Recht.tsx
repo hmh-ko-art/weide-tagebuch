@@ -122,13 +122,15 @@ function Datenschutz() {
           <dd>Einladungscode, vorgesehene Rolle, optional der vorgesehene Name, wer eingeladen hat, Ablaufdatum (14 Tage).</dd>
           <dt>Karteninhalte</dt>
           <dd>Weiden und Flächen mit Koordinaten, Namen, Tierzahlen, Farben, Gruppen, Datum und Notizen. Bei Einträgen und Notizen wird vermerkt, wer sie angelegt oder geändert hat (Personen-ID bzw. Name) und wann.</dd>
+          <dt>Weideplan (falls genutzt)</dt>
+          <dd>Herden (Name, Farbe), Belegungen (welche Herde mit wie vielen Tieren von wann bis wann auf welcher Fläche steht, geplante nächste Fläche, Notiz) und ein Protokoll aller Auf-, Um- und Abtriebe mit Datum, Herkunfts- und Zielfläche (Name und Koordinate), Tierzahl sowie <b>wer den Umtrieb erfasst hat</b> (Personen-ID und Name) und wann. Zweck: Weideplanung, Ruhezeiten und eine nachvollziehbare Betriebsaufzeichnung (Grundlage für spätere Tierbewegungs-Meldungen). Erinnerungen an fällige Umtriebe zeigt nur die App selbst an – es werden <b>keine Push-Benachrichtigungen</b> verschickt und dafür keine Geräte-Kennungen gespeichert.</dd>
           <dt>Dein Standort</dt>
           <dd>Den Gerätestandort fragt die App nur ab, wenn du ausdrücklich „Mein Standort“, „An meinem Standort setzen“ oder eine Route nutzt. Er wird im Browser verwendet und nicht laufend gespeichert. Auf dem Server landet er nur, wenn du an dieser Stelle eine Nadel setzt (als deren Koordinate). Für eine Route wird er an den Routendienst übermittelt (Abschnitt 5).</dd>
           <dt>Schutz vor Missbrauch</dt>
           <dd>Um das Durchprobieren von Einladungscodes und PINs zu verhindern, zählt der Server Fehlversuche je IP-Adresse – nur im Arbeitsspeicher und höchstens eine Stunde lang. FlockMap selbst schreibt keine Zugriffsprotokolle.</dd>
         </dl>
         <p><b>Rechtsgrundlagen:</b> Art. 6 Abs. 1 lit. b DSGVO (Nutzung von FlockMap auf Grundlage der Nutzungsbedingungen bzw. der Hof-Lizenz) und Art. 6 Abs. 1 lit. f DSGVO (berechtigtes Interesse des Betriebs an der Organisation seiner Weidehaltung und an einem sicheren Betrieb).</p>
-        <p><b>Speicherdauer:</b> Personendaten, bis der Zugang gelöscht wird (selbst unter „Meine Daten“ oder durch einen Admin). Karteninhalte, bis sie gelöscht werden oder die Karte bzw. der Hof gelöscht wird (Abschnitt 7).</p>
+        <p><b>Speicherdauer:</b> Personendaten, bis der Zugang gelöscht wird (selbst unter „Meine Daten“ oder durch einen Admin). Karteninhalte und Weideplan, bis sie gelöscht werden oder die Karte bzw. der Hof gelöscht wird (Abschnitt 7). Das Umtriebs-Protokoll ist eine Betriebsaufzeichnung und bleibt so lange erhalten, bis ein Admin einzelne Einträge oder die Karte löscht.</p>
       </A>
 
       <A titel="4. Hosting">
@@ -167,7 +169,7 @@ function Datenschutz() {
 
       <A titel="7. Löschen">
         <ul>
-          <li><b>Eigener Zugang:</b> Unter „Meine Daten“ kannst du deinen Zugang selbst löschen. Dein Name, deine Rolle, dein Zugangsschlüssel und deine PIN werden sofort entfernt. Weiden, Tierzahlen und Notizen, die du eingetragen hast, gehören zu den Betriebsaufzeichnungen des Hofs und bleiben erhalten – sie werden aber auf „ehemaliger Nutzer“ umgestellt, also <b>ohne deinen Namen</b>.</li>
+          <li><b>Eigener Zugang:</b> Unter „Meine Daten“ kannst du deinen Zugang selbst löschen. Dein Name, deine Rolle, dein Zugangsschlüssel und deine PIN werden sofort entfernt. Weiden, Tierzahlen, Notizen und Umtriebe, die du eingetragen hast, gehören zu den Betriebsaufzeichnungen des Hofs und bleiben erhalten – sie werden aber auf „ehemaliger Nutzer“ umgestellt, also <b>ohne deinen Namen</b>.</li>
           <li><b>Karte oder ganzer Hof:</b> Admins (bei einer Einzelkarte) bzw. der Inhaber (bei einem Hof) können alles löschen. Die Daten kommen zunächst 30 Tage in einen Papierkorb – so lässt sich ein Versehen rückgängig machen – und werden danach endgültig gelöscht. Auf Wunsch geht das auch sofort.</li>
           <li>In Sicherungskopien (Abschnitt 4) bleiben Daten bis zu deren Ablauf erhalten.</li>
         </ul>

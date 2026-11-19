@@ -3,6 +3,7 @@
 import express from 'express'
 import fs from 'node:fs'
 import path from 'node:path'
+import * as WP from './weideplan.js'
 import crypto from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 
@@ -171,9 +172,10 @@ function speichern(k) {
 function autorNamen(k) {
   const ids = new Set()
   for (const e of k.eintraege) for (const n of e.notizen ?? []) if (n.autorId) ids.add(n.autorId)
+  for (const b of k.weideplan?.bewegungen ?? []) if (b.autorId) ids.add(b.autorId)
   return Object.fromEntries(k.nutzer.filter((n) => ids.has(n.id)).map((n) => [n.id, n.name]))
 }
-const oeffentlich = (k) => ({ id: k.id, name: k.name, version: k.version, nutzerVersion: k.nutzerVersion, namen: autorNamen(k), eintraege: k.eintraege, gruppen: (k.gruppen ?? []).map((g) => ({ id: g.id, name: g.name, farbe: g.farbe, reihenfolge: g.reihenfolge ?? [], von: g.von, erstellt: g.erstellt })), geaendert: k.geaendert, ...(k.hof && hofCache.has(k.hof) ? { hof: { id: k.hof, name: hofCache.get(k.hof).name } } : {}) })
+const oeffentlich = (k) => ({ id: k.id, name: k.name, version: k.version, nutzerVersion: k.nutzerVersion, namen: autorNamen(k), eintraege: k.eintraege, gruppen: (k.gruppen ?? []).map((g) => ({ id: g.id, name: g.name, farbe: g.farbe, reihenfolge: g.reihenfolge ?? [], von: g.von, erstellt: g.erstellt })), geaendert: k.geaendert, ...(k.weideplan ? { weideplan: k.weideplan } : {}), ...(k.hof && hofCache.has(k.hof) ? { hof: { id: k.hof, name: hofCache.get(k.hof).name } } : {}) })
 function senden(k) {
   const set = clients.get(k.id)
   if (!set) return
@@ -232,6 +234,7 @@ app.post('/api/karten', (req, res) => {
     erstellt: jetzt,
   }
   k.eintraege.forEach((e) => gruppeGueltig(k, e))
+  if (req.body?.weideplan) WP.planErgaenzen(k, req.body.weideplan, new Set([admin.id]), jetzt)
   cache.set(id, k)
   speichern(k)
   res.status(201).json({ ...oeffentlich(k), zugang: admin.zugang, ich: ichInfo(admin) })
@@ -387,8 +390,65 @@ app.post('/api/karten/:id/stapel', mitKarte('admin'), (req, res) => {
     const dazu = [...new Set([...vorgabe, ...mitglieder])].filter((id) => !(g.reihenfolge ?? []).includes(id))
     g.reihenfolge = [...(g.reihenfolge ?? []), ...dazu]
   }
-  if (neu || gruppenNeu) speichern(k)
-  res.json({ ok: true, version: k.version, neu, schon, ungueltig, gruppenNeu })
+  const planNeu = req.body?.weideplan ? WP.planErgaenzen(k, req.body.weideplan, nutzerIds, jetzt).neu : 0
+  if (neu || gruppenNeu || planNeu) speichern(k)
+  res.json({ ok: true, version: k.version, neu, schon, ungueltig, gruppenNeu, planNeu })
+})
+
+// ---- Weideplan (Belegungen, Umtriebe, Ruhezeiten) – Logik gemeinsam mit der App in server/weideplan.js ----
+// Bearbeiten dürfen alle mit Schreibrecht (Umtriebe macht oft der Mitarbeiter auf der Weide); Herde/Protokoll löschen: Admin.
+function planAntwort(k, res, r) {
+  WP.planAufraeumen(k)
+  if (r.konflikt) {
+    const konflikt = { art: r.konflikt.art, titel: r.konflikt.titel, ...(r.konflikt.mitId ? { mit: nutzerName(k, r.konflikt.mitId) } : {}), ...(r.konflikt.gewonnen !== undefined ? { gewonnen: r.konflikt.gewonnen } : {}) }
+    if (!r.ok) return res.status(409).json({ fehler: 'Konflikt', konflikt })
+    if (!r.schon) speichern(k)
+    return res.json({ ok: true, version: k.version, konflikt })
+  }
+  if (r.fehler) return res.status(400).json({ fehler: r.fehler })
+  if (!r.schon) speichern(k)
+  res.json({ ok: true, version: k.version })
+}
+const planIch = (n) => ({ id: n.id, name: n.name })
+app.put('/api/karten/:id/weideplan/herden/:hid', mitKarte('nutzer'), (req, res) => {
+  const k = req.karte
+  const alt = WP.herdeVon(k.weideplan, req.params.hid)
+  if (alt && !istAdmin(req.nutzer) && alt.von && alt.von !== req.nutzer.id) return res.status(403).json({ fehler: 'Nur eigene Herden umbenennen (oder Admin)' })
+  planAntwort(k, res, WP.herdeSetzen(k, { ...req.body, id: req.params.hid }, planIch(req.nutzer), new Date().toISOString()))
+})
+app.delete('/api/karten/:id/weideplan/herden/:hid', mitKarte('nutzer'), (req, res) => {
+  const k = req.karte
+  const alt = WP.herdeVon(k.weideplan, req.params.hid)
+  if (!alt) return res.json({ ok: true })
+  if (!istAdmin(req.nutzer) && alt.von !== req.nutzer.id) return res.status(403).json({ fehler: 'Nur eigene Herden löschen (oder Admin)' })
+  planAntwort(k, res, WP.herdeLoeschen(k, req.params.hid))
+})
+app.put('/api/karten/:id/weideplan/belegungen/:bid', mitKarte('nutzer'), (req, res) => {
+  const k = req.karte
+  const body = req.body ?? {}
+  planAntwort(k, res, WP.belegungSetzen(k, { ...body.belegung, id: req.params.bid }, planIch(req.nutzer), new Date().toISOString(), typeof body.basisGeaendert === 'string' ? body.basisGeaendert : null))
+})
+app.delete('/api/karten/:id/weideplan/belegungen/:bid', mitKarte('nutzer'), (req, res) => {
+  const k = req.karte
+  if (!k.weideplan?.belegungen.some((b) => b.id === req.params.bid)) return res.json({ ok: true })
+  planAntwort(k, res, WP.belegungLoeschen(k, req.params.bid))
+})
+app.post('/api/karten/:id/weideplan/umtrieb', mitKarte('nutzer'), (req, res) => {
+  planAntwort(req.karte, res, WP.umtrieb(req.karte, req.body, planIch(req.nutzer), new Date().toISOString()))
+})
+app.post('/api/karten/:id/weideplan/umtrieb/:bid/zurueck', mitKarte('nutzer'), (req, res) => {
+  const k = req.karte
+  const b = k.weideplan?.bewegungen.find((x) => x.id === req.params.bid)
+  if (b && !istAdmin(req.nutzer) && b.autorId !== req.nutzer.id) return res.status(403).json({ fehler: 'Nur eigene Umtriebe rückgängig machen (oder Admin)' })
+  planAntwort(k, res, WP.umtriebZurueck(k, req.params.bid, planIch(req.nutzer), new Date().toISOString()))
+})
+app.delete('/api/karten/:id/weideplan/bewegungen/:bid', mitKarte('admin'), (req, res) => {
+  const k = req.karte
+  if (!k.weideplan?.bewegungen.some((b) => b.id === req.params.bid)) return res.json({ ok: true })
+  planAntwort(k, res, WP.bewegungLoeschen(k, req.params.bid))
+})
+app.put('/api/karten/:id/weideplan/einstellungen', mitKarte('nutzer'), (req, res) => {
+  planAntwort(req.karte, res, WP.einstellungenSetzen(req.karte, req.body ?? {}))
 })
 
 // Notiz anlegen/ändern (per Notiz-ID zusammengeführt -> gleichzeitige Notizen gehen nicht verloren)
@@ -992,6 +1052,7 @@ function personAnonymisieren(k, id, name) {
   }
   for (const g of k.gruppen ?? []) if (g.von === id) delete g.von
   if (k.einladung?.von === id) delete k.einladung.von
+  WP.planAnonymisieren(k, id, EHEMALIG)
 }
 
 // Auskunft: was ist über mich gespeichert? (Art. 15/20 DSGVO)
@@ -1000,13 +1061,14 @@ app.get('/api/karten/:id/ich/daten', mitKarte('angemeldet', true), (req, res) =>
   const h = hofVon(k)
   const m = h?.mitglieder.find((x) => x.id === n.id)
   const karten = h ? h.karten.map((id) => cache.get(id)).filter(Boolean) : [k]
-  const eintraege = [], notizen = [], gruppen = []
+  const eintraege = [], notizen = [], gruppen = [], umtriebe = []
   for (const kk of karten) {
     for (const e of kk.eintraege) {
       if (e.erstelltVon === n.id) eintraege.push({ karte: kk.name, id: e.id, titel: e.titel || '', typ: e.typ, erstellt: e.erstellt })
       for (const x of e.notizen ?? []) if (x.autorId === n.id) notizen.push({ karte: kk.name, eintrag: e.titel || '', text: x.text, zeitpunkt: x.zeitpunkt })
     }
     for (const g of kk.gruppen ?? []) if (g.von === n.id) gruppen.push({ karte: kk.name, name: g.name })
+    for (const b of kk.weideplan?.bewegungen ?? []) if (b.autorId === n.id) umtriebe.push({ karte: kk.name, art: b.art, datum: b.datum, herde: b.herdeName, von: b.von?.name ?? null, nach: b.nach?.name ?? null })
   }
   res.json({
     erstellt: new Date().toISOString(),
@@ -1014,7 +1076,7 @@ app.get('/api/karten/:id/ich/daten', mitKarte('angemeldet', true), (req, res) =>
     hof: h ? { name: h.name, rolle: m?.rolle ?? null, pinEingerichtet: !!m?.pin, perEinladung: !!m?.perEinladung, karten: karten.map((x) => x.name) } : null,
     karte: { name: k.name },
     zugang: 'Dein persönlicher Link (Zugangsschlüssel) ist gespeichert, wird hier aber nicht angezeigt.',
-    eintraege, notizen, gruppen,
+    eintraege, notizen, gruppen, umtriebe,
     technisch: 'IP-Adressen werden nur kurzzeitig (höchstens 1 Stunde, nur im Arbeitsspeicher) für den Schutz vor Missbrauch gezählt. Der Hoster speichert Zugriffsprotokolle (siehe Datenschutzerklärung).',
   })
 })

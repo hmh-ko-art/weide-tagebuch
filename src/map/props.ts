@@ -28,6 +28,7 @@ export interface KartenProps {
   verschiebbar: string[] // IDs der Nadeln, die dieser Nutzer verschieben darf (Drag-and-drop)
   onVerschieben: (id: string, p: LatLng) => void
   onKlick: (p: LatLng) => void
+  onAblegen?: (art: string, p: LatLng) => void // Ziehen & Ablegen aus der Seitenleiste (Desktop): Nadel/Fläche/Zaun an dieser Stelle
   onAuswahl: (id: string, p?: LatLng) => void // p: angetippte Stelle (Linien/Tore)
   onMitte: (p: LatLng) => void
 }

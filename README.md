@@ -89,6 +89,14 @@ Code: `server/flaechen.js` (gemeinsam für Server **und** App: Messen, Steckbrie
 - **Übersicht**: Liste → Flächen → „📊 Übersicht, Pacht & Summen“ (Summen gesamt/Pacht/€ je Jahr/je Art, sortierbare Tabelle, Excel/PDF „Flächenverzeichnis“).
 - **Export/Import**: Excel-Blätter „Flächenverzeichnis“, „Flächen-Summen“, „Fristen“; PDF-Kapitel; KML-ExtendedData `flockmap_steckbrief` (+ `flockmap_pacht` nur mit Admin-Option); JSON-Sicherung inkl. Pacht (nur Admin). Import: KML/GeoJSON (FLIK/Schlag/Nutzung aus Attributen geraten, MultiPolygon → mehrere Flächen) und Shapefile-ZIP (.shp/.dbf/.prj; WGS84 oder ETRS89/UTM 32/33 – Gauß-Krüger nicht unterstützt; nur Außenringe).
 
+## Bedienknöpfe: Handy und PC (7g)
+
+- **Handy (bis 600 px Breite):** Unten rechts ist nur noch ein runder **＋**-Knopf. Antippen öffnet das Menü mit Nadel, Standort, Fläche und Zaun; das ＋ wird zum ×. Das Menü schließt nach einer Auswahl, beim Tippen daneben oder bei einem zweiten Tipp auf ×. Tippen daneben setzt keine Nadel. Wer nur ansehen darf, sieht nur den Standort-Knopf.
+- **PC (ab 900 px):** Die Seitenleiste ist wieder **rechts**. Eingeklappt ist sie eine schmale Leiste mit „« Liste“, Nadel, Standort, Fläche und Zaun. Aufgeklappt stehen dieselben Werkzeuge oben über der Liste; mit » klappt sie wieder ein. Die Karte wird dabei schmaler, nichts schwebt über ihr.
+  - **Nadel:** auf die Karte **ziehen und loslassen**. Die Nadelspitze landet genau dort, wo du loslässt. Alternativ „Nadel“ klicken und dann in die Karte klicken, oder direkt in die Karte klicken.
+  - **Fläche/Zaun:** klicken startet das Zeichnen. Wer das Symbol auf die Karte zieht, setzt dort gleich den ersten Punkt.
+- **Tablet (601–899 px):** unverändert.
+
 ## Nadel setzen (7e)
 
 - Tippen/Klicken auf die Karte (Ansicht ohne Auswahl oder nach „＋ Nadel“) setzt die Nadel **sofort genau an der Stelle** und speichert sie (Farbe = zuletzt benutzte, ohne Namen; offline in der Warteschlange). Kein Fadenkreuz/„Kartenmitte“ mehr; „📍 An meinem Standort“ bleibt als eigene Option im Setz-Modus.

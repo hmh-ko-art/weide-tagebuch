@@ -357,10 +357,9 @@ select { font: inherit; border: 1px solid #c9d3c4; border-radius: 10px; padding:
 
 /* Desktop: Liste als Seitenleiste links (wie My Maps) */
 @media (min-width: 900px) {
-  .liste-offen .liste-panel { left: 0; right: auto; width: 380px; box-shadow: 2px 0 14px rgba(0,0,0,.25); }
-  .liste-offen .karten-werkzeug { left: 392px; }
-  .liste-offen .fab-leiste { right: 12px; left: auto; }
-  .liste-offen .toast { left: calc(380px + (100% - 380px) / 2); }
+  /* 7g: Desktop – Seitenleiste wieder RECHTS (wie früher); die Karte wird schmaler statt verdeckt */
+  .liste-offen .liste-panel { left: auto; right: 0; width: 380px; box-shadow: -2px 0 14px rgba(0,0,0,.18); border-left: 1px solid #e3dccb; }
+  .liste-offen .toast { top: 12px; bottom: auto; left: calc((100% - 380px) / 2); max-width: calc(100% - 420px); }
 }
 
 /* ---- Hof-Konten ---- */
@@ -716,3 +715,47 @@ button.klein { padding: 6px 10px; font-size: .88rem; flex: none; }
 .unsichtbar { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 .spannung-schwelle { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-weight: 600; }
 .spannung-schwelle input { width: 80px; font-size: 1.1rem; text-align: center; }
+
+/* 7g – Handy: Speed-Dial statt vier gestapelter Knöpfe (Desktop unverändert) */
+.fab-schalter, .fab-schleier { display: none; }
+@media (max-width: 600px) {
+  .fab-leiste.mit-menue .fab-schalter { display: flex; width: 56px; height: 56px; padding: 0; border-radius: 50%; justify-content: center; background: var(--gruen); color: #fff; font-size: 1.7rem; font-weight: 700; }
+  .fab-schalter .fab-plus { font-size: inherit; display: inline-block; transition: transform .18s; line-height: 1; }
+  .fab-leiste.auf .fab-schalter .fab-plus { transform: rotate(45deg); }
+  .fab-leiste.mit-menue:not(.auf) .fab:not(.fab-schalter) { display: none; }
+  .fab-leiste.mit-menue.auf .fab:not(.fab-schalter) { animation: fab-auf .14s ease-out; min-width: 128px; justify-content: flex-start; }
+  .fab-leiste.mit-menue.auf .haupt-fab { font-size: 1.05rem; padding: 12px 16px; }
+  .fab-schleier { display: block; position: absolute; inset: 0; z-index: 999; background: rgba(0,0,0,.12); }
+  .liste-offen .fab-leiste.mit-menue .fab-schalter { width: 48px; height: 48px; }
+  .liste-offen .fab-leiste.mit-menue.auf .fab:not(.fab-schalter) { min-width: 0; }
+  /* linke Kartenknöpfe etwas kompakter */
+  .karten-werkzeug { gap: 6px; }
+  .werkzeug-knopf { width: 40px; height: 40px; }
+  .farb-chips { gap: 5px; padding: 5px; }
+  .farb-chip { width: 26px; height: 26px; }
+}
+@keyframes fab-auf { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+/* 7g – Desktop: Werkzeuge in der rechten Seitenleiste (nichts schwebt über der Karte) */
+.zieh-bild { position: fixed; top: -200px; left: -200px; pointer-events: none; }
+.werkzeug-leiste, .liste-werkzeug-kopf { display: none; }
+@media (min-width: 900px) {
+  .desktop-leiste .karte { right: 76px; }
+  .desktop-leiste.liste-offen .karte { right: 380px; }
+  .desktop-leiste:not(.liste-offen) .toast { left: calc((100% - 76px) / 2); }
+  .werkzeug-leiste { display: flex; flex-direction: column; align-items: stretch; gap: 10px; position: absolute; top: 0; right: 0; bottom: 0; width: 76px; padding: 10px 7px; background: #fbf8f0; border-left: 1px solid #e3dccb; z-index: 1000; overflow-y: auto; }
+  .wz-gruppe { display: flex; flex-direction: column; gap: 8px; padding-top: 10px; border-top: 1px solid #e3dccb; }
+  .wz { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 56px; padding: 6px 4px; border: 1.5px solid #d8d2c2; border-radius: 12px; background: #fff; color: #1e4d2b; cursor: pointer; font-size: .74rem; font-weight: 600; line-height: 1.1; }
+  .wz .wz-i { font-size: 1.25rem; line-height: 1; }
+  .wz:hover:not(:disabled) { border-color: #1e4d2b; background: #f1f6ee; }
+  .wz:disabled { opacity: .45; cursor: default; }
+  .wz[draggable="true"] { cursor: grab; }
+  .wz[draggable="true"]:active { cursor: grabbing; }
+  .wz-nadel { background: var(--gruen); border-color: var(--gruen); color: #fff; }
+  .wz-nadel:hover:not(:disabled) { background: #2a6b3b; color: #fff; }
+  .wz-auf { min-height: 48px; }
+  .liste-werkzeug-kopf { display: flex; gap: 6px; align-items: stretch; padding-bottom: 8px; border-bottom: 1px solid #e3dccb; position: sticky; top: -10px; background: inherit; z-index: 2; margin-top: -2px; }
+  .liste-werkzeuge { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; flex: 1; }
+  .liste-werkzeuge .wz { min-height: 52px; }
+  .wz-zu { width: 36px; min-height: 52px; padding: 0; }
+}

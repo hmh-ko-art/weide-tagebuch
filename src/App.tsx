@@ -10,6 +10,7 @@ import { WeideplanPanel, PlanZeile, type PlanStart } from './weideplan/Weideplan
 import { planFarben as planFarbenAnwenden, faelligAnzahl } from './weideplan/hilfen'
 import { STATUS_FARBEN, heute } from '../server/weideplan.js'
 import { FlaechenUebersicht, MessText, SteckbriefDetail, SteckbriefFormular, fristenListe, pachtAusForm, pachtFormAus } from './flaechen/Flaechen'
+import { nadelHtml } from './map/nadel'
 import { SpannungZeile } from './spannung/Spannung'
 import { schwelleLesen, schwelleSetzen } from './spannung/schwelle'
 import * as SP from '../server/spannung.js'
@@ -43,6 +44,28 @@ function hell(hex: string) {
 // Handy/Touch: Standort als erste Option; Desktop (Maus): freies Antippen + Kartenmitte zuerst
 function istHandy() {
   return window.matchMedia?.('(pointer: coarse)').matches || window.innerWidth <= 560
+}
+
+// Desktop/PC (≥ 900 px): Werkzeuge (Nadel/Standort/Fläche/Zaun) in der rechten Seitenleiste statt über der Karte
+const DESKTOP_MQ = '(min-width: 900px)'
+function useDesktop() {
+  const [d, setD] = useState(() => !!window.matchMedia?.(DESKTOP_MQ).matches)
+  useEffect(() => {
+    const mq = window.matchMedia?.(DESKTOP_MQ); if (!mq) return
+    const f = () => setD(mq.matches); mq.addEventListener('change', f); return () => mq.removeEventListener('change', f)
+  }, [])
+  return d
+}
+// Ziehen aus der Seitenleiste: Vorschaubild = Nadel, Spitze unter dem Mauszeiger (Ablegepunkt = Nadelposition)
+const ZIEH_TYP = 'application/x-flockmap'
+function ziehStart(ev: React.DragEvent, art: 'pin' | 'flaeche' | 'linie', farbe: string) {
+  ev.dataTransfer.setData(ZIEH_TYP, art); ev.dataTransfer.setData('text/plain', `flockmap:${art}`); ev.dataTransfer.effectAllowed = 'copy'
+  if (art !== 'pin') return
+  const el = document.createElement('div'); el.className = 'zieh-bild'; el.innerHTML = nadelHtml(farbe, true)
+  document.body.appendChild(el)
+  const b = el.getBoundingClientRect()
+  ev.dataTransfer.setDragImage(el, b.width / 2, b.height)
+  setTimeout(() => el.remove(), 0)
 }
 
 const KOPF_STANDARD = '#1e4d2b'
@@ -98,6 +121,8 @@ export default function App() {
   // Beschriftung (Namen auf der Karte) an/aus – pro Gerät gespeichert
   const [schwelle, setSchwelleRoh] = useState(() => schwelleLesen(k.karteId || 'lokal'))
   const setSchwelle = (n: number) => { schwelleSetzen(k.karteId || 'lokal', n); setSchwelleRoh(n) }
+  const desktop = useDesktop()
+  const [fabAuf, setFabAuf] = useState(false) // Handy: Speed-Dial offen?
   const [rueckS, setRueckS] = useState(() => { const n = Number(localStorage.getItem('wt-rueckgaengig-s')); return [5, 10, 20].includes(n) ? n : 10 })
   useEffect(() => { localStorage.setItem('wt-rueckgaengig-s', String(rueckS)) }, [rueckS])
   const [beschriftung, setBeschriftung] = useState(() => localStorage.getItem('wt-beschriftung') !== 'aus')
@@ -264,6 +289,27 @@ export default function App() {
 
   const abwaehlen = () => { setAusgewaehlt(null); setRoute(null); setRouteInfo(''); routeNr.current++ }
 
+  // Werkzeuge (Handy: Speed-Dial, Tablet: Knopfstapel, Desktop: rechte Seitenleiste)
+  const listeZuHandy = () => { if (panel === 'liste' && !desktop) setPanel(null) }
+  const starteNadel = () => { setFabAuf(false); abwaehlen(); listeZuHandy(); setModus('pin') }
+  const starteFlaeche = (start?: LatLng) => { setFabAuf(false); abwaehlen(); listeZuHandy(); setZeichenPunkte(start ? [start] : []); setModus('flaeche') }
+  const starteZaun = (start?: LatLng) => { setFabAuf(false); abwaehlen(); listeZuHandy(); setZeichenPunkte(start ? [start] : []); if (infraAus.aus.includes('__alle')) infraAus.umschalten('__alle'); setModus('linie') }
+  const kartenAblage = (art: string, p: LatLng) => {
+    if (!k.darfBearbeiten || formular || modus !== 'ansicht') return
+    setKreisPop(null)
+    if (art === 'pin') { abwaehlen(); neuerPin(p) } else if (art === 'flaeche') starteFlaeche(p); else if (art === 'linie') starteZaun(p)
+  }
+  const werkzeugeFrei = modus === 'ansicht' && !formular
+  const ziehFarbe = localStorage.getItem('wt-letzte-farbe') || STANDARD_FARBE
+  const werkzeuge = (art: 'leiste' | 'kopf') => (
+    <div className={art === 'leiste' ? 'wz-gruppe' : 'liste-werkzeuge'} role="toolbar" aria-label="Werkzeuge">
+      {k.darfBearbeiten && <button className="wz wz-nadel" disabled={!werkzeugeFrei} draggable={werkzeugeFrei} onDragStart={(ev) => ziehStart(ev, 'pin', ziehFarbe)} onClick={starteNadel} title="Nadel setzen – klicken und dann in die Karte klicken, oder auf die Karte ziehen"><span className="wz-i">＋</span><span>Nadel</span></button>}
+      <button className="wz" disabled={!werkzeugeFrei} onClick={() => meinStandort()} title="Mein Standort"><span className="wz-i">📍</span><span>Standort</span></button>
+      {k.darfBearbeiten && <button className="wz" disabled={!werkzeugeFrei} draggable={werkzeugeFrei} onDragStart={(ev) => ziehStart(ev, 'flaeche', ziehFarbe)} onClick={() => starteFlaeche()} title="Fläche zeichnen – klicken, oder auf die Karte ziehen (erster Eckpunkt)"><span className="wz-i">⬠</span><span>Fläche</span></button>}
+      {k.darfBearbeiten && <button className="wz" disabled={!werkzeugeFrei} draggable={werkzeugeFrei} onDragStart={(ev) => ziehStart(ev, 'linie', ziehFarbe)} onClick={() => starteZaun()} title="Zaun, Weg oder Graben zeichnen – klicken, oder auf die Karte ziehen (erster Punkt)"><span className="wz-i">〰</span><span>Zaun</span></button>}
+    </div>
+  )
+
   const kartenKlick = (p: LatLng) => {
     if (kreisPop) { setKreisPop(null); return }
     if (formular) return
@@ -396,7 +442,7 @@ export default function App() {
     : k.status === 'verbinde' ? 'Verbinde …' : 'Live · synchronisiert'
 
   return (
-    <div className={`app${panel === 'liste' ? ' liste-offen' : ''}`}>
+    <div className={`app${panel === 'liste' ? ' liste-offen' : ''}${desktop ? ' desktop-leiste' : ''}`}>
       <header className={`kopf${kopfFarbe && hell(kopfFarbe) ? ' kopf-hell' : ''}`} style={kopfFarbe ? { background: kopfFarbe, color: hell(kopfFarbe) ? '#1d2a1d' : '#f4ecd8' } : undefined}>
         <img className="marke" src="/icon.svg" alt="" width="36" height="36" />
         <div className="kopf-text">
@@ -450,6 +496,7 @@ export default function App() {
           verschiebbar={modus === 'ansicht' && !formular ? k.eintraege.filter((e) => e.typ === 'pin' && k.darfBearbeiten && kannEintrag(e)).map((e) => e.id) : []}
           onVerschieben={nadelVerschieben}
           onKlick={kartenKlick}
+          onAblegen={kartenAblage}
           onAuswahl={waehle}
           onMitte={(p) => (mitteRef.current = p)}
         />
@@ -481,17 +528,26 @@ export default function App() {
           )}
         </div>
 
-        {modus === 'ansicht' && !formular && (
-          <div className="fab-leiste">
-            <button className="fab" title="Mein Standort" onClick={() => meinStandort()}>📍<span>Standort</span></button>
+        {/* Handy (≤ 600 px): ein runder ＋-Knopf klappt Nadel/Standort/Fläche/Zaun als Menü auf (Speed-Dial); Desktop unverändert */}
+        {!desktop && modus === 'ansicht' && !formular && fabAuf && k.darfBearbeiten && <div className="fab-schleier" aria-hidden="true" onClick={(x) => { x.stopPropagation(); setFabAuf(false) }} />}
+        {!desktop && modus === 'ansicht' && !formular && (
+          <div className={`fab-leiste${k.darfBearbeiten ? ' mit-menue' : ''}${fabAuf ? ' auf' : ''}`}>
+            <button className="fab" title="Mein Standort" onClick={() => { setFabAuf(false); meinStandort() }}>📍<span>Standort</span></button>
             {k.darfBearbeiten && (
               <>
-                <button className="fab" onClick={() => { abwaehlen(); if (panel === 'liste') setPanel(null); setZeichenPunkte([]); setModus('flaeche') }}>⬠<span>Fläche</span></button>
-                <button className="fab" title="Zaun, Weg oder Graben zeichnen" onClick={() => { abwaehlen(); if (panel === 'liste') setPanel(null); setZeichenPunkte([]); if (infraAus.aus.includes('__alle')) infraAus.umschalten('__alle'); setModus('linie') }}>〰<span>Zaun</span></button>
-                <button className="fab haupt-fab" onClick={() => { abwaehlen(); if (panel === 'liste') setPanel(null); setModus('pin') }}>＋<span>Nadel</span></button>
+                <button className="fab" onClick={() => starteFlaeche()}>⬠<span>Fläche</span></button>
+                <button className="fab" title="Zaun, Weg oder Graben zeichnen" onClick={() => starteZaun()}>〰<span>Zaun</span></button>
+                <button className="fab haupt-fab" onClick={starteNadel}>＋<span>Nadel</span></button>
+                <button className="fab fab-schalter" aria-expanded={fabAuf} aria-label={fabAuf ? 'Menü schließen' : 'Hinzufügen: Nadel, Standort, Fläche, Zaun'} onClick={() => setFabAuf(!fabAuf)}><span className="fab-plus" aria-hidden="true">＋</span></button>
               </>
             )}
           </div>
+        )}
+        {desktop && panel !== 'liste' && (
+          <aside className="werkzeug-leiste" aria-label="Seitenleiste (eingeklappt)">
+            <button className="wz wz-auf" onClick={() => setPanel('liste')} title="Seitenleiste mit Liste aufklappen" aria-label="Seitenleiste aufklappen"><span className="wz-i">«</span><span>Liste</span></button>
+            {werkzeuge('leiste')}
+          </aside>
         )}
 
         {modus === 'pin' && (() => {
@@ -626,7 +682,7 @@ export default function App() {
         {formular && <Formular gruppeName={k.gruppen.find((g) => g.id === formular.e.gruppe)?.name} start={formular.e} neu={formular.neu} istAdmin={k.istAdmin} pacht={k.pacht[formular.e.id]} onPacht={(p) => k.pachtSpeichern(formular.e.id, p)} onSpeichern={speichern} onAbbrechen={() => setFormular(null)} onLoeschen={formular.neu || !kannEintrag(formular.e) ? undefined : () => loeschen(formular.e)} />}
 
         {panel === 'liste' && (
-          <Liste schwelle={schwelle} eintraege={anzeige.eintraege} gruppen={k.gruppen} nummern={anzeige.nummern} gruppenAus={gruppenAus}
+          <Liste werkzeuge={desktop ? werkzeuge('kopf') : undefined} schwelle={schwelle} eintraege={anzeige.eintraege} gruppen={k.gruppen} nummern={anzeige.nummern} gruppenAus={gruppenAus}
             onSichtbar={(gid) => setGruppenAus((l) => (l.includes(gid) ? l.filter((x) => x !== gid) : [...l, gid]))} onReihenfolge={k.reihenfolge} onSchliessen={() => setPanel(null)} onWahl={(e) => { fliege(mitte(e), e.typ === 'pin' ? 15 : undefined); waehle(e.id) }}
             darfBearbeiten={k.darfBearbeiten} kannEintrag={kannEintrag} kannGruppe={kannGruppe} ichId={k.ich?.id}
             onGruppeSpeichern={k.gruppeSpeichern} onGruppeLoeschen={k.gruppeLoeschen} onInGruppe={inGruppe} neueGruppe={neueGruppe}
@@ -889,6 +945,7 @@ function Formular(p: { gruppeName?: string; start: Eintrag; neu: boolean; istAdm
 }
 
 type ListeProps = {
+  werkzeuge?: React.ReactNode
   schwelle: number
   eintraege: Eintrag[]; gruppen: Gruppe[]; onWahl: (e: Eintrag) => void; onSchliessen: () => void
   darfBearbeiten: boolean; kannEintrag: (e: Eintrag) => boolean; kannGruppe: (g: Gruppe) => boolean
@@ -1132,6 +1189,7 @@ function Liste(p: ListeProps) {
 
   return (
     <section className={`panel liste-panel${zieh ? ' zieht' : ''}`} ref={panelRef}>
+      {p.werkzeuge && <div className="liste-werkzeug-kopf">{p.werkzeuge}<button className="wz wz-zu" onClick={p.onSchliessen} title="Seitenleiste einklappen" aria-label="Seitenleiste einklappen"><span className="wz-i">»</span></button></div>}
       <div className="sheet-kopf">
         <h2>Tagebuch</h2>
         <button className="kopf-export" title={filterAktiv ? 'Angezeigte exportieren (Excel, PDF, KML)' : 'Exportieren (Excel, PDF, KML)'} onClick={() => p.onExport(filterAktiv ? { ids: liste.map((e) => e.id), text: [`nur ${wort[1]}`, farbe && `Farbe ${farbName(farbe)}`, suche.trim() && `Suche „${suche.trim()}“`, zeitraumAktiv && `Zeitraum ${zeitraumText}`].filter(Boolean).join(' · ') } : null)}>⬇️ Export{filterAktiv ? ` (${liste.length})` : ''}</button>

@@ -97,13 +97,25 @@ export default function LeafletKarte(p: KartenProps) {
     c0.addEventListener('pointerup', abbruch); c0.addEventListener('pointercancel', abbruch)
     c0.addEventListener('contextmenu', (ev) => { ev.preventDefault(); abbruch(); lang(ev.clientX, ev.clientY) })
     m.on('click', (e) => { if (Date.now() < langBis) return; cb.current.onKlick({ lat: e.latlng.lat, lng: e.latlng.lng }) })
+    // Ziehen & Ablegen aus der Seitenleiste (Desktop): Ablegepunkt = Position
+    c0.addEventListener('dragover', (ev) => { if (ev.dataTransfer?.types.includes('application/x-flockmap')) { ev.preventDefault(); ev.dataTransfer.dropEffect = 'copy' } })
+    c0.addEventListener('drop', (ev) => {
+      const art = ev.dataTransfer?.getData('application/x-flockmap')
+      if (!art) return
+      ev.preventDefault()
+      const r = c0.getBoundingClientRect(), q = m.containerPointToLatLng([ev.clientX - r.left, ev.clientY - r.top])
+      cb.current.onAblegen?.(art, { lat: q.lat, lng: q.lng })
+    })
+    // Kartengröße ändert sich (Seitenleiste auf/zu) -> Leaflet neu vermessen
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => m.invalidateSize({ pan: false })) : null
+    ro?.observe(c0)
     let ebeneName = 'Satellit'
     const ansichtMerken = () => { const b = m.getBounds(), c = m.getCenter(); ansichtSetzen({ nord: b.getNorth(), sued: b.getSouth(), west: b.getWest(), ost: b.getEast(), zoom: m.getZoom(), ebene: ebeneName, lat: c.lat, lng: c.lng }) }
     m.on('baselayerchange', (e) => { ebeneName = e.name; ansichtMerken() })
     m.on('moveend', () => { const c = m.getCenter(); cb.current.onMitte({ lat: c.lat, lng: c.lng }); ansichtMerken() })
     ansichtMerken()
     map.current = m
-    return () => { m.remove() }
+    return () => { ro?.disconnect(); m.remove() }
   }, [])
 
   // Einträge

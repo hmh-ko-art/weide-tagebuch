@@ -12,6 +12,7 @@ import { STATUS_FARBEN, heute } from '../server/weideplan.js'
 import { FlaechenUebersicht, MessText, SteckbriefDetail, SteckbriefFormular, fristenListe, pachtAusForm, pachtFormAus } from './flaechen/Flaechen'
 import { nadelHtml } from './map/nadel'
 import { SpannungZeile } from './spannung/Spannung'
+import { InfoKarte, InfoHinweis, Tipp } from './InfoKarte'
 import { schwelleLesen, schwelleSetzen } from './spannung/schwelle'
 import * as SP from '../server/spannung.js'
 import { FreiKreisDetail, KreisDetail, KreisLeiste, KreisPop, kreisAendern, kreisAnzahl, kreisAusEdit, kreisNachVerschieben, kreisStart, kreisVorgaben, kreisVorgabenSetzen, type KreisEdit } from './kreis/Kreis'
@@ -186,6 +187,28 @@ export default function App() {
   const [verschoben, setVerschoben] = useState<{ id: string; alt: LatLng; nr: number; seit?: number; kreise?: Pick<Pin, 'kreis' | 'kreiseStehen'>; vorlaeufig?: boolean } | null>(null)
   const [neuGesetzt, setNeuGesetzt] = useState<{ id: string; n: number } | null>(null)
   useEffect(() => { if (!neuGesetzt) return; const t = setTimeout(() => setNeuGesetzt(null), rueckS * 1000); return () => clearTimeout(t) }, [neuGesetzt, rueckS])
+  const neuGesetztDa = !!neuGesetzt && k.eintraege.some((x) => x.id === neuGesetzt.id)
+  // 7i: Höhe des Infostapels -> ＋-Knopf und Karten-Quellenangabe rücken darüber (Handy), nichts überlappt
+  const stapelRo = useRef<ResizeObserver | null>(null)
+  const stapelRef = useCallback((el: HTMLDivElement | null) => {
+    stapelRo.current?.disconnect(); stapelRo.current = null
+    const app = el?.closest('.app') as HTMLElement | null
+    if (!el || !app || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(() => app.style.setProperty('--stapel-h', `${Math.ceil(el.getBoundingClientRect().height)}px`))
+    ro.observe(el); stapelRo.current = ro
+  }, [])
+  // Höhe der Karten-Quellenangabe (Leaflet, kann am Handy umbrechen) -> ＋-Knopf und Infostapel halten Abstand
+  useEffect(() => {
+    let ro: ResizeObserver | null = null, n = 0, t = 0
+    const such = () => {
+      const app = document.querySelector('.app') as HTMLElement | null
+      const at = app?.querySelector('.leaflet-control-attribution') as HTMLElement | null
+      if (app && at && typeof ResizeObserver !== 'undefined') { ro = new ResizeObserver(() => app.style.setProperty('--attr-h', `${Math.ceil(at.getBoundingClientRect().height)}px`)); ro.observe(at); return }
+      if (n++ < 40) t = window.setTimeout(such, 500)
+    }
+    such()
+    return () => { ro?.disconnect(); clearTimeout(t) }
+  }, [k.karteId])
   const [kreisPop, setKreisPop] = useState<{ id: string; stehenId: string | null; x: number; y: number } | null>(null)
   // Countdown abgelaufen -> vorläufige Kreise endgültig machen (mit dem aktuellen Stand der Nadel)
   const verschobenFertigRef = useRef<(v: NonNullable<typeof verschoben>) => void>(() => {})
@@ -489,7 +512,7 @@ export default function App() {
     : k.status === 'verbinde' ? 'Verbinde …' : 'Live · synchronisiert'
 
   return (
-    <div className={`app${panel === 'liste' ? ' liste-offen' : ''}${desktop ? ' desktop-leiste' : ''}`}>
+    <div className={`app${panel === 'liste' ? ' liste-offen' : ''}${panel ? ' panel-offen' : ''}${desktop ? ' desktop-leiste' : ''}${(auswahl && !formular && modus === 'ansicht') || formular || modus !== 'ansicht' ? ' info-offen' : ''}`}>
       <header className={`kopf${kopfFarbe && hell(kopfFarbe) ? ' kopf-hell' : ''}`} style={kopfFarbe ? { background: kopfFarbe, color: hell(kopfFarbe) ? '#1d2a1d' : '#f4ecd8' } : undefined}>
         <img className="marke" src="/icon.svg" alt="" width="36" height="36" />
         <div className="kopf-text">
@@ -599,49 +622,72 @@ export default function App() {
           </aside>
         )}
 
+        {/* 7i: EIN Stapel unten links – vorübergehende Hinweise oben, darunter die aktive Infokarte (nichts überlappt mehr) */}
+        <div className="info-stapel" ref={stapelRef}>
+        {(meldung || neuGesetztDa || verschoben) && (
+          <div className="info-hinweise">
+            {neuGesetztDa && neuGesetzt && (
+              <InfoHinweis bis={neuGesetzt.n + rueckS * 1000} dauer={rueckS * 1000} knoepfe={<>
+                <button onClick={() => { const e = k.eintraege.find((x) => x.id === neuGesetzt.id); if (e) setFormular({ neu: false, e }); setNeuGesetzt(null) }}>Benennen</button>
+                <button onClick={() => { k.loeschen(neuGesetzt.id); if (ausgewaehlt === neuGesetzt.id) abwaehlen(); setNeuGesetzt(null) }}>Rückgängig <Rest bis={neuGesetzt.n + rueckS * 1000} /></button>
+              </>}>📍 Nadel gesetzt</InfoHinweis>
+            )}
+            {verschoben && (
+              <InfoHinweis vorlaeufig={verschoben.vorlaeufig} bis={(verschoben.seit ?? Date.now()) + rueckS * 1000} dauer={rueckS * 1000}
+                knoepfe={<button onClick={verschiebenRueckgaengig}>Rückgängig <Rest bis={(verschoben.seit ?? Date.now()) + rueckS * 1000} /></button>}>
+                {verschoben.vorlaeufig ? <>Nadel verschoben · neuer Kreis <span className="strich-muster" aria-hidden="true" /> (gestrichelt) wird gesetzt, alter bleibt stehen</> : 'Nadel verschoben'}
+              </InfoHinweis>
+            )}
+            {meldung && <InfoHinweis onZu={() => setMeldung('')}>{meldung}</InfoHinweis>}
+          </div>
+        )}
         {modus === 'pin' && (() => {
           const handy = istHandy()
           const standortKnopf = <button key="s" disabled={standortSucht} onClick={nadelAmStandort}>{standortSucht ? 'Standort wird bestimmt …' : '📍 An meinem Standort'}</button>
           return (
-            <div className={`leiste setz-leiste${handy ? ' handy' : ' desktop'}`} role="dialog" aria-label="Nadel setzen">
-              <p className="setz-hinweis">👆 <strong>{handy ? 'Tippe' : 'Klicke'} auf die Karte – die Nadel erscheint genau dort</strong>{handy ? '' : ' (Karte lässt sich weiter verschieben)'}. Oder:</p>
+            <InfoKarte art="setzen" className={`leiste setz-leiste${handy ? ' handy' : ' desktop'}`} role="dialog" label="Nadel setzen" titel={<>📍 Nadel setzen</>} onZu={() => setModus('ansicht')}>
+              <Tipp lang={<span className="setz-hinweis">👆 <strong>{handy ? 'Tippe' : 'Klicke'} auf die Karte – die Nadel erscheint genau dort</strong>{handy ? '' : ' (Karte lässt sich weiter verschieben)'}. Oder:</span>}
+                kurz={<span className="setz-hinweis">👆 <strong>{handy ? 'Karte antippen' : 'Auf die Karte klicken'}</strong> – oder:</span>} />
               <div className="knoepfe">
                 {standortKnopf}
                 <button onClick={() => setModus('ansicht')}>Abbrechen</button>
               </div>
-            </div>
+            </InfoKarte>
           )
         })()}
 
         {modus === 'freikreis' && (
-          <div className="leiste setz-leiste" role="dialog" aria-label="Freien Kreis setzen">
-            <p className="setz-hinweis">◯ <strong>{istHandy() ? 'Tippe' : 'Klicke'} auf die Karte – dort kommt die Mitte des freien Kreises hin</strong> (ohne Nadel). Danach Radius und Farbe wählen.</p>
+          <InfoKarte art="setzen" className="leiste setz-leiste" role="dialog" label="Freien Kreis setzen" titel={<>◯ Freier Kreis</>} zusammen={<span className="chip">ohne Nadel</span>} onZu={() => setModus('ansicht')}>
+            <Tipp lang={<span className="setz-hinweis"><strong>{istHandy() ? 'Tippe' : 'Klicke'} auf die Karte – dort kommt die Mitte des freien Kreises hin</strong> (ohne Nadel). Danach Radius und Farbe wählen.</span>}
+              kurz={<span className="setz-hinweis"><strong>{istHandy() ? 'Karte antippen' : 'Auf die Karte klicken'}</strong> = Mitte</span>} />
             <div className="knoepfe"><button onClick={() => setModus('ansicht')}>Abbrechen</button></div>
-          </div>
+          </InfoKarte>
         )}
 
         {modus === 'flaeche' && (
-          <div className="leiste">
-            <p>Tippe die Eckpunkte der Fläche an ({zeichenPunkte.length} gesetzt){zeichenPunkte.length >= 3 && <> · <MessText punkte={zeichenPunkte} /></>}</p>
+          <InfoKarte art="zeichnen" className="leiste" role="dialog" label="Fläche zeichnen" titel={<>⬠ Fläche zeichnen</>} onZu={() => { setZeichenPunkte([]); setModus('ansicht') }}
+            zusammen={<><span className="chip">{zeichenPunkte.length} {zeichenPunkte.length === 1 ? 'Punkt' : 'Punkte'}</span>{zeichenPunkte.length >= 3 && <span className="chip stark"><MessText punkte={zeichenPunkte} /></span>}</>}>
+            <Tipp lang="Tippe die Eckpunkte der Fläche nacheinander an – Fläche und Umfang werden live gemessen." kurz="Eckpunkte antippen" />
             <div className="knoepfe">
               <button className="primaer" onClick={flaecheFertig}>Fertig</button>
               <button onClick={() => setZeichenPunkte((l) => l.slice(0, -1))} disabled={!zeichenPunkte.length}>Rückgängig</button>
               <button onClick={() => { setZeichenPunkte([]); setModus('ansicht') }}>Abbrechen</button>
             </div>
-          </div>
+          </InfoKarte>
         )}
 
         {modus === 'linie' && (() => {
           const m = zeichenPunkte.length >= 2 ? linienLaenge({ punkte: zeichenPunkte }) : 0
           return (
-            <div className="leiste">
-              <p>Tippe die Punkte entlang des Zauns, Wegs oder Grabens an ({zeichenPunkte.length} gesetzt{m ? <> · <strong>{laengeText(m)}</strong> · ≈ {netzAnzahl(m)} {netzAnzahl(m) === 1 ? 'Netz' : 'Netze'} à 50 m</> : ''}).</p>
+            <InfoKarte art="zeichnen" className="leiste" role="dialog" label="Zaun zeichnen" titel={<>〰 Zaun / Weg / Graben</>} onZu={() => { setZeichenPunkte([]); setModus('ansicht') }}
+              zusammen={<><span className="chip">{zeichenPunkte.length} {zeichenPunkte.length === 1 ? 'Punkt' : 'Punkte'}</span>{m ? <><span className="chip stark">{laengeText(m)}</span><span className="chip">≈ {netzAnzahl(m)} {netzAnzahl(m) === 1 ? 'Netz' : 'Netze'} à 50 m</span></> : null}</>}>
+              <Tipp lang="Tippe die Punkte entlang des Zauns, Wegs oder Grabens an – Länge und Netze werden live gerechnet." kurz="Punkte entlang antippen" />
               <div className="knoepfe">
                 <button className="primaer" onClick={linieFertig}>Fertig</button>
                 <button onClick={() => setZeichenPunkte((l) => l.slice(0, -1))} disabled={!zeichenPunkte.length}>Rückgängig</button>
                 <button onClick={() => { setZeichenPunkte([]); setModus('ansicht') }}>Abbrechen</button>
               </div>
-            </div>
+            </InfoKarte>
           )
         })()}
 
@@ -649,14 +695,15 @@ export default function App() {
           const e = k.eintraege.find((x) => x.id === bearbeiten.id)
           const m = e?.typ === 'linie' ? linienLaenge({ ...e, punkte: bearbeiten.punkte }) : 0
           return (
-            <div className="leiste">
-              <p><strong>Punkte ziehen</strong> zum Verschieben · <strong>＋</strong> fügt einen Punkt ein · Punkt antippen und „Punkt löschen“{e?.typ === 'linie' ? <> · {laengeText(m)}</> : e?.typ === 'flaeche' ? <> · <MessText punkte={bearbeiten.punkte} /></> : ''}</p>
+            <InfoKarte art="zeichnen" className="leiste" role="dialog" label="Punkte bearbeiten" titel={<>✏️ Punkte bearbeiten</>} onZu={() => { setBearbeiten(null); setModus('ansicht') }}
+              zusammen={e?.typ === 'linie' ? <span className="chip stark">{laengeText(m)}</span> : e?.typ === 'flaeche' ? <span className="chip stark"><MessText punkte={bearbeiten.punkte} /></span> : undefined}>
+              <Tipp lang={<><strong>Punkte ziehen</strong> zum Verschieben · <strong>＋</strong> fügt einen Punkt ein · Punkt antippen und „Punkt löschen“</>} kurz="Ziehen · ＋ einfügen · antippen = wählen" />
               <div className="knoepfe">
                 <button className="primaer" onClick={punkteFertig}>Fertig</button>
                 <button disabled={bearbeiten.sel == null} onClick={() => setBearbeiten((b) => (b && b.sel != null ? { ...b, punkte: b.punkte.filter((_, j) => j !== b.sel), sel: null } : b))}>Punkt löschen</button>
                 <button onClick={() => { setBearbeiten(null); setModus('ansicht') }}>Abbrechen</button>
               </div>
-            </div>
+            </InfoKarte>
           )
         })()}
 
@@ -718,10 +765,11 @@ export default function App() {
           const e = k.eintraege.find((x) => x.id === torId)
           const n = e && istLinie(e) ? e.tore?.length ?? 0 : 0
           return (
-            <div className="leiste">
-              <p>🚪 <strong>Tippe auf die Linie</strong>, wo ein Tor bzw. Durchgang ist ({TOR_BREITE} m Lücke, wird von der Länge abgezogen). Tippen auf ein Tor entfernt es. {n} {n === 1 ? 'Tor' : 'Tore'}{e && istLinie(e) ? <> · {laengeText(linienLaenge(e))}</> : ''}</p>
+            <InfoKarte art="zeichnen" className="leiste" role="dialog" label="Tore setzen" titel={<>🚪 Tore setzen</>} onZu={() => { setTorId(null); setModus('ansicht') }}
+              zusammen={<><span className="chip">{n} {n === 1 ? 'Tor' : 'Tore'}</span>{e && istLinie(e) ? <span className="chip stark">{laengeText(linienLaenge(e))}</span> : null}</>}>
+              <Tipp lang={<><strong>Tippe auf die Linie</strong>, wo ein Tor bzw. Durchgang ist ({TOR_BREITE} m Lücke, wird von der Länge abgezogen). Tippen auf ein Tor entfernt es.</>} kurz="Linie antippen = Tor · Tor antippen = weg" />
               <div className="knoepfe"><button className="primaer" onClick={() => { setTorId(null); setModus('ansicht') }}>Fertig</button></div>
-            </div>
+            </InfoKarte>
           )
         })()}
 
@@ -763,6 +811,7 @@ export default function App() {
         )}
 
         {formular && <Formular gruppeName={k.gruppen.find((g) => g.id === formular.e.gruppe)?.name} start={formular.e} neu={formular.neu} istAdmin={k.istAdmin} pacht={k.pacht[formular.e.id]} onPacht={(p) => k.pachtSpeichern(formular.e.id, p)} onSpeichern={speichern} onAbbrechen={() => setFormular(null)} onLoeschen={formular.neu || !kannEintrag(formular.e) ? undefined : () => loeschen(formular.e)} />}
+        </div>
 
         {panel === 'liste' && (
           <Liste werkzeuge={desktop ? werkzeuge('kopf') : undefined} schwelle={schwelle} eintraege={anzeige.eintraege} gruppen={k.gruppen} nummern={anzeige.nummern} gruppenAus={gruppenAus}
@@ -806,7 +855,6 @@ export default function App() {
         {neueVersion && (
           <div className="update-hinweis" role="status">Neue Version von FlockMap verfügbar<button className="primaer" onClick={() => location.reload()}>Jetzt neu laden</button><button className="x" aria-label="Später" onClick={() => setNeueVersion(false)}><Icon name="x" /></button></div>
         )}
-        {meldung && <div className="toast">{meldung}</div>}
         {kreisPop && modus === 'ansicht' && (() => {
           const pe = k.eintraege.find((x) => x.id === kreisPop.id)
           if (!pe || pe.typ !== 'pin') return null
@@ -821,15 +869,6 @@ export default function App() {
             onAendern={kreisPop.stehenId == null ? () => { zu(); setKreisEdit(kreisStart(pe, k.karteId || 'lokal')); setModus('kreis') } : undefined}
             onAbgebaut={() => { k.speichern({ ...pe, ...kreisAendern(pe, kreisPop.stehenId, () => null), geaendert: new Date().toISOString() }); setMeldung('Kreis entfernt – abgebaut ✂️'); zu() }} />
         })()}
-        {!meldung && !verschoben && neuGesetzt && k.eintraege.some((x) => x.id === neuGesetzt.id) && (
-          <div className="toast mit-knopf" role="status">📍 Nadel gesetzt
-            <button onClick={() => { const e = k.eintraege.find((x) => x.id === neuGesetzt.id); if (e) setFormular({ neu: false, e }); setNeuGesetzt(null) }}>Benennen</button>
-            <button onClick={() => { k.loeschen(neuGesetzt.id); if (ausgewaehlt === neuGesetzt.id) abwaehlen(); setNeuGesetzt(null) }}>Rückgängig <Rest bis={neuGesetzt.n + rueckS * 1000} /></button>
-          </div>
-        )}
-        {!meldung && verschoben && (
-          <div className={`toast mit-knopf${verschoben.vorlaeufig ? ' lang vorlaeufig' : ''}`} role="status">{verschoben.vorlaeufig ? <span>Nadel verschoben · neuer Kreis <span className="strich-muster" aria-hidden="true" /> (gestrichelt) wird gesetzt, alter bleibt stehen</span> : 'Nadel verschoben'}<button onClick={verschiebenRueckgaengig}>Rückgängig <Rest bis={(verschoben.seit ?? Date.now()) + rueckS * 1000} /></button></div>
-        )}
       </main>
     </div>
   )
@@ -849,42 +888,56 @@ function Detail(p: { e: Eintrag; routeInfo: string; darfBearbeiten: boolean; kan
   const gruppe = e.gruppe ? p.gruppen.find((g) => g.id === e.gruppe) : undefined
   const gf = gruppe ? gruppenFarbe(gruppe, p.gruppen) : null
   const ziel = mitte(e)
+  // 7i: kompakte Zusammenfassung (auch eingeklappt sichtbar) – Details/Nebensachen dahinter
+  const sp = SP.spannungLetzte(e)
+  const tiere = tierSummen([e])
+  const nNotiz = e.notizen.length
+  const symbol = istInfra(e) ? <InfraSymbol art={e.infra} groesse={22} /> : istLinie(e) ? <LinienSymbol e={e} /> : istFrei(e) ? <span className="frei-kreis-symbol" style={{ borderColor: e.kreis?.farbe || pinFarbe(e) }} aria-label="Freier Kreis" /> : e.typ === 'pin' ? (gf && p.nummer ? <span className="nr-kreis" style={{ background: gf, color: hell(gf) ? '#1d2a1d' : '#fff' }}>{p.nummer}</span> : <span className="farbpunkt" style={{ background: pinFarbe(e), width: 16, height: 16 }} />) : <span className="flaechen-symbol" style={{ color: pinFarbe(e) }}>⬠</span>
+  const zusammen = <>
+    {istFrei(e) && e.kreis && <span className="chip stark">◯ {e.kreis.radius} m</span>}
+    {tiere.length > 0 && <span className="chip tiere"><TierAnzeige summen={tiere} /></span>}
+    {sp && <span className="chip spannung">⚡ {SP.kvText(sp.kv)}</span>}
+    {e.typ === 'pin' && !istFrei(e) && e.kreis && <span className="chip">◯ {e.kreis.radius} m</span>}
+    {e.typ === 'flaeche' && <span className="chip stark">{FL.haText(hektar(e.punkte))}</span>}
+    {istLinie(e) && <span className="chip stark">{laengeText(linienLaenge(e))}</span>}
+    {gruppe && <span className="chip"><i className="chip-punkt" style={{ background: gf ?? undefined }} />{gruppe.name}</span>}
+    {nNotiz > 0 && <span className="chip">📝 {nNotiz}</span>}
+  </>
   return (
-    <section className="sheet">
-      <div className="sheet-kopf">
-        <h2>{istInfra(e) ? <InfraSymbol art={e.infra} groesse={24} /> : istLinie(e) ? <LinienSymbol e={e} /> : istFrei(e) ? <span className="frei-kreis-symbol" style={{ borderColor: e.kreis?.farbe || pinFarbe(e) }} aria-label="Freier Kreis" /> : e.typ === 'pin' ? (gf && p.nummer ? <span className="nr-kreis" style={{ background: gf, color: hell(gf) ? '#1d2a1d' : '#fff' }}>{p.nummer}</span> : <span className="farbpunkt" style={{ background: pinFarbe(e), width: 16, height: 16 }} />) : <span className="flaechen-symbol" style={{ color: pinFarbe(e) }}>⬠</span>} {e.titel || <span className="ohne-name">ohne Namen</span>}</h2>
-        <button className="x" onClick={p.onSchliessen} aria-label="Schließen"><Icon name="x" /></button>
-      </div>
-      <div className="meta">
-        {istNormal(e) && <span>Farbe: {gf ? <>{farbName(gf)} (Gruppe) · eigene {farbName(pinFarbe(e))}</> : farbName(pinFarbe(e))}</span>}
-        {e.typ === 'pin' && istNormal(e) && (p.kannGruppieren
-          ? <label className="gruppe-wahl">In Gruppe<select value={gruppe?.id ?? ''} onChange={(x) => p.onGruppe(x.target.value)}>
-              <option value="">– ohne Gruppe –</option>
-              {p.gruppen.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
-              <option value="__neu">＋ Neue Gruppe …</option>
-            </select></label>
-          : gruppe && <span>Gruppe: {gruppe.name}</span>)}
-        {tierSummen([e]).length > 0 && (istAusblendbar(e)
-          ? <button type="button" className="tiere-umschalten" aria-expanded={!p.tiereZu} title={p.tiereZu ? 'Tiere einblenden' : 'Tiere ausblenden'} onClick={p.onTiereUmschalten}>
-              {p.tiereZu ? '▸ Tiere' : <>▾ <span className="tier-gesamt"><TierAnzeige summen={tierSummen([e])} /></span></>}
-            </button>
-          : <span className="tier-gesamt"><TierAnzeige summen={tierSummen([e])} /></span>)}
-        {e.herde && <span>Herde: {e.herde}</span>}
-        {e.typ === 'flaeche' && <span>{FL.haText(hektar(e.punkte))}</span>}
-        <span>Datum: {tagText(eintragDatum(e))}</span>
-        <span>Geändert: {datum(e.geaendert)}</span>
+    <InfoKarte art="detail" className="sheet detail-karte" klappbar label={`Infokarte: ${e.titel || 'ohne Namen'}`} onZu={p.onSchliessen}
+      nach={<Notizen e={e} darfBearbeiten={p.darfBearbeiten} kannNotiz={p.kannNotiz} onSpeichern={p.onNotizSpeichern} onLoeschen={p.onNotizLoeschen} />}
+      titel={<>{symbol} {e.titel || <span className="ohne-name">ohne Namen</span>}</>}
+      zusammen={zusammen}
+      mehr={<>
+        <div className="meta">
+          {istNormal(e) && <span>Farbe: {gf ? <>{farbName(gf)} (Gruppe) · eigene {farbName(pinFarbe(e))}</> : farbName(pinFarbe(e))}</span>}
+          {e.typ === 'pin' && istNormal(e) && (p.kannGruppieren
+            ? <label className="gruppe-wahl">In Gruppe<select value={gruppe?.id ?? ''} onChange={(x) => p.onGruppe(x.target.value)}>
+                <option value="">– ohne Gruppe –</option>
+                {p.gruppen.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+                <option value="__neu">＋ Neue Gruppe …</option>
+              </select></label>
+            : gruppe && <span>Gruppe: {gruppe.name}</span>)}
+          {tiere.length > 0 && istAusblendbar(e) && <button type="button" className="tiere-umschalten" aria-expanded={!p.tiereZu} title={p.tiereZu ? 'Tiere einblenden' : 'Tiere ausblenden'} onClick={p.onTiereUmschalten}>
+            {p.tiereZu ? '▸ Tiere auf der Karte einblenden' : '▾ Tiere auf der Karte ausblenden'}
+          </button>}
+          {e.herde && <span>Herde: {e.herde}</span>}
+          <span>Datum: {tagText(eintragDatum(e))}</span>
+          <span>Geändert: {datum(e.geaendert)}</span>
+        </div>
+        <div className="knoepfe">
+          {p.routeInfo ? <button onClick={p.onRouteAus}>Route ausblenden</button> : <button onClick={p.onRoute}>Route anzeigen</button>}
+          {p.kannBearbeiten && <button className="gefahr" onClick={p.onLoeschen}>Löschen</button>}
+        </div>
+        {e.erstelltVon && !p.kannBearbeiten && p.darfBearbeiten && <p className="hinweis klein">Diesen Eintrag kann nur die Person, die ihn angelegt hat, oder ein Admin ändern. Notizen kannst du trotzdem hinzufügen.</p>}
+      </>}>
+      {p.routeInfo && <p className="route-info">🚗 {p.routeInfo} <button className="link-knopf" onClick={p.onRouteAus}>ausblenden</button></p>}
+      <div className="knoepfe haupt-knoepfe">
+        <a className="btn primaer" href={googleNaviLink(ziel)} target="_blank" rel="noreferrer" title="In Google Maps navigieren">🧭 Navigieren</a>
+        {p.kannBearbeiten && <button onClick={p.onBearbeiten}>✏️ Bearbeiten</button>}
       </div>
       {p.planZeile}
-      {p.routeInfo && <p className="route-info">🚗 {p.routeInfo}</p>}
-      <div className="knoepfe">
-        {p.routeInfo ? <button onClick={p.onRouteAus}>Route ausblenden</button> : <button onClick={p.onRoute}>Route anzeigen</button>}
-        <a className="btn primaer" href={googleNaviLink(ziel)} target="_blank" rel="noreferrer">In Google Maps navigieren</a>
-        {p.kannBearbeiten && <button onClick={p.onBearbeiten}>Bearbeiten</button>}
-        {p.kannBearbeiten && <button className="gefahr" onClick={p.onLoeschen}>Löschen</button>}
-      </div>
-      {e.erstelltVon && !p.kannBearbeiten && p.darfBearbeiten && <p className="hinweis klein">Diesen Eintrag kann nur die Person, die ihn angelegt hat, oder ein Admin ändern. Notizen kannst du trotzdem hinzufügen.</p>}
-      <Notizen e={e} darfBearbeiten={p.darfBearbeiten} kannNotiz={p.kannNotiz} onSpeichern={p.onNotizSpeichern} onLoeschen={p.onNotizLoeschen} />
-    </section>
+    </InfoKarte>
   )
 }
 

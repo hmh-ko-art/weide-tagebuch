@@ -88,7 +88,6 @@ input, textarea { border: 1px solid #c9d3c4; border-radius: 10px; padding: 10px;
 .notiz-kurz { color: #444; font-size: .9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .liste small, .hinweis { color: #667; font-size: .85rem; }
 .klein { font-size: .75rem; }
-.toast { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); background: #263238; color: #fff; padding: 8px 16px; border-radius: 20px; z-index: 1200; }
 .feldname { display: block; font-size: .85rem; font-weight: 600; margin-top: 10px; }
 .notizen { margin-top: 12px; border-top: 1px solid #e3e8df; padding-top: 6px; }
 .notizen h3 { margin: 4px 0 6px; font-size: 1rem; color: var(--gruen-dunkel); }
@@ -152,9 +151,6 @@ select { font: inherit; border: 1px solid #c9d3c4; border-radius: 10px; padding:
 /* Nadel ziehen: beim Ziehen leicht angehoben; Hinweis mit Rückgängig */
 .leaflet-marker-draggable .nadel-tap { touch-action: none; }
 .pin-icon.zieht .nadel-tap svg { transform: translateY(-6px) scale(1.25); transform-origin: 50% 100%; filter: drop-shadow(0 6px 4px rgba(0,0,0,.45)); transition: transform .1s; }
-.toast.mit-knopf { display: flex; align-items: center; gap: 12px; padding: 6px 6px 6px 16px; white-space: nowrap; }
-.toast.mit-knopf.lang { white-space: normal; width: max-content; max-width: calc(100vw - 24px); line-height: 1.25; border-radius: 16px; }
-.toast.mit-knopf button { background: #fff; color: #263238; border: 0; border-radius: 16px; padding: 6px 12px; font-weight: 700; }
 
 /* Tierart-Symbol neben der Tierzahl */
 .tier-symbol { display: inline-flex; align-items: center; vertical-align: -0.12em; }
@@ -196,8 +192,6 @@ select { font: inherit; border: 1px solid #c9d3c4; border-radius: 10px; padding:
 .farb-gruppe-tiere { color: #333; padding-left: 18px; }
 .ohne-tiere { color: #888; font-style: italic; }
 /* Rückgängig-/Hinweis-Toast bei offener Liste nicht über die Listenüberschrift legen */
-.liste-offen .toast { top: auto; bottom: calc(16px + env(safe-area-inset-bottom)); left: calc(64px + (100% - 64px) / 2); max-width: calc(100% - 80px); }
-@media (min-width: 561px) { .liste-offen .toast { left: calc((100% - min(420px, 100% - 64px)) / 2); } }
 
 /* Liste: Zeitraum + Monatsgruppen */
 .zeitraum { display: flex; flex-direction: column; gap: 6px; }
@@ -359,7 +353,6 @@ select { font: inherit; border: 1px solid #c9d3c4; border-radius: 10px; padding:
 @media (min-width: 900px) {
   /* 7g: Desktop – Seitenleiste wieder RECHTS (wie früher); die Karte wird schmaler statt verdeckt */
   .liste-offen .liste-panel { left: auto; right: 0; width: 380px; box-shadow: -2px 0 14px rgba(0,0,0,.18); border-left: 1px solid #e3dccb; }
-  .liste-offen .toast { top: 12px; bottom: auto; left: calc((100% - 380px) / 2); max-width: calc(100% - 420px); }
 }
 
 /* ---- Hof-Konten ---- */
@@ -690,7 +683,7 @@ button.klein { padding: 6px 10px; font-size: .88rem; flex: none; }
 
 .rueck-dauer { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; font-size: .92rem; }
 .rueck-dauer .knoepfe button { min-width: 64px; }
-.toast .rest { font-weight: 400; font-size: .85em; opacity: .8; }
+.info-hinweis .rest { font-weight: 400; font-size: .85em; opacity: .8; }
 .pin-label .label-volt { margin-left: 5px; padding: 0 4px; border-radius: 5px; background: #fff3c4; color: #5d4300; font-weight: 700; font-size: 11px; }
 .pin-label .label-volt:first-child { margin-left: 0; }
 .pin-label .label-volt.tief { background: #d32f2f; color: #fff; }
@@ -742,7 +735,6 @@ button.klein { padding: 6px 10px; font-size: .88rem; flex: none; }
 @media (min-width: 900px) {
   .desktop-leiste .karte { right: 76px; }
   .desktop-leiste.liste-offen .karte { right: 380px; }
-  .desktop-leiste:not(.liste-offen) .toast { left: calc((100% - 76px) / 2); }
   .werkzeug-leiste { display: flex; flex-direction: column; align-items: stretch; gap: 10px; position: absolute; top: 0; right: 0; bottom: 0; width: 76px; padding: 10px 7px; background: #fbf8f0; border-left: 1px solid #e3dccb; z-index: 1000; overflow-y: auto; }
   .wz-gruppe { display: flex; flex-direction: column; gap: 8px; padding-top: 10px; border-top: 1px solid #e3dccb; }
   .wz { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 56px; padding: 6px 4px; border: 1.5px solid #d8d2c2; border-radius: 12px; background: #fff; color: #1e4d2b; cursor: pointer; font-size: .74rem; font-weight: 600; line-height: 1.1; }
@@ -769,3 +761,72 @@ button.klein { padding: 6px 10px; font-size: .88rem; flex: none; }
 .freie-kreise { margin-top: 8px; border-top: 1px solid #e3dccb; padding-top: 6px; }
 .freie-kreise summary { cursor: pointer; font-weight: 700; color: #1e4d2b; padding: 4px 0; }
 .frei-kreis-symbol.klein { width: 12px; height: 12px; border-width: 2.5px; vertical-align: -1px; margin-right: 2px; }
+
+/* 7i – Infostapel unten links: EIN Bereich für Hinweise + aktive Infokarte, einheitlicher Kartenstil, einklappbar */
+.info-stapel { position: absolute; z-index: 1060; left: 0; right: 0; bottom: 0; display: flex; flex-direction: column; justify-content: flex-end; gap: 8px; max-height: calc(100% - 8px); pointer-events: none; }
+.info-stapel:empty { display: none; }
+.info-stapel > * { pointer-events: auto; }
+.info-stapel .leiste, .info-stapel .sheet { position: relative; left: auto; right: auto; bottom: auto; width: auto; min-height: 0; flex: 0 1 auto; }
+.info-stapel .sheet { max-height: calc((100dvh - 64px) * .66); overflow: auto; }
+.info-karte { background: #fff; box-shadow: 0 -2px 16px rgba(0,0,0,.22); border-radius: 16px 16px 0 0; padding: 10px 14px calc(12px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: 6px; box-sizing: border-box; }
+.info-stapel .info-karte { padding: 10px 14px calc(12px + env(safe-area-inset-bottom)); }
+.info-karte p { margin: 0; }
+.info-kopf { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 4px 6px; }
+.info-kopf.tippbar { cursor: pointer; }
+.info-titel { margin: 0; font-size: 1.08rem; line-height: 1.25; display: flex; align-items: center; gap: 6px; min-width: 0; overflow-wrap: anywhere; }
+.info-titel small { font-weight: 400; color: #5a6a57; font-size: .8rem; }
+.info-klapp, .info-zu { width: 36px; height: 36px; min-width: 36px; border-radius: 50%; border: 0; background: #eef1ec; padding: 0; font-size: 1rem; display: inline-flex; align-items: center; justify-content: center; color: #33402f; }
+.info-klapp:hover, .info-zu:hover { background: #e0e7dc; }
+.info-zusammen { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px 6px; }
+.chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 9px; border-radius: 999px; background: #eef3ea; color: #2d3b2d; font-size: .8rem; line-height: 1.45; white-space: nowrap; }
+.chip.stark { background: #1e4d2b; color: #fff; font-weight: 600; }
+.chip.spannung { background: #fff4c4; color: #6b4e00; font-weight: 600; }
+.chip.tiere .tier-symbol svg { width: 14px; height: 14px; }
+.chip-punkt { width: 9px; height: 9px; border-radius: 50%; display: inline-block; border: 1px solid rgba(0,0,0,.25); }
+.info-inhalt { display: flex; flex-direction: column; gap: 8px; }
+.info-inhalt > .knoepfe, .info-schnell { margin-top: 0; }
+.haupt-knoepfe > * { flex: 1 1 0; }
+.info-mehr-knopf { align-self: flex-start; margin-top: -2px; border: 0; background: none; color: #1e4d2b; font-weight: 700; padding: 4px 2px; }
+.info-mehr { border-top: 1px solid #e3e8df; padding-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+.info-mehr .meta { margin: 0; }
+.info-tipp { font-size: .88rem; color: #41513f; line-height: 1.35; display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
+.info-tipp.kurz { font-size: .84rem; color: #5a6a57; }
+.info-tipp-i { border: 0; background: none; padding: 0 4px; color: #1e4d2b; font-size: 1rem; line-height: 1; }
+.kreis-mehr summary { cursor: pointer; font-size: .85rem; color: #1e4d2b; font-weight: 600; padding: 2px 0; }
+.kreis-mehr[open] summary { margin-bottom: 4px; }
+.route-info .link-knopf { margin-left: 4px; }
+/* vorübergehende Hinweise (verschwinden von selbst; Countdown als Balken) */
+.info-hinweise { display: flex; flex-direction: column; align-items: stretch; gap: 6px; padding: 0 8px; }
+.info-hinweise:last-child { padding-bottom: calc(10px + env(safe-area-inset-bottom)); }
+.info-hinweis { position: relative; overflow: hidden; display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; background: #263238; color: #fff; border-radius: 14px; padding: 9px 12px; box-shadow: 0 4px 16px rgba(0,0,0,.3); font-size: .92rem; line-height: 1.3; box-sizing: border-box; animation: hinweis-rein .18s ease-out; }
+.info-hinweis.mit-knopf { padding: 6px 6px 8px 12px; }
+.info-hinweis.vorlaeufig { outline: 2px dashed #90caf9; outline-offset: -4px; }
+.info-hinweis-text { flex: 1 1 80px; min-width: 0; }
+.info-hinweis-knoepfe { display: flex; gap: 6px; margin-left: auto; }
+.info-hinweis-knoepfe button { background: #fff; color: #263238; border: 0; border-radius: 16px; padding: 6px 10px; font-weight: 700; white-space: nowrap; font-size: .88rem; }
+.info-countdown { position: absolute; left: 0; bottom: 0; height: 3px; width: 100%; background: #9ccc65; transform-origin: left center; animation: info-countdown linear forwards; }
+@keyframes info-countdown { to { transform: scaleX(0); } }
+@keyframes hinweis-rein { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@media (max-width: 799px) {
+  /* Handy: Karten-Quellenangabe und ＋-Knopf rücken über den Stapel – nichts wird verdeckt */
+  .app .leaflet-bottom { bottom: var(--stapel-h, 0px); transition: bottom .15s; }
+  .fab-leiste { bottom: calc(max(var(--stapel-h, 0px), env(safe-area-inset-bottom)) + var(--attr-h, 16px) + 8px); transition: bottom .15s; }
+  .app:has(.info-stapel .info-karte:not(.klein)) .fab-leiste { display: none; }
+  .panel-offen .info-stapel .info-karte, .panel-offen .info-stapel .formular { display: none; }
+  .liste-offen .info-hinweise { padding-left: 64px; }
+}
+@media (min-width: 800px) {
+  /* PC/Tablet: schwebend links unten, über der Quellenangabe, nie unter der rechten Seitenleiste */
+  .info-stapel { left: 12px; right: auto; bottom: calc(var(--attr-h, 18px) + 6px); width: 440px; max-width: calc(100% - 24px); max-height: calc(100% - 220px); }
+  .info-stapel .info-karte { border-radius: 16px; padding: 10px 14px 12px; box-shadow: 0 4px 22px rgba(0,0,0,.25); }
+  .info-stapel .sheet { max-height: none; }
+  .info-hinweise { padding: 0; }
+  .info-hinweise:last-child { padding-bottom: 0; }
+  .panel-offen .info-stapel { max-width: calc(100% - 24px - min(420px, 100%)); }
+}
+@media (min-width: 900px) {
+  .desktop-leiste .info-stapel { max-width: calc(100% - 24px - 76px); }
+  .desktop-leiste.liste-offen .info-stapel { max-width: calc(100% - 24px - 380px); }
+  .desktop-leiste.panel-offen:not(.liste-offen) .info-stapel { max-width: calc(100% - 24px - 420px); }
+}
+@media (max-width: 899px) { .erster-start { bottom: calc(var(--attr-h, 16px) + 86px + env(safe-area-inset-bottom)); } }

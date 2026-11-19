@@ -2,6 +2,7 @@
 import { FARBEN, FLAECHE_STANDARD, pinFarbe, type LatLng, type Pin } from '../types'
 import type { Kreis } from '../../server/flaechen.js'
 import * as FL from '../../server/flaechen.js'
+import { InfoKarte, Tipp } from '../InfoKarte'
 
 export interface KreisEdit { id: string; radius: number; farbe: string; gebunden: boolean; mitte: LatLng; neu: boolean; alsStandard: boolean; frei?: boolean }
 export const KREIS_FARBEN = [{ name: 'Grün', wert: FLAECHE_STANDARD }, ...FARBEN]
@@ -93,10 +94,14 @@ export function KreisDetail(p: { e: Pin; karte: string; darf: boolean; onEinkrei
 export function KreisLeiste(p: { k: KreisEdit; name: string; standard: number; andere: number; set: (k: KreisEdit) => void; onSpeichern: (gebunden: boolean) => void; onAlle: () => void; onAbbrechen: () => void }) {
   const k = p.k
   return (
-    <div className="leiste kreis-leiste" role="dialog" aria-label="Kreis um Nadel">
-      {k.frei
-        ? <p><strong>◯ {k.neu ? 'Freier Kreis' : `Freier Kreis${p.name ? ` „${p.name}“` : ''}`}</strong> <small>(ohne Nadel)</small> – Griff <span className="kreis-griff-mini">↔</span> am Rand ziehen oder Meter eingeben · Karte antippen verschiebt die Mitte</p>
-        : <p><strong>◯ Kreis um „{p.name || 'Nadel'}“</strong> – Griff <span className="kreis-griff-mini">↔</span> am Rand ziehen oder Meter eingeben</p>}
+    <InfoKarte art="kreis" className="leiste kreis-leiste" role="dialog" label={k.frei ? 'Freier Kreis' : 'Kreis um Nadel'} klappbar onZu={p.onAbbrechen}
+      titel={k.frei ? <>◯ {k.neu ? 'Freier Kreis' : `Freier Kreis${p.name ? ` „${p.name}“` : ''}`} <small>(ohne Nadel)</small></> : <>◯ Kreis um „{p.name || 'Nadel'}“</>}
+      zusammen={<><span className="chip stark"><i className="chip-punkt" style={{ background: k.farbe }} />{zahl(Math.round(k.radius))} m</span><span className="chip">{kreisText(k.radius).split(' · ')[0]}</span></>}
+      schnell={k.frei
+        ? <><button className="primaer" onClick={() => p.onSpeichern(false)}>✓ {k.neu ? 'Kreis setzen' : 'Speichern'}</button><button onClick={p.onAbbrechen}>Abbrechen</button></>
+        : <><button className={k.gebunden ? 'primaer' : ''} onClick={() => p.onSpeichern(true)}>🔗 Gebunden</button><button className={!k.gebunden ? 'primaer' : ''} onClick={() => p.onSpeichern(false)}>📍 Bleibt</button></>}>
+      <Tipp lang={<>Griff <span className="kreis-griff-mini">↔</span> am Rand ziehen oder Meter eingeben{k.frei ? ' · Karte antippen verschiebt die Mitte' : ''}</>}
+        kurz={<>Griff <span className="kreis-griff-mini">↔</span> ziehen{k.frei ? ' · Tippen = Mitte' : ''}</>} />
       <div className="kreis-zeile-form">
         <label className="kreis-radius">Radius (m)<input type="number" inputMode="numeric" min={FL.KREIS_MIN} max={FL.KREIS_MAX} step={1} value={k.radius}
           onChange={(x) => { const r = Number(x.target.value); if (Number.isFinite(r) && r > 0) p.set({ ...k, radius: Math.min(FL.KREIS_MAX, r) }) }}
@@ -104,14 +109,17 @@ export function KreisLeiste(p: { k: KreisEdit; name: string; standard: number; a
         <div className="kreis-schnell">{[10, 20, 30, 50, 100].map((r) => <button key={r} type="button" className={k.radius === r ? 'aktiv' : ''} onClick={() => p.set({ ...k, radius: r })}>{r}</button>)}</div>
       </div>
       <p className="hinweis klein mess-text">{kreisText(k.radius)}</p>
-      <div className="kreis-standard">
-        <label><input type="checkbox" checked={k.alsStandard} onChange={(x) => p.set({ ...k, alsStandard: x.target.checked })} /> Standard-Radius für alle neuen Kreise <small>(jetzt {zahl(p.standard)} m{k.alsStandard && Math.round(k.radius) !== p.standard ? ` → ${zahl(Math.round(k.radius))} m` : ''})</small></label>
-        {p.andere > 0 && <button type="button" className="kreis-alle" onClick={p.onAlle}>↺ {zahl(Math.round(k.radius))} m auf {p.andere === 1 ? 'den anderen Kreis' : `alle ${p.andere} anderen Kreise`} übernehmen</button>}
-      </div>
       <div className="farben" role="radiogroup" aria-label="Farbe des Kreises">
         {KREIS_FARBEN.map((f) => <button type="button" key={f.wert} title={f.name} aria-label={f.name} role="radio" aria-checked={k.farbe === f.wert} className={k.farbe === f.wert ? 'aktiv' : ''} style={{ background: f.wert }} onClick={() => p.set({ ...k, farbe: f.wert })} />)}
         <label className="frei" title="Eigene Farbe">eigene:<input type="color" value={k.farbe} onChange={(x) => p.set({ ...k, farbe: x.target.value })} /></label>
       </div>
+      <details className="kreis-mehr">
+        <summary>Standard-Radius{p.andere > 0 ? ' · auf andere Kreise übernehmen' : ''}</summary>
+        <div className="kreis-standard">
+          <label><input type="checkbox" checked={k.alsStandard} onChange={(x) => p.set({ ...k, alsStandard: x.target.checked })} /> Standard-Radius für alle neuen Kreise <small>(jetzt {zahl(p.standard)} m{k.alsStandard && Math.round(k.radius) !== p.standard ? ` → ${zahl(Math.round(k.radius))} m` : ''})</small></label>
+          {p.andere > 0 && <button type="button" className="kreis-alle" onClick={p.onAlle}>↺ {zahl(Math.round(k.radius))} m auf {p.andere === 1 ? 'den anderen Kreis' : `alle ${p.andere} anderen Kreise`} übernehmen</button>}
+        </div>
+      </details>
       {k.frei ? (
         <div className="knoepfe">
           <button className="primaer" onClick={() => p.onSpeichern(false)}>✓ {k.neu ? 'Kreis setzen' : 'Speichern'}</button>
@@ -127,7 +135,7 @@ export function KreisLeiste(p: { k: KreisEdit; name: string; standard: number; a
         <button onClick={p.onAbbrechen}>Abbrechen</button>
       </div>
       </>}
-    </div>
+    </InfoKarte>
   )
 }
 

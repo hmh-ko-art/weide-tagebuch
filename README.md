@@ -89,6 +89,15 @@ Code: `server/flaechen.js` (gemeinsam für Server **und** App: Messen, Steckbrie
 - **Übersicht**: Liste → Flächen → „📊 Übersicht, Pacht & Summen“ (Summen gesamt/Pacht/€ je Jahr/je Art, sortierbare Tabelle, Excel/PDF „Flächenverzeichnis“).
 - **Export/Import**: Excel-Blätter „Flächenverzeichnis“, „Flächen-Summen“, „Fristen“; PDF-Kapitel; KML-ExtendedData `flockmap_steckbrief` (+ `flockmap_pacht` nur mit Admin-Option); JSON-Sicherung inkl. Pacht (nur Admin). Import: KML/GeoJSON (FLIK/Schlag/Nutzung aus Attributen geraten, MultiPolygon → mehrere Flächen) und Shapefile-ZIP (.shp/.dbf/.prj; WGS84 oder ETRS89/UTM 32/33 – Gauß-Krüger nicht unterstützt; nur Außenringe).
 
+## Infokarten unten links (7i)
+
+- **Ein Stapel statt vieler Boxen:** Hinweise (z. B. „Nadel gesetzt“, „Nadel verschoben“, Meldungen) und die aktive Infokarte (Nadel, Fläche, Zaun, freier Kreis, Kreis-Blatt, Zeichnen, Bearbeiten) liegen in **einem** Bereich unten links – Hinweise immer oben drauf, nichts überlappt.
+- **Einheitliche Karten:** Kopfzeile mit Symbol + Name, darunter eine **Zusammenfassung als Chips** (Tiere, ⚡ letzte Spannung, ◯ Radius, ha/Länge, Gruppe, 📝 Notizen).
+- **Einklappen ▾:** Karte schrumpft auf Kopf + Zusammenfassung (Karte bleibt frei); Antippen klappt wieder auf. Der Zustand wird je Kartenart auf dem Gerät gemerkt. Das Kreis-Blatt behält eingeklappt seine Speichern-Knöpfe.
+- **Nebensachen hinter „Mehr“:** Farbe, Gruppe, Herde, Datum, Geändert, Route, Tiere ein/aus, Löschen. Vorne bleiben Navigieren, Bearbeiten, Weidezaungerät/Kreis/Steckbrief und das Tagebuch.
+- **Hinweise verschwinden von selbst:** Rückgängig-Hinweise mit Countdown-Balken; Meldungen antippen = weg; Erklärtexte beim Setzen/Zeichnen werden nach 6 s zur Kurzfassung (ⓘ zeigt sie wieder).
+- **Platz:** Handy – ＋-Knopf und Karten-Quellenangabe rücken über den Stapel (Safe-Area berücksichtigt); PC – Karte schwebt links unten über der Quellenangabe, nie unter der rechten Seitenleiste oder den Kartenknöpfen oben links.
+
 ## Freier Kreis und vorläufige Kreise (7h)
 
 - **Freier Kreis:** ein Kreis ohne Nadel.

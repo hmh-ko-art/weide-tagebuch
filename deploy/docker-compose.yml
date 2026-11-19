@@ -32,6 +32,7 @@ services:
       PORT: "8787"
       DATABASE_URL: postgres://flockmap:${POSTGRES_PASSWORD}@db:5432/flockmap
       DATABASE_SSL: "off"
+      FLOCKMAP_ADMIN_TOKEN: ${FLOCKMAP_ADMIN_TOKEN:-}
 
   caddy:
     image: caddy:2-alpine

@@ -17,7 +17,12 @@ fs.mkdirSync(DATA_DIR, { recursive: true })
 // sonst JSON-Dateien in server/data (nur lokal sinnvoll; auf Render Free nicht dauerhaft).
 let pg = null
 async function ablageStarten() {
-  if (!DATABASE_URL) return console.log('Ablage: JSON-Dateien in', DATA_DIR)
+  if (!DATABASE_URL) {
+    for (const f of fs.readdirSync(DATA_DIR).filter((x) => /^hof-[a-z0-9]+\.json$/i.test(x))) {
+      try { const h = JSON.parse(fs.readFileSync(path.join(DATA_DIR, f), 'utf8')); hofCache.set(h.id, h) } catch { /* kaputte Datei überspringen */ }
+    }
+    return console.log('Ablage: JSON-Dateien in', DATA_DIR, `(${hofCache.size} Höfe)`)
+  }
   const { default: pgMod } = await import('pg')
   // Ohne SSL: lokale DB oder eigener Server (Docker-Netz, DATABASE_SSL=off). Render bleibt bei SSL.
   const lokal = /@(localhost|127\.0\.0\.1)[:/]/.test(DATABASE_URL) || /^(off|false|disable|0)$/i.test(process.env.DATABASE_SSL || '')
@@ -25,7 +30,11 @@ async function ablageStarten() {
   await pg.query('CREATE TABLE IF NOT EXISTS karten (id text PRIMARY KEY, daten jsonb NOT NULL, geaendert timestamptz NOT NULL DEFAULT now())')
   const { rows } = await pg.query('SELECT id, daten FROM karten')
   for (const row of rows) cache.set(row.id, karteMigrieren(row.daten))
-  console.log(`Ablage: Postgres (${rows.length} Karten geladen)`)
+  // Höfe (Betriebe mit mehreren Karten und gemeinsamer Personenliste) – eigene Tabelle, rein additiv
+  await pg.query('CREATE TABLE IF NOT EXISTS hoefe (id text PRIMARY KEY, daten jsonb NOT NULL, geaendert timestamptz NOT NULL DEFAULT now())')
+  const h = await pg.query('SELECT id, daten FROM hoefe')
+  for (const row of h.rows) hofCache.set(row.id, row.daten)
+  console.log(`Ablage: Postgres (${rows.length} Karten, ${h.rows.length} Höfe geladen)`)
 }
 // Schreibvorgänge pro Karte nacheinander ausführen
 let pgKette = Promise.resolve()
@@ -41,6 +50,7 @@ app.set('trust proxy', 1) // hinter Render-Proxy: echte Client-IP für das Rate-
 app.use(express.json({ limit: '5mb' }))
 
 const cache = new Map() // id -> karte
+const hofCache = new Map() // id -> hof
 const clients = new Map() // id -> Set<res>
 
 const idOk = (id) => /^[a-z0-9]{6,32}$/i.test(id)
@@ -163,7 +173,7 @@ function autorNamen(k) {
   for (const e of k.eintraege) for (const n of e.notizen ?? []) if (n.autorId) ids.add(n.autorId)
   return Object.fromEntries(k.nutzer.filter((n) => ids.has(n.id)).map((n) => [n.id, n.name]))
 }
-const oeffentlich = (k) => ({ id: k.id, name: k.name, version: k.version, nutzerVersion: k.nutzerVersion, namen: autorNamen(k), eintraege: k.eintraege, gruppen: (k.gruppen ?? []).map((g) => ({ id: g.id, name: g.name, farbe: g.farbe, reihenfolge: g.reihenfolge ?? [], von: g.von, erstellt: g.erstellt })), geaendert: k.geaendert })
+const oeffentlich = (k) => ({ id: k.id, name: k.name, version: k.version, nutzerVersion: k.nutzerVersion, namen: autorNamen(k), eintraege: k.eintraege, gruppen: (k.gruppen ?? []).map((g) => ({ id: g.id, name: g.name, farbe: g.farbe, reihenfolge: g.reihenfolge ?? [], von: g.von, erstellt: g.erstellt })), geaendert: k.geaendert, ...(k.hof && hofCache.has(k.hof) ? { hof: { id: k.hof, name: hofCache.get(k.hof).name } } : {}) })
 function senden(k) {
   const set = clients.get(k.id)
   if (!set) return
@@ -191,6 +201,8 @@ function mitKarte(rolle) {
     if (!k) return res.status(404).json({ fehler: 'Karte nicht gefunden' })
     const n = wer(req, k)
     if (rolle === 'nutzer' && !n) return res.status(403).json({ fehler: 'Nur Lesezugriff – kein gültiger Zugang' })
+    if (rolle === 'nutzer' && n.rolle === 'ansehen') return res.status(403).json({ fehler: 'Nur ansehen – keine Bearbeitungsrechte' })
+    if (rolle === 'angemeldet' && !n) return res.status(403).json({ fehler: 'Kein gültiger Zugang' })
     if (rolle === 'admin' && !istAdmin(n)) return res.status(403).json({ fehler: 'Nur für Admins' })
     req.karte = k
     req.nutzer = n
@@ -221,7 +233,10 @@ app.post('/api/karten', (req, res) => {
 })
 
 app.get('/api/karten/:id', mitKarte(), (req, res) => {
-  res.json({ ...oeffentlich(req.karte), ich: ichInfo(req.nutzer), darfBearbeiten: !!req.nutzer })
+  const k = req.karte, n = req.nutzer
+  const h = k.hof ? hofCache.get(k.hof) : null
+  const m = h && n ? h.mitglieder.find((x) => x.id === n.id) : null
+  res.json({ ...oeffentlich(k), ich: ichInfo(n), darfBearbeiten: !!n && n.rolle !== 'ansehen', ...(h ? { hof: { id: h.id, name: h.name, ...(m ? { rolle: m.rolle } : {}) } } : {}) })
 })
 
 // Eintrag anlegen/ändern
@@ -391,7 +406,8 @@ app.put('/api/karten/:id/gruppen/:gid/reihenfolge', mitKarte('nutzer'), (req, re
 })
 
 // ---- Nutzerverwaltung (nur Admins) ----
-const nutzerListe = (k) => k.nutzer.map((n) => ({ id: n.id, name: n.name, rolle: n.rolle, zugang: n.zugang, erstellt: n.erstellt }))
+const nutzerListe = (k) => k.nutzer.map((n) => ({ id: n.id, name: n.name, rolle: n.rolle, zugang: n.zugang, erstellt: n.erstellt, ...(n.hof ? { hof: true } : {}) }))
+const HOF_VERWALTET = { fehler: 'Diese Person gehört zum Hof – bitte unter „Mein Hof“ ändern.' }
 const rolleOk = (r) => r === 'admin' || r === 'nutzer'
 // Anzeigename prüfen: Text, ohne Steuerzeichen, Leerzeichen zusammengefasst, 1–40 Zeichen
 const NAME_MAX = 40
@@ -422,6 +438,7 @@ app.patch('/api/karten/:id/nutzer/:nid', mitKarte('admin'), (req, res) => {
   const k = req.karte
   const n = k.nutzer.find((x) => x.id === req.params.nid)
   if (!n) return res.status(404).json({ fehler: 'Nutzer nicht gefunden' })
+  if (n.hof) return res.status(409).json(HOF_VERWALTET)
   if (req.body?.rolle !== undefined) {
     if (!rolleOk(req.body.rolle)) return res.status(400).json({ fehler: 'Ungültige Rolle' })
     if (n.rolle === 'admin' && req.body.rolle !== 'admin' && adminAnzahl(k) <= 1) return res.status(409).json({ fehler: 'Mindestens ein Admin muss bleiben' })
@@ -441,6 +458,7 @@ app.delete('/api/karten/:id/nutzer/:nid', mitKarte('admin'), (req, res) => {
   const k = req.karte
   const n = k.nutzer.find((x) => x.id === req.params.nid)
   if (!n) return res.status(404).json({ fehler: 'Nutzer nicht gefunden' })
+  if (n.hof) return res.status(409).json(HOF_VERWALTET)
   if (n.rolle === 'admin' && adminAnzahl(k) <= 1) return res.status(409).json({ fehler: 'Mindestens ein Admin muss bleiben' })
   k.nutzer = k.nutzer.filter((x) => x.id !== n.id) // Zugang ab sofort ungültig
   nutzerGeaendert(k)
@@ -448,10 +466,14 @@ app.delete('/api/karten/:id/nutzer/:nid', mitKarte('admin'), (req, res) => {
 })
 
 // Eigenes Profil: jeder angemeldete Nutzer darf nur seinen eigenen Anzeigenamen ändern
-app.patch('/api/karten/:id/ich', mitKarte('nutzer'), (req, res) => {
+app.patch('/api/karten/:id/ich', mitKarte('angemeldet'), (req, res) => {
   const k = req.karte, ich = req.nutzer
   const { name, fehler } = namePruefen(req.body?.name)
   if (fehler) return res.status(400).json({ fehler })
+  // Hof-Mitglied: Name gilt auf allen Karten des Hofs
+  const h = ich.hof && k.hof ? hofCache.get(k.hof) : null
+  const m = h?.mitglieder.find((x) => x.id === ich.id)
+  if (m) { if (m.name !== name) { m.name = name; hofSpeichern(h) } return res.json(ichInfo(ich)) }
   if (name !== ich.name) {
     ich.name = name
     nutzerGeaendert(k) // -> SSE an alle Clients (namen + nutzerVersion)
@@ -512,10 +534,301 @@ app.post('/api/karten/:id/beitreten', mitKarte(), (req, res) => {
   if (fehler) return res.status(400).json({ fehler })
   if (k.nutzer.length >= 200) return res.status(409).json({ fehler: 'Zu viele Nutzer auf dieser Karte' })
   if (zuOft('ok:' + req.ip, 5)) return res.status(429).json({ fehler: 'Zu viele Beitritte von diesem Gerät/Netz – bitte später erneut.' })
+  // Karte gehört zu einem Hof: allgemeiner Einladungslink macht die Person zum Hof-Mitarbeiter (alle Hof-Karten)
+  const h = k.hof ? hofCache.get(k.hof) : null
+  if (h) {
+    const m = { id: 'u' + zufall(8), name, rolle: 'mitarbeiter', zugang: zufall(20), erstellt: new Date().toISOString(), perEinladung: true }
+    h.mitglieder.push(m)
+    hofSpeichern(h)
+    return res.status(201).json({ zugang: m.zugang, ich: ichInfo(k.nutzer.find((x) => x.id === m.id)) })
+  }
   const n = { id: 'u' + zufall(8), name, rolle: 'nutzer', zugang: zufall(20), erstellt: new Date().toISOString(), perEinladung: true }
   k.nutzer.push(n)
   nutzerGeaendert(k)
   res.status(201).json({ zugang: n.zugang, ich: ichInfo(n) })
+})
+
+// =====================================================================================
+// ---- Höfe (Betriebe): ein Hof hat eine gemeinsame Personenliste und eine oder mehrere Karten ----
+// Rollen im Hof: inhaber (alles, nicht entfernbar solange einziger), admin (verwalten), mitarbeiter (eintragen), ansehen (nur lesen).
+// Jede Person hat EINEN persönlichen Zugang, der auf allen Karten des Hofs gilt. Dafür werden die Hof-Mitglieder
+// in die Nutzerliste jeder Hof-Karte gespiegelt (Feld hof: true) – die bestehenden Rechte-Prüfungen der Karten
+// gelten dadurch unverändert. Karten ohne Hof und alte Links funktionieren genau wie bisher.
+// =====================================================================================
+const HOF_ROLLEN = ['inhaber', 'admin', 'mitarbeiter', 'ansehen']
+const EINLADBAR = ['admin', 'mitarbeiter', 'ansehen']
+const KARTEN_ROLLE = { inhaber: 'admin', admin: 'admin', mitarbeiter: 'nutzer', ansehen: 'ansehen' }
+const HOF_KARTEN_MAX = 50, HOF_MITGLIEDER_MAX = 200, HOF_EINLADUNGEN_MAX = 50
+const EINLADUNG_TAGE = 14
+const hofDatei = (id) => path.join(DATA_DIR, `hof-${id}.json`)
+const hofVerwalter = (m) => m?.rolle === 'inhaber' || m?.rolle === 'admin'
+const hofNameOk = (roh) => {
+  if (typeof roh !== 'string') return { fehler: 'Name fehlt' }
+  const name = roh.replace(/[\u0000-\u001f\u007f]/g, '').replace(/\s+/g, ' ').trim()
+  if (!name) return { fehler: 'Name darf nicht leer sein' }
+  if ([...name].length > 60) return { fehler: 'Name ist zu lang (höchstens 60 Zeichen)' }
+  return { name }
+}
+// Mitglieder in alle Karten des Hofs spiegeln (Name, Rolle, Zugang); entfernte Mitglieder verlieren den Zugang
+function hofSpiegeln(h) {
+  const ids = new Set(h.mitglieder.map((m) => m.id))
+  for (const kid of h.karten) {
+    const k = cache.get(kid)
+    if (!k) continue
+    const vorher = JSON.stringify(k.nutzer)
+    k.nutzer = k.nutzer.filter((n) => !n.hof || ids.has(n.id))
+    for (const m of h.mitglieder) {
+      const n = k.nutzer.find((x) => x.id === m.id)
+      const daten = { name: m.name, rolle: KARTEN_ROLLE[m.rolle], zugang: m.zugang, hof: true }
+      if (n) Object.assign(n, daten)
+      else k.nutzer.push({ id: m.id, erstellt: m.erstellt, ...daten })
+    }
+    if (JSON.stringify(k.nutzer) !== vorher) nutzerGeaendert(k)
+    else senden(k) // z. B. Hof-Name geändert -> Kopfzeilen live aktualisieren
+  }
+}
+let hofKette = Promise.resolve()
+function hofSpeichern(h, spiegeln = true) {
+  h.version = (h.version ?? 0) + 1
+  h.geaendert = new Date().toISOString()
+  if (pg) {
+    const json = JSON.stringify(h)
+    hofKette = hofKette
+      .then(() => pg.query('INSERT INTO hoefe (id, daten, geaendert) VALUES ($1, $2::jsonb, now()) ON CONFLICT (id) DO UPDATE SET daten = EXCLUDED.daten, geaendert = now()', [h.id, json]))
+      .catch((e) => console.error('Postgres-Schreibfehler (Hof):', e.message))
+  } else {
+    fs.writeFileSync(hofDatei(h.id) + '.tmp', JSON.stringify(h, null, 2))
+    fs.renameSync(hofDatei(h.id) + '.tmp', hofDatei(h.id))
+  }
+  if (spiegeln) hofSpiegeln(h)
+}
+function hofWer(req, h) {
+  const z = req.get('x-zugang')
+  if (!z) return null
+  return h.mitglieder.find((m) => gleich(m.zugang, z)) ?? null
+}
+function mitHof(stufe) {
+  return (req, res, next) => {
+    const h = idOk(req.params.hid) ? hofCache.get(req.params.hid) : null
+    if (!h) return res.status(404).json({ fehler: 'Hof nicht gefunden' })
+    const m = hofWer(req, h)
+    if (stufe === 'mitglied' && !m) return res.status(403).json({ fehler: 'Kein gültiger Zugang zu diesem Hof' })
+    if (stufe === 'verwalter' && !hofVerwalter(m)) return res.status(403).json({ fehler: 'Nur für Inhaber und Admins des Hofs' })
+    req.hof = h
+    req.mitglied = m
+    next()
+  }
+}
+const kartenInfo = (h) => h.karten.map((id) => cache.get(id)).filter(Boolean).map((k) => ({ id: k.id, name: k.name, eintraege: k.eintraege.length, geaendert: k.geaendert }))
+const mitgliedInfo = (m) => ({ id: m.id, name: m.name, rolle: m.rolle, erstellt: m.erstellt })
+const hofInfo = (h, m) => ({ id: h.id, name: h.name, erstellt: h.erstellt, karten: kartenInfo(h), ich: m ? { ...mitgliedInfo(m), hatPin: !!m.pin } : null })
+const einladungOffen = (e) => e && !e.eingeloest && Date.parse(e.bis) > Date.now()
+const pinHash = (pin, salz) => crypto.scryptSync(String(pin), salz, 32).toString('base64')
+
+function karteAnlegen({ name, nutzer = [], eintraege = [], gruppen = [], hof }) {
+  const id = zufall(10)
+  const k = { id, name, version: 0, nutzerVersion: 1, nutzer, eintraege, gruppen, erstellt: new Date().toISOString(), ...(hof ? { hof } : {}) }
+  cache.set(id, k)
+  speichern(k)
+  return k
+}
+function hofAnlegen({ name, inhaber, karten }) {
+  const h = { id: zufall(10), name, mitglieder: [inhaber], karten, einladungen: [], erstellt: new Date().toISOString(), version: 0 }
+  hofCache.set(h.id, h)
+  return h
+}
+
+// -- Betreiber (Plattform-Admin): neuen Hof anlegen – später an die Bezahlung gekoppelt --
+// Schutz über FLOCKMAP_ADMIN_TOKEN (Umgebungsvariable). Ohne Variable ist der Weg abgeschaltet.
+function betreiber(req, res, next) {
+  const t = process.env.FLOCKMAP_ADMIN_TOKEN
+  if (!t || t.length < 16) return res.status(503).json({ fehler: 'Hof-Anlage ist auf diesem Server nicht eingerichtet' })
+  const z = req.get('x-betreiber') || ''
+  if (!gleich(z, t)) {
+    if (zuOft('betreiber-fehl:' + req.ip, 10)) return res.status(429).json({ fehler: 'Zu viele Versuche – bitte später erneut.' })
+    return res.status(403).json({ fehler: 'Betreiber-Schlüssel falsch' })
+  }
+  next()
+}
+app.get('/api/betreiber/hoefe', betreiber, (_req, res) => {
+  res.json([...hofCache.values()].map((h) => ({ id: h.id, name: h.name, erstellt: h.erstellt, karten: h.karten.length, mitglieder: h.mitglieder.length, inhaber: h.mitglieder.filter((m) => m.rolle === 'inhaber').map((m) => m.name) })))
+})
+app.post('/api/betreiber/hoefe', betreiber, (req, res) => {
+  const hn = hofNameOk(req.body?.name)
+  if (hn.fehler) return res.status(400).json({ fehler: 'Hof-Name: ' + hn.fehler })
+  const inh = namePruefen(req.body?.inhaberName)
+  if (inh.fehler) return res.status(400).json({ fehler: 'Name des Inhabers: ' + inh.fehler })
+  const kn = hofNameOk(req.body?.kartenName || 'Weidekarte')
+  if (kn.fehler) return res.status(400).json({ fehler: 'Kartenname: ' + kn.fehler })
+  const jetzt = new Date().toISOString()
+  const inhaber = { id: 'u' + zufall(8), name: inh.name, rolle: 'inhaber', zugang: zufall(20), erstellt: jetzt }
+  const h = hofAnlegen({ name: hn.name, inhaber, karten: [] })
+  const k = karteAnlegen({ name: kn.name, hof: h.id })
+  h.karten.push(k.id)
+  hofSpeichern(h)
+  res.status(201).json({ hof: hofInfo(h, inhaber), karte: k.id, zugang: inhaber.zugang })
+})
+
+// -- Bestehende Karte zum Hof machen (Admin der Karte). Alle bisherigen Personen werden Hof-Mitglieder
+//    mit demselben Zugang (ihre Links bleiben gültig): Admin -> Admin (wer klickt: Inhaber), Nutzer -> Mitarbeiter.
+app.post('/api/karten/:id/hof', mitKarte('admin'), (req, res) => {
+  const k = req.karte, ich = req.nutzer
+  if (k.hof && hofCache.has(k.hof)) return res.status(409).json({ fehler: 'Diese Karte gehört schon zu einem Hof' })
+  const hn = hofNameOk(req.body?.name || k.name)
+  if (hn.fehler) return res.status(400).json({ fehler: hn.fehler })
+  const jetzt = new Date().toISOString()
+  const mitglieder = k.nutzer.map((n) => ({ id: n.id, name: n.name, rolle: n.id === ich.id ? 'inhaber' : n.rolle === 'admin' ? 'admin' : n.rolle === 'ansehen' ? 'ansehen' : 'mitarbeiter', zugang: n.zugang, erstellt: n.erstellt || jetzt }))
+  const h = hofAnlegen({ name: hn.name, inhaber: mitglieder.find((m) => m.id === ich.id), karten: [k.id] })
+  h.mitglieder = mitglieder
+  k.hof = h.id
+  hofSpeichern(h) // spiegelt -> alle Karten-Nutzer bekommen hof: true, speichert die Karte
+  res.status(201).json(hofInfo(h, h.mitglieder.find((m) => m.id === ich.id)))
+})
+
+// -- Hof lesen / umbenennen --
+app.get('/api/hoefe/:hid', mitHof('mitglied'), (req, res) => res.json(hofInfo(req.hof, req.mitglied)))
+app.patch('/api/hoefe/:hid', mitHof('verwalter'), (req, res) => {
+  const { name, fehler } = hofNameOk(req.body?.name)
+  if (fehler) return res.status(400).json({ fehler })
+  if (name !== req.hof.name) { req.hof.name = name; hofSpeichern(req.hof) }
+  res.json(hofInfo(req.hof, req.mitglied))
+})
+// Öffentliche Kurzinfo für die Anmelde-Seite (nur Name des Hofs, keine Personen)
+app.get('/api/hoefe/:hid/info', mitHof(), (req, res) => res.json({ id: req.hof.id, name: req.hof.name }))
+
+// -- Weitere Karte im Hof --
+app.post('/api/hoefe/:hid/karten', mitHof('verwalter'), (req, res) => {
+  const h = req.hof
+  if (h.karten.length >= HOF_KARTEN_MAX) return res.status(409).json({ fehler: `Höchstens ${HOF_KARTEN_MAX} Karten je Hof` })
+  const { name, fehler } = hofNameOk(req.body?.name)
+  if (fehler) return res.status(400).json({ fehler })
+  const k = karteAnlegen({ name, hof: h.id })
+  h.karten.push(k.id)
+  hofSpeichern(h)
+  res.status(201).json({ id: k.id, karten: kartenInfo(h) })
+})
+
+// -- Mitglieder verwalten --
+app.get('/api/hoefe/:hid/mitglieder', mitHof('verwalter'), (req, res) => {
+  res.json(req.hof.mitglieder.map((m) => ({ ...mitgliedInfo(m), zugang: m.zugang, hatPin: !!m.pin })))
+})
+const inhaberAnzahl = (h) => h.mitglieder.filter((m) => m.rolle === 'inhaber').length
+app.patch('/api/hoefe/:hid/mitglieder/:mid', mitHof('verwalter'), (req, res) => {
+  const h = req.hof, ich = req.mitglied
+  const m = h.mitglieder.find((x) => x.id === req.params.mid)
+  if (!m) return res.status(404).json({ fehler: 'Person nicht gefunden' })
+  // Inhaber dürfen nur Inhaber ändern (Admins können Inhaber weder herabstufen noch sperren)
+  if (m.rolle === 'inhaber' && ich.rolle !== 'inhaber' && m.id !== ich.id) return res.status(403).json({ fehler: 'Den Inhaber kann nur ein Inhaber ändern' })
+  const b = req.body ?? {}
+  if (b.rolle !== undefined) {
+    if (!HOF_ROLLEN.includes(b.rolle)) return res.status(400).json({ fehler: 'Ungültige Rolle' })
+    if (b.rolle === 'inhaber' && ich.rolle !== 'inhaber') return res.status(403).json({ fehler: 'Nur ein Inhaber kann jemanden zum Inhaber machen' })
+    if (m.rolle === 'inhaber' && b.rolle !== 'inhaber' && inhaberAnzahl(h) <= 1) return res.status(409).json({ fehler: 'Der Hof braucht mindestens einen Inhaber' })
+    m.rolle = b.rolle
+  }
+  if (b.name !== undefined) {
+    const { name, fehler } = namePruefen(b.name)
+    if (fehler) return res.status(400).json({ fehler })
+    m.name = name
+  }
+  if (b.neuerZugang) m.zugang = zufall(20) // alter Link sofort ungültig (z. B. Handy verloren)
+  if (b.pinLoeschen) delete m.pin
+  hofSpeichern(h)
+  res.json({ ...mitgliedInfo(m), zugang: m.zugang, hatPin: !!m.pin })
+})
+app.delete('/api/hoefe/:hid/mitglieder/:mid', mitHof('verwalter'), (req, res) => {
+  const h = req.hof, ich = req.mitglied
+  const m = h.mitglieder.find((x) => x.id === req.params.mid)
+  if (!m) return res.json({ ok: true })
+  if (m.rolle === 'inhaber' && (ich.rolle !== 'inhaber' || inhaberAnzahl(h) <= 1)) return res.status(409).json({ fehler: 'Der letzte Inhaber kann nicht entfernt werden' })
+  h.mitglieder = h.mitglieder.filter((x) => x.id !== m.id)
+  hofSpeichern(h) // Zugang auf allen Hof-Karten sofort ungültig; Einträge und Notizen bleiben erhalten
+  res.json({ ok: true })
+})
+
+// -- Persönliche Einladungen (einmal gültig, 14 Tage, mit Rolle und optional vorgegebenem Namen) --
+const einladungListe = (h) => h.einladungen.filter(einladungOffen).map((e) => ({ code: e.code, rolle: e.rolle, name: e.name ?? null, bis: e.bis, erstellt: e.erstellt }))
+app.get('/api/hoefe/:hid/einladungen', mitHof('verwalter'), (req, res) => res.json(einladungListe(req.hof)))
+app.post('/api/hoefe/:hid/einladungen', mitHof('verwalter'), (req, res) => {
+  const h = req.hof, ich = req.mitglied
+  const rolle = req.body?.rolle ?? 'mitarbeiter'
+  if (!EINLADBAR.includes(rolle)) return res.status(400).json({ fehler: 'Ungültige Rolle' })
+  let name = null
+  if (req.body?.name) { const r = namePruefen(req.body.name); if (r.fehler) return res.status(400).json({ fehler: r.fehler }); name = r.name }
+  h.einladungen = h.einladungen.filter(einladungOffen)
+  if (h.einladungen.length >= HOF_EINLADUNGEN_MAX) return res.status(409).json({ fehler: 'Zu viele offene Einladungen' })
+  const e = { code: zufall(16), rolle, ...(name ? { name } : {}), von: ich.id, erstellt: new Date().toISOString(), bis: new Date(Date.now() + EINLADUNG_TAGE * 86400_000).toISOString() }
+  h.einladungen.push(e)
+  hofSpeichern(h, false)
+  res.status(201).json({ code: e.code, rolle, name, bis: e.bis })
+})
+app.delete('/api/hoefe/:hid/einladungen/:code', mitHof('verwalter'), (req, res) => {
+  const h = req.hof
+  h.einladungen = h.einladungen.filter((e) => einladungOffen(e) && !gleich(e.code, req.params.code))
+  hofSpeichern(h, false)
+  res.json(einladungListe(h))
+})
+const einladungFinden = (h, code) => h.einladungen.find((e) => einladungOffen(e) && gleich(e.code, String(code ?? '')))
+app.get('/api/hoefe/:hid/einladung/:code', mitHof(), (req, res) => {
+  const e = einladungFinden(req.hof, req.params.code)
+  res.json(e ? { gueltig: true, hof: req.hof.name, rolle: e.rolle, name: e.name ?? null } : { gueltig: false, hof: req.hof.name })
+})
+app.post('/api/hoefe/:hid/beitreten', mitHof(), (req, res) => {
+  const h = req.hof
+  const e = einladungFinden(h, req.body?.code)
+  if (!e) {
+    if (zuOft('fehl:' + req.ip, 20)) return res.status(429).json({ fehler: 'Zu viele Versuche – bitte später erneut.' })
+    return res.status(403).json({ fehler: 'Einladung ungültig, abgelaufen oder schon benutzt' })
+  }
+  const { name, fehler } = namePruefen(req.body?.name || e.name)
+  if (fehler) return res.status(400).json({ fehler })
+  if (h.mitglieder.length >= HOF_MITGLIEDER_MAX) return res.status(409).json({ fehler: 'Zu viele Personen in diesem Hof' })
+  if (zuOft('ok:' + req.ip, 10)) return res.status(429).json({ fehler: 'Zu viele Beitritte von diesem Gerät/Netz – bitte später erneut.' })
+  const m = { id: 'u' + zufall(8), name, rolle: e.rolle, zugang: zufall(20), erstellt: new Date().toISOString(), perEinladung: true }
+  h.mitglieder.push(m)
+  e.eingeloest = m.id
+  hofSpeichern(h)
+  res.status(201).json({ zugang: m.zugang, karte: h.karten[0] ?? null, ich: mitgliedInfo(m) })
+})
+
+// -- Eigene PIN (für die Anmeldung auf einem neuen Gerät ohne Link) --
+app.put('/api/hoefe/:hid/ich/pin', mitHof('mitglied'), (req, res) => {
+  const m = req.mitglied
+  const pin = req.body?.pin
+  if (pin === null) delete m.pin
+  else {
+    if (typeof pin !== 'string' || !/^\d{4,8}$/.test(pin)) return res.status(400).json({ fehler: 'Die PIN muss 4 bis 8 Ziffern haben' })
+    const salz = zufall(16)
+    m.pin = { salz, hash: pinHash(pin, salz) }
+  }
+  hofSpeichern(req.hof, false)
+  res.json({ hatPin: !!m.pin })
+})
+// Anmelden mit Name + PIN. Schutz: 10 Fehlversuche je IP und Stunde, nach 5 Fehlversuchen je Person 15 Minuten Sperre.
+const pinSperre = new Map()
+app.post('/api/hoefe/:hid/anmelden', mitHof(), (req, res) => {
+  const h = req.hof
+  const name = String(req.body?.name ?? '').replace(/\s+/g, ' ').trim().toLowerCase()
+  const pin = String(req.body?.pin ?? '')
+  if (zuOft('pin-ip:' + req.ip, 10)) return res.status(429).json({ fehler: 'Zu viele Versuche – bitte in einer Stunde erneut.' })
+  const kandidaten = h.mitglieder.filter((m) => m.pin && m.name.toLowerCase() === name)
+  for (const m of kandidaten) {
+    const s = pinSperre.get(m.id)
+    if (s && s.bis > Date.now()) return res.status(429).json({ fehler: 'Zu viele falsche PINs – bitte in 15 Minuten erneut.' })
+  }
+  const m = kandidaten.find((x) => gleich(x.pin.hash, pinHash(pin, x.pin.salz)))
+  if (!m) {
+    for (const x of kandidaten) {
+      const s = pinSperre.get(x.id) ?? { n: 0, bis: 0 }
+      s.n += 1
+      if (s.n >= 5) { s.n = 0; s.bis = Date.now() + 15 * 60_000 }
+      pinSperre.set(x.id, s)
+    }
+    return res.status(403).json({ fehler: 'Name oder PIN falsch (oder für diese Person ist keine PIN eingerichtet)' })
+  }
+  pinSperre.delete(m.id)
+  beitritte.set('pin-ip:' + req.ip, []) // erfolgreicher Versuch setzt den IP-Zähler zurück
+  res.json({ zugang: m.zugang, karte: h.karten[0] ?? null, ich: mitgliedInfo(m) })
 })
 
 // Live-Updates per Server-Sent Events

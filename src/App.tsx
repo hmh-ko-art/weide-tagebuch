@@ -1,11 +1,12 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Karte, { HAT_GOOGLE_KEY } from './map/Karte'
 import { useKarte, zugangsLink, einladungsLink, NAME_MAX, type Ich, type Nutzer } from './daten'
+import { HofPanel, HofEinrichten, ROLLEN } from './Hof'
 import { googleNaviLink, routeBerechnen, routeText } from './route'
 import { eintragDatum, tagText, monatText, istAusblendbar, TIERARTEN, tierText, tierSymbolHtml, tierSummen, type Einheit, type Tierart, FARBEN, FLAECHEN_FARBEN, FLAECHE_STANDARD, START, STANDARD_FARBE, datum, farbName, hektar, mitte, neueId, notizenSortiert, pinFarbe, gruppenVorschlag, gruppenFarbe, gruppenOrdnung, naechsteGruppenFarbe, tierKurz, GRUPPEN_FARBEN, type Gruppe, type Eintrag, type Notiz, type Fokus, type LatLng, type Route } from './types'
 
 type Modus = 'ansicht' | 'pin' | 'flaeche'
-type Panel = null | 'liste' | 'einstellungen' | 'nutzer' | 'profil'
+type Panel = null | 'liste' | 'einstellungen' | 'nutzer' | 'profil' | 'hof'
 
 // Aktuell angemeldeter Nutzer (geteilte Karte) – für Autor neuer Notizen
 let aktuellerNutzer: Ich | null = null
@@ -297,11 +298,12 @@ export default function App() {
             {k.kartenName && <span className="marke-wort" aria-hidden="true">FlockMap</span>}
             <h1 className="kopf-titel" title={k.kartenName || 'FlockMap'}>{k.kartenName || 'FlockMap'}</h1>
           </div>
-          <small className={`status ${k.status}`}><span className="status-punkt" aria-hidden="true" />{statusText}{k.karteId && k.ich && <> · <button className="name-knopf" title="Meinen Namen ändern" onClick={() => setPanel(panel === 'profil' ? null : 'profil')}>{k.ich.name}{k.ich.rolle === 'admin' ? ' (Admin)' : ''} <Icon name="stift" /></button></>}{!k.darfBearbeiten && ' · nur ansehen'}</small>
+          <small className={`status ${k.status}`}><span className="status-punkt" aria-hidden="true" />{statusText}{k.karteId && k.ich && <> · <button className="name-knopf" title="Meinen Namen ändern" onClick={() => setPanel(panel === 'profil' ? null : 'profil')}>{k.ich.name}{k.hof?.rolle ? ` (${ROLLEN[k.hof.rolle].name})` : k.ich.rolle === 'admin' ? ' (Admin)' : ''} <Icon name="stift" /></button></>}{!k.darfBearbeiten && !(k.ich?.rolle === 'ansehen') && ' · nur ansehen'}</small>
         </div>
         <nav>
           <button className="kopf-knopf mit-text" aria-pressed={panel === 'liste'} title="Liste" aria-label="Liste" onClick={() => setPanel(panel === 'liste' ? null : 'liste')}><Icon name="liste" /><span>Liste</span></button>
-          {k.karteId && k.istAdmin && <button className="kopf-knopf" aria-pressed={panel === 'nutzer'} title="Nutzer verwalten" aria-label="Nutzer verwalten" onClick={() => setPanel(panel === 'nutzer' ? null : 'nutzer')}><Icon name="nutzer" /></button>}
+          {k.karteId && k.hof?.rolle && <button className="kopf-knopf" aria-pressed={panel === 'hof'} title="Mein Hof" aria-label="Mein Hof" onClick={() => setPanel(panel === 'hof' ? null : 'hof')}><Icon name="nutzer" /></button>}
+          {k.karteId && !k.hof && k.istAdmin && <button className="kopf-knopf" aria-pressed={panel === 'nutzer'} title="Nutzer verwalten" aria-label="Nutzer verwalten" onClick={() => setPanel(panel === 'nutzer' ? null : 'nutzer')}><Icon name="nutzer" /></button>}
           <button className="kopf-knopf" aria-pressed={panel === 'einstellungen'} title="Einstellungen" aria-label="Einstellungen" onClick={() => setPanel(panel === 'einstellungen' ? null : 'einstellungen')}><Icon name="zahnrad" /></button>
         </nav>
       </header>
@@ -412,9 +414,10 @@ export default function App() {
             darfBearbeiten={k.darfBearbeiten} kannEintrag={kannEintrag} kannGruppe={kannGruppe} ichId={k.ich?.id}
             onGruppeSpeichern={k.gruppeSpeichern} onGruppeLoeschen={k.gruppeLoeschen} onInGruppe={inGruppe} neueGruppe={neueGruppe} />
         )}
-        {panel === 'einstellungen' && <Einstellungen k={k} onSchliessen={() => setPanel(null)} meldung={setMeldung} onNutzer={() => setPanel('nutzer')} onProfil={() => setPanel('profil')} kopfFarbe={kopfFarbe} setKopfFarbe={setKopfFarbe} />}
+        {panel === 'einstellungen' && <Einstellungen k={k} onSchliessen={() => setPanel(null)} meldung={setMeldung} onNutzer={() => setPanel(k.hof?.rolle ? 'hof' : 'nutzer')} onHof={() => setPanel('hof')} onProfil={() => setPanel('profil')} kopfFarbe={kopfFarbe} setKopfFarbe={setKopfFarbe} />}
         {k.einladung && !k.ich && k.status !== 'verbinde' && <Beitreten k={k} />}
         {panel === 'profil' && k.ich && <Profil k={k} onSchliessen={() => setPanel(null)} meldung={setMeldung} />}
+        {panel === 'hof' && k.hof && <HofPanel k={k} onSchliessen={() => setPanel(null)} meldung={setMeldung} />}
         {panel === 'nutzer' && k.istAdmin && k.karteId && <NutzerVerwaltung k={k} onSchliessen={() => setPanel(null)} meldung={setMeldung} />}
 
         {neueVersion && (
@@ -1024,7 +1027,7 @@ function Liste(p: ListeProps) {
   )
 }
 
-function Einstellungen(p: { k: ReturnType<typeof useKarte>; onSchliessen: () => void; meldung: (s: string) => void; onNutzer: () => void; onProfil: () => void; kopfFarbe: string | null; setKopfFarbe: (f: string | null) => void }) {
+function Einstellungen(p: { k: ReturnType<typeof useKarte>; onSchliessen: () => void; meldung: (s: string) => void; onNutzer: () => void; onHof: () => void; onProfil: () => void; kopfFarbe: string | null; setKopfFarbe: (f: string | null) => void }) {
   const { k } = p
   const [name, setName] = useState('Weidekarte Deichschäferei')
   const [kartenName, setKartenName] = useState(k.kartenName)
@@ -1071,7 +1074,20 @@ function Einstellungen(p: { k: ReturnType<typeof useKarte>; onSchliessen: () => 
           <p className="hinweis">Status: {k.status === 'verbunden' ? 'live verbunden' : k.status}. Änderungen erscheinen sofort bei allen, die den Link offen haben.</p>
           <button onClick={() => kopieren(basis)}>🔗 Link zum Ansehen kopieren</button>
           <p className="hinweis klein">Der Ansehen-Link ist nur zum Lesen. Zum Mitarbeiten bekommt jede Person einen eigenen Zugangs-Link vom Admin.</p>
-          {k.istAdmin && <button className="primaer" onClick={p.onNutzer}>👥 Nutzer verwalten / Leute einladen</button>}
+          {k.istAdmin && <button className="primaer" onClick={p.onNutzer}>👥 {k.hof ? 'Leute einladen / Personen verwalten' : 'Nutzer verwalten / Leute einladen'}</button>}
+
+          <h3>Hof</h3>
+          {k.hof ? (
+            <>
+              <p className="hinweis">Diese Karte gehört zum Hof <strong>„{k.hof.name}“</strong>.{k.hof.rolle ? ` Deine Rolle: ${ROLLEN[k.hof.rolle].name}.` : ''}</p>
+              {k.hof.rolle && <button onClick={p.onHof}>🏡 Mein Hof: Karten, Personen, PIN</button>}
+            </>
+          ) : k.istAdmin ? (
+            <>
+              <p className="hinweis klein">Ein Hof bündelt mehrere Karten (z. B. Sommer- und Winterweiden) mit <strong>einem</strong> Team: Jede Person hat einen Link für alle Karten und eine Rolle (Admin, Mitarbeiter, Nur ansehen).</p>
+              <HofEinrichten k={k} meldung={p.meldung} onHof={p.onHof} />
+            </>
+          ) : <p className="hinweis klein">Diese Karte gehört zu keinem Hof.</p>}
 
           <h3>Name der Karte</h3>
           {k.istAdmin ? (
@@ -1091,7 +1107,7 @@ function Einstellungen(p: { k: ReturnType<typeof useKarte>; onSchliessen: () => 
           <h3>Dein Zugang</h3>
           {k.ich ? (
             <>
-              <p className="hinweis">Angemeldet als <strong>{k.ich.name}</strong> ({k.ich.rolle === 'admin' ? 'Admin' : 'Nutzer'}). Dein persönlicher Link ist auf diesem Gerät gespeichert.</p>
+              <p className="hinweis">Angemeldet als <strong>{k.ich.name}</strong> ({k.hof?.rolle ? ROLLEN[k.hof.rolle].name : k.ich.rolle === 'admin' ? 'Admin' : k.ich.rolle === 'ansehen' ? 'Nur ansehen' : 'Nutzer'}). Dein persönlicher Link ist auf diesem Gerät gespeichert.</p>
               <button onClick={p.onProfil}>✏️ Meinen Namen ändern</button>
               <button onClick={() => k.zugang && kopieren(zugangsLink(k.karteId!, k.zugang))}>🔑 Meinen persönlichen Link kopieren (für ein weiteres Gerät)</button>
               <button onClick={() => confirm('Auf diesem Gerät abmelden? Du brauchst danach deinen persönlichen Link wieder.') && k.abmelden()}>Abmelden</button>
@@ -1271,18 +1287,19 @@ function NutzerVerwaltung(p: { k: ReturnType<typeof useKarte>; onSchliessen: () 
           <li key={n.id}>
             <div className="nutzer-kopf">
               <strong>{n.name}</strong>{n.id === k.ich?.id && <span className="hinweis"> (du)</span>}
-              <select value={n.rolle} aria-label={`Rolle von ${n.name}`} disabled={n.rolle === 'admin' && admins <= 1}
+              {n.hof && <span className="hinweis klein"> · Hof</span>}
+              <select value={n.rolle} aria-label={`Rolle von ${n.name}`} disabled={n.hof || (n.rolle === 'admin' && admins <= 1)}
                 onChange={(e) => k.nutzer.aendern(n.id, { rolle: e.target.value as Ich['rolle'] }).then(() => { laden(); k.ichLaden() }).catch(fehler)}>
-                <option value="nutzer">Nutzer</option><option value="admin">Admin</option>
+                <option value="nutzer">Nutzer</option><option value="admin">Admin</option>{n.rolle === 'ansehen' && <option value="ansehen">Nur ansehen</option>}
               </select>
             </div>
-            <div className="knoepfe">
+            {!n.hof && <div className="knoepfe">
               <button onClick={() => teilen(n)}>🔗 Link teilen</button>
               <button onClick={() => { const neuName = prompt('Neuer Name:', n.name); if (neuName?.trim()) k.nutzer.aendern(n.id, { name: neuName.trim() }).then(() => { laden(); k.ichLaden() }).catch(fehler) }}>Umbenennen</button>
               <button title="Alter Link wird ungültig" onClick={() => confirm(`Neuen Link für ${n.name} erzeugen? Der alte Link funktioniert dann nicht mehr.`) && k.nutzer.aendern(n.id, { neuerZugang: true }).then((x) => { setNeu(x); laden() }).catch(fehler)}>Neuer Link</button>
               <button className="gefahr" disabled={n.rolle === 'admin' && admins <= 1}
                 onClick={() => confirm(`${n.name} entfernen? Der Zugang ist sofort ungültig.`) && k.nutzer.entfernen(n.id).then(() => { laden(); p.meldung(`${n.name} entfernt`) }).catch(fehler)}>Entfernen</button>
-            </div>
+            </div>}
           </li>
         ))}
       </ul>

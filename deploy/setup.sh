@@ -45,6 +45,8 @@ cd "$APP_DIR/deploy"
 if [ ! -f .env ]; then
   cp .env.example .env
   sed -i "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=$(openssl rand -hex 24)|" .env
+  grep -q '^FLOCKMAP_ADMIN_TOKEN=' .env || echo 'FLOCKMAP_ADMIN_TOKEN=' >> .env
+  sed -i "s|^FLOCKMAP_ADMIN_TOKEN=$|FLOCKMAP_ADMIN_TOKEN=$(openssl rand -hex 24)|" .env
   [ -n "${DOMAIN:-}" ] && sed -i "s|^DOMAIN=.*|DOMAIN=$DOMAIN|" .env
   chmod 600 .env
   echo ".env angelegt (Passwort zufällig). DOMAIN: $(grep ^DOMAIN= .env)"

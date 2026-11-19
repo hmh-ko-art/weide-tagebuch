@@ -18,6 +18,9 @@ services:
       # Optional: Google Maps statt OpenStreetMap (Key im Dashboard eintragen, dann neu bauen)
       - key: VITE_GOOGLE_MAPS_API_KEY
         sync: false
+      # Betreiber-Schlüssel für /?betreiber (neuen Hof anlegen); leer = abgeschaltet
+      - key: FLOCKMAP_ADMIN_TOKEN
+        sync: false
 
 databases:
   - name: weide-tagebuch-db

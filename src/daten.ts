@@ -3,7 +3,7 @@ import { migrieren, type Einheit, type Eintrag, type Gruppe, type Notiz } from '
 
 // Geteilte Karte: ?karte=ID (ansehen) bzw. ?karte=ID&zugang=KEY (persönlicher Zugang; alt: &schluessel=KEY).
 // Der Zugang wird am Gerät gespeichert und aus der Adresszeile entfernt.
-const zugangKey = (id: string) => `wt-zugang-${id}`
+export const zugangKey = (id: string) => `wt-zugang-${id}`
 export function linkParameter() {
   const p = new URLSearchParams(location.search)
   const karteId = p.get('karte')
@@ -20,8 +20,11 @@ export function linkParameter() {
 }
 const PARAMS = linkParameter()
 
-export interface Ich { id: string; name: string; rolle: 'admin' | 'nutzer' }
-export interface Nutzer extends Ich { zugang: string; erstellt: string }
+export interface Ich { id: string; name: string; rolle: 'admin' | 'nutzer' | 'ansehen' }
+export interface Nutzer extends Ich { zugang: string; erstellt: string; hof?: boolean }
+// Hof, zu dem die Karte gehört (rolle = meine Rolle im Hof, falls ich Mitglied bin)
+export type HofRolle = 'inhaber' | 'admin' | 'mitarbeiter' | 'ansehen'
+export interface HofKurz { id: string; name: string; rolle?: HofRolle }
 export const zugangsLink = (karteId: string, zugang: string) => `${location.origin}${location.pathname}?karte=${karteId}&zugang=${zugang}`
 export const einladungsLink = (karteId: string, code: string) => `${location.origin}${location.pathname}?karte=${karteId}&einladung=${code}`
 
@@ -108,9 +111,10 @@ export function useKarte() {
   const [ich, setIch] = useState<Ich | null>(null)
   const [hinweis, setHinweis] = useState('')
   const [kartenName, setKartenName] = useState<string>('')
+  const [hof, setHof] = useState<HofKurz | null>(null)
   const nutzerVersion = useRef<number | null>(null)
   const [nutzerStand, setNutzerStand] = useState(0) // ändert sich bei jeder Nutzerlisten-Änderung (z. B. Beitritt per Einladung)
-  const darfBearbeiten = !karteId || !!ich
+  const darfBearbeiten = !karteId || (!!ich && ich.rolle !== 'ansehen')
   const istAdmin = !karteId || ich?.rolle === 'admin'
   const queue = useRef<Ausstehend[]>(karteId ? lesen(queueKey(karteId), []) : [])
 
@@ -124,6 +128,7 @@ export function useKarte() {
       if (!r.ok) return
       const k = await r.json()
       setKartenName(k.name)
+      setHof(k.hof ?? null)
       nutzerVersion.current = k.nutzerVersion
       setIch((alt) => {
         if (zugang && alt && !k.ich) setHinweis('Dein Zugang ist nicht mehr gültig – du kannst die Karte nur noch ansehen.')
@@ -196,6 +201,7 @@ export function useKarte() {
     es.addEventListener('karte', (ev) => {
       const k = JSON.parse((ev as MessageEvent).data)
       setKartenName(k.name)
+      setHof((alt) => (k.hof ? { ...alt, ...k.hof } : null))
       setStatus('verbunden')
       // Nutzerliste geändert (z. B. Rolle geändert oder Zugang entfernt) -> eigene Rechte neu holen
       if (nutzerVersion.current !== null && k.nutzerVersion !== nutzerVersion.current) { ichLaden(); setNutzerStand(k.nutzerVersion) }
@@ -314,5 +320,5 @@ export function useKarte() {
   }
   const einladungVerwalten = { laden: () => einladungApi('GET'), erzeugen: () => einladungApi('POST'), deaktivieren: () => einladungApi('DELETE') }
 
-  return { eintraege, gruppen, gruppeSpeichern, gruppeLoeschen, zuordnen, reihenfolge, speichern, loeschen, notizSpeichern, notizLoeschen, alleErsetzen, teilen, abmelden, nameAendern, einladung, einladungPruefen, beitreten, kartenNameAendern, einladungVerwalten, nutzerStand, status, darfBearbeiten, istAdmin, ich, ichLaden, hinweis, setHinweis, nutzer, karteId, zugang, kartenName }
+  return { hof, setHof, eintraege, gruppen, gruppeSpeichern, gruppeLoeschen, zuordnen, reihenfolge, speichern, loeschen, notizSpeichern, notizLoeschen, alleErsetzen, teilen, abmelden, nameAendern, einladung, einladungPruefen, beitreten, kartenNameAendern, einladungVerwalten, nutzerStand, status, darfBearbeiten, istAdmin, ich, ichLaden, hinweis, setHinweis, nutzer, karteId, zugang, kartenName }
 }

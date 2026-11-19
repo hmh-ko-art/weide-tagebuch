@@ -42,3 +42,7 @@
 | `docker-compose.test.yml` | nur für lokale Tests ohne Docker-Bridge |
 
 Update einspielen: `cd /opt/flockmap && git pull && cd deploy && docker compose up -d --build`
+
+## Hof-Konten (ab Version mit „Mein Hof“)
+- Neue Tabelle `hoefe` (neben `karten`). Beim Umzug **beide Tabellen** übernehmen – `pg_dump` der ganzen Datenbank macht das automatisch; bei einem Export per SQL-Abfrage auch `SELECT id, daten FROM hoefe` sichern.
+- `FLOCKMAP_ADMIN_TOKEN` (in `.env`, von `setup.sh` zufällig erzeugt) schützt die Betreiber-Seite `/?betreiber` zum Anlegen neuer Höfe. Denselben Wert wie auf Render übernehmen, wenn er weiter gelten soll.

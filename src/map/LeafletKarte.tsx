@@ -6,11 +6,13 @@ import { NADEL_BREITE, NADEL_HOEHE, nadelHtml } from './nadel'
 import { FARBE_AKTIV, ROUTE_FARBE, type KartenProps } from './props'
 import { ansichtSetzen, letzteAnsicht } from '../offline'
 import { infraSvg } from './symbole'
+import { abstand, kreisMitte } from '../../server/flaechen.js'
 import { gesamtLaenge, laengeText, linienArt, linienLaenge, linienStuecke, punktBei } from '../../server/infrastruktur.js'
 
 const ll = (q: { lat: number; lng: number }) => [q.lat, q.lng] as [number, number]
 const infraIcon = (html: string, label: string) => L.divIcon({ className: 'infra-icon', html: `${html}${label}`, iconSize: [30, 30], iconAnchor: [15, 15] })
 const punktIcon = (sel: boolean) => L.divIcon({ className: 'eck-icon', html: `<span class="eck${sel ? ' sel' : ''}"></span>`, iconSize: [28, 28], iconAnchor: [14, 14] })
+const griffIcon = L.divIcon({ className: 'eck-icon', html: '<span class="eck kreis-griff">↔</span>', iconSize: [34, 34], iconAnchor: [17, 17] })
 const mitteIcon = L.divIcon({ className: 'eck-icon', html: '<span class="eck mitte">+</span>', iconSize: [26, 26], iconAnchor: [13, 13] })
 
 // Beschriftung: Name und – falls gesetzt – dezent Symbol + Tierzahl
@@ -92,6 +94,15 @@ export default function LeafletKarte(p: KartenProps) {
         if ((ev.originalEvent?.target as Element | null)?.closest?.('.tiere-knopf')) cb.current.onTiereUmschalten(e.id)
         else cb.current.onAuswahl(e.id)
       }
+      // Kreis um die Nadel („eingezäunt“) – beim Bearbeiten zeichnet die Bearbeiten-Ebene ihn
+      if (e.typ === 'pin' && e.kreis && e.id !== p.kreisBearbeiten?.id) {
+        const mi = kreisMitte(e)!, f = e.kreis.farbe || pinFarbe(e)
+        L.circle(ll(mi), { radius: e.kreis.radius, color: '#000', weight: aktiv ? 6 : 4.5, opacity: 0.35, fill: false, interactive: false }).addTo(g)
+        L.circle(ll(mi), { radius: e.kreis.radius, color: aktiv ? '#fff' : f, weight: aktiv ? 3.5 : 2.5, fillColor: f, fillOpacity: aktiv ? 0.22 : 0.12, dashArray: e.kreis.gebunden === false ? undefined : '8 5' })
+          .on('click', (ev: L.LeafletMouseEvent) => { L.DomEvent.stopPropagation(ev); cb.current.onAuswahl(e.id) }).addTo(g)
+        // Fester Kreis und Nadel woanders: dünne Verbindungslinie, damit man sieht, wozu er gehört
+        if (e.kreis.gebunden === false && abstand(mi, e.position) > 2) L.polyline([ll(e.position), ll(mi)], { color: f, weight: 1.5, dashArray: '2 6', opacity: 0.9, interactive: false }).addTo(g)
+      }
       if (e.typ === 'pin' && e.infra) {
         // Weide-Technik: eigenes rundes Symbol (Gerät mit fälliger Prüfung rot umrandet)
         const ziehbar = verschiebbar.has(e.id)
@@ -149,7 +160,7 @@ export default function LeafletKarte(p: KartenProps) {
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [p.eintraege, p.ausgewaehlt, p.beschriftung, p.hervor.join(), p.verschiebbar.join(), p.tiereZu.join(), p.nummern, (p.warnIds ?? []).join()])
+  }, [p.kreisBearbeiten?.id, p.eintraege, p.ausgewaehlt, p.beschriftung, p.hervor.join(), p.verschiebbar.join(), p.tiereZu.join(), p.nummern, (p.warnIds ?? []).join()])
 
   // Zeichnen einer Fläche oder Linie
   useEffect(() => {
@@ -185,6 +196,24 @@ export default function LeafletKarte(p: KartenProps) {
       m.addTo(g)
     })
   }, [p.bearbeiten])
+
+  // Kreis um Nadel bearbeiten: Kreis + Griff am Rand (ziehen = Radius)
+  const kreisEbene = useRef<L.LayerGroup | null>(null)
+  const kb = p.kreisBearbeiten
+  useEffect(() => {
+    if (!map.current) return
+    kreisEbene.current ??= L.layerGroup().addTo(map.current)
+    const g = kreisEbene.current
+    g.clearLayers()
+    if (!kb) return
+    const c = L.circle(ll(kb.mitte), { radius: kb.radius, color: FARBE_AKTIV, weight: 3, fillColor: kb.farbe, fillOpacity: 0.25, interactive: false }).addTo(g)
+    L.circle(ll(kb.mitte), { radius: kb.radius, color: kb.farbe, weight: 2, dashArray: '6 6', fill: false, interactive: false }).addTo(g)
+    // Griff östlich der Mitte
+    const ost = (r: number) => ({ lat: kb.mitte.lat, lng: kb.mitte.lng + r / (111320 * Math.cos((kb.mitte.lat * Math.PI) / 180)) })
+    const m = L.marker(ll(ost(kb.radius)), { icon: griffIcon, draggable: true, zIndexOffset: 1500, autoPan: true, title: 'Ziehen ändert den Radius' }).addTo(g)
+    m.on('drag', () => { const q = m.getLatLng(); c.setRadius(Math.max(3, abstand(kb.mitte, { lat: q.lat, lng: q.lng }))) })
+    m.on('dragend', () => { const q = m.getLatLng(); cb.current.onKreisRadius?.(Math.max(3, Math.round(abstand(kb.mitte, { lat: q.lat, lng: q.lng })))) })
+  }, [kb?.id, kb?.mitte.lat, kb?.mitte.lng, kb?.radius, kb?.farbe])
 
   // Route
   useEffect(() => {

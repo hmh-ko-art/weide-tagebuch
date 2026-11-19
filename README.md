@@ -89,6 +89,14 @@ Code: `server/flaechen.js` (gemeinsam für Server **und** App: Messen, Steckbrie
 - **Übersicht**: Liste → Flächen → „📊 Übersicht, Pacht & Summen“ (Summen gesamt/Pacht/€ je Jahr/je Art, sortierbare Tabelle, Excel/PDF „Flächenverzeichnis“).
 - **Export/Import**: Excel-Blätter „Flächenverzeichnis“, „Flächen-Summen“, „Fristen“; PDF-Kapitel; KML-ExtendedData `flockmap_steckbrief` (+ `flockmap_pacht` nur mit Admin-Option); JSON-Sicherung inkl. Pacht (nur Admin). Import: KML/GeoJSON (FLIK/Schlag/Nutzung aus Attributen geraten, MultiPolygon → mehrere Flächen) und Shapefile-ZIP (.shp/.dbf/.prj; WGS84 oder ETRS89/UTM 32/33 – Gauß-Krüger nicht unterstützt; nur Außenringe).
 
+## Kreis um Nadel („eingezäunt“)
+
+Code: `server/flaechen.js` (`kreisSauber`, `kreisMasse`, `kreisPolygon`, `kreisMitte`), `src/kreis/Kreis.tsx`, `src/austausch/kreise.ts`.
+
+- **Daten**: `pin.kreis` = {radius (3–2000 m), farbe?, gebunden (Standard true), mitte, seit?}. `gebunden`: Mitte = Nadel (wandert beim Verschieben mit; Server setzt `mitte` = Position). `gebunden: false`: feste Mitte, bleibt beim Verschieben der Nadel stehen (gestrichelte Verbindungslinie). `kreis: null` = abgebaut. Fehlt das Feld (alte App), behält der Server den Kreis.
+- **Bedienung**: Nadel antippen → „◯ Einkreisen“ → Radius per Griff am Rand, Zahl oder Schnellwahl (10/20/30/50/100 m), Farbe, gebunden/fest (fester Kreis: Tippen auf die Karte versetzt die Mitte); Anzeige ≈ ha, m², Umfang, Netze à 50 m. „✂️ Abgebaut“ entfernt ihn mit einem Tipp. Rechte wie beim Bearbeiten der Nadel.
+- **Export/Import**: Excel-Blatt „Einkreisungen“, PDF-Kapitel, KML-Ordner „Einkreisungen“ (Kreis als 48-Eck, `flockmap_kreis_fuer` + `flockmap_kreis` → beim Re-Import wieder an die Nadel gehängt), JSON-Sicherung enthält `kreis`.
+
 ## Rechtliches & Datenschutz
 
 **Entwurf – vor Verkauf anwaltlich prüfen lassen.** Details, Entscheidungen und Prüfliste: [`docs/RECHTLICHES.md`](docs/RECHTLICHES.md).

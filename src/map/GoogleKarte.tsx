@@ -1,3 +1,4 @@
+import { kreisMitte } from '../../server/flaechen.js'
 import { useEffect, useRef } from 'react'
 import { APIProvider, AdvancedMarker, Map, useMap } from '@vis.gl/react-google-maps'
 import { START, START_ZOOM, pinFarbe, type Eintrag } from '../types'
@@ -34,9 +35,20 @@ function Overlays(p: KartenProps) {
         polys.push(l as unknown as google.maps.Polygon)
       }
     }
+    // Kreise um Nadeln (beim Bearbeiten: Vorschau mit dem eingestellten Radius)
+    for (const e of p.eintraege) {
+      if (e.typ !== 'pin' || !e.kreis) continue
+      const kb = p.kreisBearbeiten?.id === e.id ? p.kreisBearbeiten : null
+      const f = kb?.farbe ?? e.kreis.farbe ?? pinFarbe(e)
+      const c = new google.maps.Circle({ map, center: kb?.mitte ?? kreisMitte(e)!, radius: kb?.radius ?? e.kreis.radius, strokeColor: kb ? FARBE_AKTIV : f, strokeWeight: 2.5, fillColor: f, fillOpacity: 0.15 })
+      c.addListener('click', () => cb.current.onAuswahl(e.id))
+      polys.push(c as unknown as google.maps.Polygon)
+    }
+    const kb = p.kreisBearbeiten
+    if (kb && !p.eintraege.some((e) => e.id === kb.id && e.typ === 'pin' && e.kreis)) polys.push(new google.maps.Circle({ map, center: kb.mitte, radius: kb.radius, strokeColor: FARBE_AKTIV, strokeWeight: 2.5, fillColor: kb.farbe, fillOpacity: 0.2, clickable: false }) as unknown as google.maps.Polygon)
     return () => polys.forEach((x) => x.setMap(null))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [map, p.eintraege, p.ausgewaehlt, p.hervor.join()])
+  }, [map, p.eintraege, p.ausgewaehlt, p.hervor.join(), p.kreisBearbeiten?.radius, p.kreisBearbeiten?.farbe, p.kreisBearbeiten?.mitte.lat, p.kreisBearbeiten?.mitte.lng])
 
   useEffect(() => {
     if (!map || !p.zeichenPunkte.length) return

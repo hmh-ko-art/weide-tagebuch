@@ -37,3 +37,14 @@ export function pachtHa(p: Pacht | null | undefined, gemessenHa: number): number
 export function pachtSumme(p: Pacht | null | undefined, gemessenHa: number): number | null
 export function pachtGleich(a: Pacht | null | undefined, b: Pacht | null | undefined): boolean
 export function flaechenSummen(eintraege: Eintrag[], pacht: PachtListe | null | undefined): { anzahl: number; ha: number; pachtHa: number; eigentumHa: number; pachtEuro: number; ohnePreis: number; nachArt: Record<string, number> }
+
+export interface Kreis { radius: number; farbe?: string; gebunden: boolean; mitte: LatLng; seit?: string }
+export const KREIS_STANDARD: number
+export const KREIS_MIN: number
+export const KREIS_MAX: number
+export const NETZ_LAENGE: number
+export function kreisSauber(k: unknown, position?: LatLng | null): Kreis | null
+export function kreisMitte(e: { kreis?: Kreis | null; position?: LatLng }): LatLng | null
+export function kreisMasse(r: number): { m2: number; ha: number; umfang: number; netze: number }
+export function kreisPolygon(mitte: LatLng, r: number, n?: number): LatLng[]
+export function abstand(a: LatLng, b: LatLng): number

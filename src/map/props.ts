@@ -11,6 +11,8 @@ export interface KartenProps {
   onPunktZiehen?: (i: number, p: LatLng) => void
   onPunktWahl?: (i: number) => void
   onPunktEinfuegen?: (i: number, p: LatLng) => void // neuer Punkt an Stelle i
+  kreisBearbeiten?: { id: string; mitte: LatLng; radius: number; farbe: string } | null // Kreis um Nadel: Griff zum Ziehen
+  onKreisRadius?: (r: number) => void
   warnIds?: string[] // Weidezaungeräte mit fälliger Prüfung (rot umrandet)
   route: Route | null
   standort: LatLng | null

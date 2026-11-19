@@ -10,6 +10,7 @@ import { WeideplanPanel, PlanZeile, type PlanStart } from './weideplan/Weideplan
 import { planFarben as planFarbenAnwenden, faelligAnzahl } from './weideplan/hilfen'
 import { STATUS_FARBEN, heute } from '../server/weideplan.js'
 import { FlaechenUebersicht, MessText, SteckbriefDetail, SteckbriefFormular, fristenListe, pachtAusForm, pachtFormAus } from './flaechen/Flaechen'
+import { KreisDetail, KreisLeiste, kreisAusEdit, kreisStart, type KreisEdit } from './kreis/Kreis'
 import * as FL from '../server/flaechen.js'
 import type { Pacht } from '../server/flaechen.js'
 import { InfraDetail, InfraFormular, InfraListe, InfraSymbol, LinienSymbol, useInfraAus, type PruefNeu } from './infra/Infra'
@@ -18,7 +19,7 @@ import { KarteLoeschenAbschnitt, GeloeschtHinweis } from './recht/Loeschen'
 import { googleNaviLink, routeBerechnen, routeText } from './route'
 import { eintragDatum, tagText, monatText, istAusblendbar, TIERARTEN, tierText, tierSymbolHtml, tierSummen, type Einheit, type Tierart, FARBEN, FLAECHEN_FARBEN, FLAECHE_STANDARD, START, STANDARD_FARBE, datum, farbName, hektar, mitte, neueId, notizenSortiert, pinFarbe, gruppenVorschlag, gruppenFarbe, gruppenOrdnung, naechsteGruppenFarbe, tierKurz, GRUPPEN_FARBEN, type Gruppe, type Eintrag, type Notiz, type Fokus, type LatLng, type Route } from './types'
 
-type Modus = 'ansicht' | 'pin' | 'flaeche' | 'linie' | 'punkte' | 'tor'
+type Modus = 'ansicht' | 'pin' | 'flaeche' | 'linie' | 'punkte' | 'tor' | 'kreis'
 type Panel = null | 'liste' | 'einstellungen' | 'nutzer' | 'profil' | 'hof' | 'austausch' | 'meinedaten' | 'weideplan' | 'flaechen'
 
 // Aktuell angemeldeter Nutzer (geteilte Karte) – für Autor neuer Notizen
@@ -80,6 +81,7 @@ export default function App() {
   const kannGruppe = (g: Gruppe) => !k.karteId || k.istAdmin || (!!k.ich && g.von === k.ich.id)
   const kannNotiz = (n: Notiz) => !k.karteId || k.istAdmin || (!!k.ich && n.autorId === k.ich.id)
   const [modus, setModus] = useState<Modus>('ansicht')
+  const [kreisEdit, setKreisEdit] = useState<KreisEdit | null>(null)
   const modusRef = useRef<Modus>('ansicht')
   modusRef.current = modus
   const [zeichenPunkte, setZeichenPunkte] = useState<LatLng[]>([])
@@ -248,6 +250,7 @@ export default function App() {
     if (formular) return
     if (modus === 'flaeche' || modus === 'linie') { setZeichenPunkte((l) => [...l, p]); return }
     if (modus === 'punkte') { setBearbeiten((b) => (b ? { ...b, sel: null } : b)); return }
+    if (modus === 'kreis') { setKreisEdit((x) => (x && !x.gebunden ? { ...x, mitte: p } : x)); return } // fester Kreis: Tippen versetzt die Mitte
     if (modus === 'tor') { const e = k.eintraege.find((x) => x.id === torId); if (e && istLinie(e)) torUmschalten(p); return }
     if (modus === 'ansicht' && ausgewaehlt) { abwaehlen(); return }
     if (!k.darfBearbeiten) return
@@ -404,6 +407,8 @@ export default function App() {
           onPunktZiehen={(i, q) => setBearbeiten((b) => (b ? { ...b, punkte: b.punkte.map((x, j) => (j === i ? q : x)), sel: i } : b))}
           onPunktWahl={(i) => setBearbeiten((b) => (b ? { ...b, sel: i } : b))}
           onPunktEinfuegen={(i, q) => setBearbeiten((b) => (b ? { ...b, punkte: [...b.punkte.slice(0, i), q, ...b.punkte.slice(i)], sel: i } : b))}
+          kreisBearbeiten={modus === 'kreis' && kreisEdit ? (() => { const pe = k.eintraege.find((x) => x.id === kreisEdit.id); return { id: kreisEdit.id, mitte: kreisEdit.gebunden && pe?.typ === 'pin' ? pe.position : kreisEdit.mitte, radius: kreisEdit.radius, farbe: kreisEdit.farbe } })() : null}
+          onKreisRadius={(r) => setKreisEdit((x) => (x ? { ...x, radius: Math.min(FL.KREIS_MAX, r) } : x))}
           warnIds={geraeteDran.map((x) => x.eintrag.id)}
           route={route}
           standort={standort}
@@ -515,6 +520,18 @@ export default function App() {
           )
         })()}
 
+        {modus === 'kreis' && kreisEdit && (() => {
+          const pe = k.eintraege.find((x) => x.id === kreisEdit.id)
+          if (!pe || pe.typ !== 'pin') return null
+          return <KreisLeiste k={kreisEdit} name={pe.titel} set={setKreisEdit}
+            onFertig={() => {
+              const kr = kreisAusEdit(kreisEdit, pe)
+              if (kr) { k.speichern({ ...pe, kreis: kr, geaendert: new Date().toISOString() }); localStorage.setItem('wt-kreis-radius', String(kr.radius)); if (kr.farbe) localStorage.setItem('wt-kreis-farbe', kr.farbe); setMeldung(kreisEdit.neu ? 'Eingekreist ◯' : 'Kreis gespeichert') }
+              setKreisEdit(null); setModus('ansicht'); setAusgewaehlt(pe.id)
+            }}
+            onAbbrechen={() => { setKreisEdit(null); setModus('ansicht'); setAusgewaehlt(pe.id) }} />
+        })()}
+
         {modus === 'tor' && (() => {
           const e = k.eintraege.find((x) => x.id === torId)
           const n = e && istLinie(e) ? e.tore?.length ?? 0 : 0
@@ -552,6 +569,9 @@ export default function App() {
                 onGeprueft={(x) => { k.geprueft(auswahl.id, x); setMeldung('Prüfung eingetragen ✓') }}
                 onPunkte={() => punkteStart(auswahl)} onTore={() => { setTorId(auswahl.id); setModus('tor') }} onZaun={() => zaunUm(auswahl)}
                 onWahl={(id) => { const e = k.eintraege.find((x) => x.id === id); if (e) { fliege(mitte(e)); waehle(id) } }} />
+              {auswahl.typ === 'pin' && <KreisDetail e={auswahl} darf={k.darfBearbeiten && kannEintrag(auswahl)}
+                onEinkreisen={() => { const ke = kreisStart(auswahl); setKreisEdit(ke); setModus('kreis'); const zm = auswahl.kreis && auswahl.kreis.gebunden === false ? auswahl.kreis.mitte : auswahl.position; fliege(window.innerWidth < 600 ? { lat: zm.lat - (ke.radius * 1.15) / 111320, lng: zm.lng } : zm, ke.radius <= 25 ? 19 : ke.radius <= 60 ? 18 : ke.radius <= 150 ? 17 : ke.radius <= 400 ? 16 : 14) }}
+                onAbgebaut={() => { k.speichern({ ...auswahl, kreis: null, geaendert: new Date().toISOString() }); setMeldung('Kreis entfernt – abgebaut ✂️') }} />}
               {auswahl.typ === 'flaeche' && <SteckbriefDetail e={auswahl} pacht={k.pacht[auswahl.id]} istAdmin={k.istAdmin} darfBearbeiten={k.darfBearbeiten} onErledigt={(fid, d) => { k.fristErledigt(auswahl.id, fid, d); setMeldung(d ? 'Frist erledigt ✓' : 'Wieder offen') }} />}
               {auswahl.typ === 'flaeche' && k.darfBearbeiten && kannEintrag(auswahl) && <button className="link-knopf punkte-link" onClick={() => punkteStart(auswahl)}>✏️ Eckpunkte bearbeiten</button>}
             </>}
@@ -1038,7 +1058,7 @@ function Liste(p: ListeProps) {
     return (
       <li key={e.id} data-id={e.id} className={zieh?.id === e.id ? 'wird-gezogen' : undefined} onClick={() => p.onWahl(e)}>
         <div className="zeile-oben">
-          <strong>{e.typ === 'pin' ? <span className="farbpunkt" style={{ background: pinFarbe(e) }} /> : <span className="flaechen-symbol" style={{ color: pinFarbe(e) }}>⬠</span>} {e.titel || <span className="ohne-name">ohne Namen</span>}</strong>
+          <strong>{e.typ === 'pin' ? <span className="farbpunkt" style={{ background: pinFarbe(e) }} /> : <span className="flaechen-symbol" style={{ color: pinFarbe(e) }}>⬠</span>} {e.titel || <span className="ohne-name">ohne Namen</span>}{e.typ === 'pin' && e.kreis && <span className="kreis-marke" title={`Eingezäunt: Kreis ${e.kreis.radius} m`} style={{ borderColor: e.kreis.farbe || pinFarbe(e) }}>◯ {e.kreis.radius} m</span>}</strong>
           {griff && griffFuer(e)}
         </div>
         {e.notizen.length > 0 && <span className="notiz-kurz">{notizenSortiert(e)[0].text}</span>}
@@ -1064,6 +1084,7 @@ function Liste(p: ListeProps) {
       {reiter === 'infra' ? <InfraListe eintraege={p.eintraege} aus={p.infraAus} onUmschalten={p.onInfraUmschalten} onWahl={p.onWahl} darfBearbeiten={p.darfBearbeiten} onGeprueft={p.onGeprueft} /> : <>
       <p className="hinweis summe">
         {zeitraumAktiv && <strong>{zeitraumText}: </strong>}{alle.length} {alle.length === 1 ? wort[0] : wort[1]}
+        {reiter === 'pin' && alle.some((e) => e.typ === 'pin' && e.kreis) && <> · ◯ {alle.filter((e) => e.typ === 'pin' && e.kreis).length} eingezäunt</>}
         {reiter === 'flaeche' && alle.length > 0 && <> · {FL.haText(ha)} · <button className="link-knopf" onClick={p.onUebersicht}>📊 Übersicht, Pacht & Summen</button></>}
         {summen.length > 0 ? <> · <TierAnzeige summen={summen} /></> : reiter === 'pin' ? ' · 0 Tiere' : ''}
       </p>

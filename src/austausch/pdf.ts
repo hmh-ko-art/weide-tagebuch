@@ -10,6 +10,7 @@ import * as WP from '../../server/weideplan.js'
 import type { Weideplan } from '../../server/weideplan.js'
 import { tiereText, statusText } from '../weideplan/hilfen'
 import * as FL from '../../server/flaechen.js'
+import { kreisZeilen } from './kreise'
 import type { PachtListe } from '../../server/flaechen.js'
 import { flaechenZeilen } from './flaechenliste'
 
@@ -20,7 +21,7 @@ export const pdfText = (s: string) => s
 const rgb = (hex: string): [number, number, number] => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)) as [number, number, number]
 const GRUEN: [number, number, number] = [30, 77, 43]
 
-export interface BerichtOptionen { karte: string; hof?: string; autor?: string; filterText?: string; gesamtAnzahl: number; jeGruppe: boolean; mitKarte: boolean; weideplan?: { plan: Weideplan; eintraege: Eintrag[] }; technik?: Eintrag[]; flaechen?: { eintraege: Eintrag[]; pacht: PachtListe | null } }
+export interface BerichtOptionen { kreise?: Eintrag[]; karte: string; hof?: string; autor?: string; filterText?: string; gesamtAnzahl: number; jeGruppe: boolean; mitKarte: boolean; weideplan?: { plan: Weideplan; eintraege: Eintrag[] }; technik?: Eintrag[]; flaechen?: { eintraege: Eintrag[]; pacht: PachtListe | null } }
 
 export async function pdfErzeugen(zeilen: Zeile[], gruppen: Gruppe[], o: BerichtOptionen): Promise<Blob> {
   const doc = new jsPDF({ unit: 'mm', format: 'a4', compress: true })
@@ -196,6 +197,19 @@ export async function pdfErzeugen(zeilen: Zeile[], gruppen: Gruppe[], o: Bericht
   }
 
   if (o.flaechen && o.flaechen.eintraege.some((e) => e.typ === 'flaeche')) { doc.addPage(); flaechenKapitel(doc, o.flaechen.eintraege, o.flaechen.pacht, 16) }
+  if (o.kreise) {
+    const kz = kreisZeilen(o.kreise)
+    if (kz.length) {
+      doc.addPage()
+      doc.setTextColor(30, 40, 30); doc.setFontSize(13); doc.setFont('helvetica', 'bold'); doc.text(pdfText('Einkreisungen (eingezäunt)'), rand, 16); doc.setFont('helvetica', 'normal')
+      doc.setFontSize(9); doc.setTextColor(60); doc.text(pdfText(`${kz.length} ${kz.length === 1 ? 'Kreis' : 'Kreise'} · zusammen ≈ ${zahl(kz.reduce((x, r) => x + r.ha, 0), 2)} ha · ${zahl(Math.round(kz.reduce((x, r) => x + r.umfang, 0)))} m Zaun · ${kz.reduce((x, r) => x + r.netze, 0)} Netze à ${FL.NETZ_LAENGE} m`), rand, 22)
+      autoTable(doc, {
+        startY: 26, margin: { left: rand, right: rand, bottom: 16 }, headStyles: { fillColor: GRUEN }, styles: { fontSize: 8, cellPadding: 1.3, overflow: 'linebreak' as const },
+        head: [['Nadel', 'Art', 'Radius', 'Fläche ca.', 'Umfang', 'Netze', 'Verhalten', 'Seit'].map(pdfText)],
+        body: kz.map((r) => [pdfText(r.name || '(ohne Namen)'), pdfText(r.art), `${zahl(r.radius)} m`, `${zahl(r.ha, 2)} ha`, `${zahl(Math.round(r.umfang))} m`, String(r.netze), pdfText(r.bindung), r.seit ? r.seit.split('-').reverse().join('.') : '']),
+      })
+    }
+  }
 
   // Fußzeile auf jeder Seite
   const n = doc.getNumberOfPages()

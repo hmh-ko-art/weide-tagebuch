@@ -12,6 +12,7 @@ import * as WP from '../server/weideplan.js'
 import type { Weideplan } from '../server/weideplan.js'
 import type { Blatt } from './austausch/xlsx'
 import { flaechenBlaetter } from './austausch/flaechenliste'
+import { kreisBlatt } from './austausch/kreise'
 import { messen } from '../server/flaechen.js'
 import type { Pacht, PachtListe } from '../server/flaechen.js'
 
@@ -100,6 +101,7 @@ export function Austausch(p: { k: K; eintraege: Eintrag[]; filter: ExportFilter;
       },
       ...(hatPlan ? planBlaetter(k.weideplan!, k.eintraege) : []),
       ...(hatFlaechen ? flaechenBlaetter(auswahl, pachtFuer) : []),
+      ...kreisBlatt(auswahl),
       ...(technik.length ? [{
         name: 'Zäune & Wasser',
         kopf: ['Art', 'Name', 'Länge (m)', 'Netze à 50 m', 'Tore', 'Zuletzt geprüft', 'Nächste Prüfung', 'Spannung (kV)', 'Strom', 'Ladestand', 'Prüfen alle (Tage)', 'Breite', 'Länge', 'Notizen', 'ID'],
@@ -120,7 +122,7 @@ export function Austausch(p: { k: K; eintraege: Eintrag[]; filter: ExportFilter;
 
   const pdf = () => mit('PDF-Bericht', async () => {
     const { pdfErzeugen } = await import('./austausch/pdf')
-    const blob = await pdfErzeugen(zeilen, k.gruppen, { karte: name, hof: k.hof?.name, autor: k.ich?.name, filterText, gesamtAnzahl: p.eintraege.length, jeGruppe, mitKarte, technik: technikE, ...(mitFlaechen && hatFlaechen ? { flaechen: { eintraege: auswahl, pacht: pachtFuer } } : {}), ...(mitPlan && hatPlan ? { weideplan: { plan: k.weideplan!, eintraege: k.eintraege } } : {}) })
+    const blob = await pdfErzeugen(zeilen, k.gruppen, { karte: name, hof: k.hof?.name, autor: k.ich?.name, filterText, gesamtAnzahl: p.eintraege.length, jeGruppe, mitKarte, technik: technikE, kreise: auswahl, ...(mitFlaechen && hatFlaechen ? { flaechen: { eintraege: auswahl, pacht: pachtFuer } } : {}), ...(mitPlan && hatPlan ? { weideplan: { plan: k.weideplan!, eintraege: k.eintraege } } : {}) })
     herunterladen(blob, dateiName(name, 'pdf'))
     p.meldung('PDF-Bericht erstellt')
   })
@@ -133,7 +135,7 @@ export function Austausch(p: { k: K; eintraege: Eintrag[]; filter: ExportFilter;
       { id: null, name: k.gruppen.length ? 'Ohne Gruppe' : 'Nadeln', farbe: '#9e9e9e' },
       { id: '__flaechen', name: 'Flächen', farbe: FLAECHE_STANDARD },
     ]
-    herunterladen(new Blob([kmlErzeugen(name, zeilen, reihe, technik, pachtFuer)], { type: 'application/vnd.google-earth.kml+xml' }), dateiName(name, 'kml'))
+    herunterladen(new Blob([kmlErzeugen(name, zeilen, reihe, technik, pachtFuer, auswahl)], { type: 'application/vnd.google-earth.kml+xml' }), dateiName(name, 'kml'))
     p.meldung(`KML mit ${zeilen.length + technik.length} Einträgen erstellt`)
   })
 
@@ -302,9 +304,9 @@ function Importieren(p: { k: K; meldung: (s: string) => void; onFertig: () => vo
         erstellt: jetzt, geaendert: jetzt,
       }
       if (v.typ === 'linie') return { ...basis, typ: 'linie', punkte: v.punkte!, linienArt: linienArt(v.linienArt).wert, ...(v.geschlossen && v.punkte!.length >= 3 ? { geschlossen: true } : {}), ...(v.tore?.length ? { tore: v.tore } : {}), ...(v.flaeche ? { flaeche: v.flaeche } : {}) }
-      if (v.typ === 'pin' && v.infra) return { ...basis, typ: 'pin', position: v.position!, infra: v.infra, ...(v.geraet ? { geraet: v.geraet } : {}) }
+      if (v.typ === 'pin' && v.infra) return { ...basis, typ: 'pin', position: v.position!, infra: v.infra, ...(v.geraet ? { geraet: v.geraet } : {}), ...(v.kreis ? { kreis: v.kreis } : {}) }
       if (v.typ === 'flaeche' && v.pacht && k.istAdmin) pachtNeu[id] = v.pacht
-      return v.typ === 'pin' ? { ...basis, typ: 'pin', position: v.position!, ...(gruppeFuer(v.ebene) ? { gruppe: gruppeFuer(v.ebene) } : {}) } : { ...basis, typ: 'flaeche', punkte: v.punkte!, ...(v.steckbrief ? { steckbrief: v.steckbrief } : {}) }
+      return v.typ === 'pin' ? { ...basis, typ: 'pin', position: v.position!, ...(gruppeFuer(v.ebene) ? { gruppe: gruppeFuer(v.ebene) } : {}), ...(v.kreis ? { kreis: v.kreis } : {}) } : { ...basis, typ: 'flaeche', punkte: v.punkte!, ...(v.steckbrief ? { steckbrief: v.steckbrief } : {}) }
     })
     // Reihenfolge in der Gruppe wie in der Datei
     const reihe = (g: Gruppe) => ({ ...g, reihenfolge: eintraege.filter((e) => e.gruppe === g.id).map((e) => e.id) })

@@ -1,5 +1,5 @@
 import { linienArt, punktBei, gesamtLaenge, type LinienArt, type InfraArt, type Geraet, type Tor } from '../server/infrastruktur.js'
-import { messen, type Steckbrief } from '../server/flaechen.js'
+import { messen, type Kreis, type Steckbrief } from '../server/flaechen.js'
 export type LatLng = { lat: number; lng: number }
 
 // Ein Tagebuch-Eintrag (Notiz) an einer Nadel oder Fläche
@@ -36,6 +36,7 @@ export interface Pin extends Basis {
   position: LatLng
   infra?: InfraArt // Weide-Technik statt normaler Nadel: Tränke, Weidezaungerät, Tor, Unterstand, Salzleckstein
   geraet?: Geraet // nur Weidezaungerät: Strom, Ladestand, letzte Prüfung, Spannung, Prüfintervall
+  kreis?: Kreis | null // „eingezäunt“: Kreis um die Nadel (null = abgebaut; Feld fehlt bei alten Apps -> Server behält ihn)
 }
 // Zaunlinie, Weg oder Graben
 export interface Linie extends Basis {

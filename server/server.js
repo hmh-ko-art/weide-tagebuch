@@ -260,7 +260,7 @@ app.get('/api/karten/:id', mitKarte(undefined, true), (req, res) => {
 // die andere Fassung wird als Notiz am Eintrag gesichert – so geht nichts still verloren.
 const TIER_WORT = { schaf: ['Schaf', 'Schafe'], bock: ['Bock', 'Böcke'], lamm: ['Lamm', 'Lämmer'] }
 // Inhalt für die Konflikt-Erkennung (Prüfungen des Weidezaungeräts nicht – die werden zusammengeführt)
-const inhalt = (e) => JSON.stringify([e.titel ?? '', e.farbe ?? '', e.herde ?? '', e.datum ?? '', e.tierlisteModus ?? '', e.position ?? null, e.punkte ?? null, (e.einheiten ?? []).map((x) => [x.art, x.anzahl]), e.linienArt ?? '', !!e.geschlossen, e.tore ?? null, e.infra ?? '', e.geraet ? { ...e.geraet, pruefungen: undefined, geprueft: undefined, kv: undefined, stand: undefined } : null, ...(e.steckbrief ? [{ ...e.steckbrief, fristen: (e.steckbrief.fristen ?? []).map((f) => ({ ...f, erledigt: undefined })) }] : [])])
+const inhalt = (e) => JSON.stringify([e.titel ?? '', e.farbe ?? '', e.herde ?? '', e.datum ?? '', e.tierlisteModus ?? '', e.position ?? null, e.punkte ?? null, (e.einheiten ?? []).map((x) => [x.art, x.anzahl]), e.linienArt ?? '', !!e.geschlossen, e.tore ?? null, e.infra ?? '', e.geraet ? { ...e.geraet, pruefungen: undefined, geprueft: undefined, kv: undefined, stand: undefined } : null, ...(e.steckbrief ? [{ ...e.steckbrief, fristen: (e.steckbrief.fristen ?? []).map((f) => ({ ...f, erledigt: undefined })) }] : []), ...(e.kreis ? [e.kreis] : [])])
 function fassungText(e) {
   const teile = [`Name „${e.titel || '(ohne Namen)'}“`]
   const tiere = TIERARTEN.map((t) => [t, (e.einheiten ?? []).filter((x) => x.art === t).reduce((a, x) => a + x.anzahl, 0)]).filter(([, n]) => n > 0).map(([t, n]) => `${n} ${TIER_WORT[t][n === 1 ? 0 : 1]}`)
@@ -272,6 +272,7 @@ function fassungText(e) {
   if (e.typ === 'flaeche' && Array.isArray(e.punkte)) teile.push(`${e.punkte.length} Eckpunkte`)
   if (e.typ === 'linie' && Array.isArray(e.punkte)) teile.push(`${IS.linienArt(e.linienArt).name}, ${e.punkte.length} Punkte, ${IS.laengeText(IS.linienLaenge(e))}`)
   if (e.infra) teile.push(IS.infraArt(e.infra)?.name ?? '')
+  if (e.kreis) teile.push(`Kreis ${e.kreis.radius} m${e.kreis.gebunden === false ? ' (fester Standort)' : ''}`)
   if (e.steckbrief) teile.push([FL.flaechenArt(e.steckbrief.art)?.name, e.steckbrief.besitz === 'pacht' ? 'Pacht' : e.steckbrief.besitz === 'eigentum' ? 'Eigentum' : '', e.steckbrief.flik ? `FLIK ${e.steckbrief.flik}` : '', e.steckbrief.fristen?.length ? `${e.steckbrief.fristen.length} Fristen` : ''].filter(Boolean).join(', '))
   return teile.join(' · ')
 }
@@ -292,6 +293,8 @@ app.put('/api/karten/:id/eintraege/:eid', mitKarte('nutzer'), (req, res) => {
     if (alt0?.infra && body.typ === 'pin' && !('infra' in body)) { e.infra = alt0.infra; if (alt0.geraet) e.geraet = alt0.geraet }
     // … und keinen Flächen-Steckbrief -> behalten
     if (alt0?.steckbrief && body.typ === 'flaeche' && !('steckbrief' in body)) e.steckbrief = alt0.steckbrief
+    // … und keinen Kreis um die Nadel -> behalten
+    if (alt0?.kreis && body.typ === 'pin' && !('kreis' in body)) e.kreis = alt0.kreis
     const f = IS.eintragSauber(e) || FL.flaecheSauber(e)
     if (f) return res.status(400).json({ fehler: f })
     FL.erledigtUebernehmen(e, alt0)

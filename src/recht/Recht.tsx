@@ -121,7 +121,7 @@ function Datenschutz() {
           <dt>Einladungen</dt>
           <dd>Einladungscode, vorgesehene Rolle, optional der vorgesehene Name, wer eingeladen hat, Ablaufdatum (14 Tage).</dd>
           <dt>Karteninhalte</dt>
-          <dd>Weiden und Flächen mit Koordinaten, Namen, Tierzahlen, Farben, Gruppen, Datum und Notizen. Bei Einträgen und Notizen wird vermerkt, wer sie angelegt oder geändert hat (Personen-ID bzw. Name) und wann.</dd>
+          <dd>Weiden und Flächen mit Koordinaten, Namen, Tierzahlen, Farben, Gruppen, Datum und Notizen, Kreise um Nadeln („eingezäunt“: Radius, Farbe, Mittelpunkt, seit wann). Bei Einträgen und Notizen wird vermerkt, wer sie angelegt oder geändert hat (Personen-ID bzw. Name) und wann.</dd>
           <dt>Weideplan (falls genutzt)</dt>
           <dd>Herden (Name, Farbe), Belegungen (welche Herde mit wie vielen Tieren von wann bis wann auf welcher Fläche steht, geplante nächste Fläche, Notiz) und ein Protokoll aller Auf-, Um- und Abtriebe mit Datum, Herkunfts- und Zielfläche (Name und Koordinate), Tierzahl sowie <b>wer den Umtrieb erfasst hat</b> (Personen-ID und Name) und wann. Zweck: Weideplanung, Ruhezeiten und eine nachvollziehbare Betriebsaufzeichnung (Grundlage für spätere Tierbewegungs-Meldungen). Erinnerungen an fällige Umtriebe zeigt nur die App selbst an – es werden <b>keine Push-Benachrichtigungen</b> verschickt und dafür keine Geräte-Kennungen gespeichert.</dd>
           <dt>Zäune &amp; Wasser (falls genutzt)</dt>

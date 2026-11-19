@@ -645,3 +645,26 @@ button.klein { padding: 6px 10px; font-size: .88rem; flex: none; }
 .steckbrief-form input[type=checkbox] { width: auto; }
 .frist-zeile .x { margin-left: auto; }
 .frist-zeile input:not([type]) { flex: 1 1 60%; }
+
+/* ---- Kreis um Nadel ---- */
+.kreis-knopf { width: 100%; margin: 4px 0; border-style: dashed !important; }
+.kreis-knopf small { color: #555; }
+.kreis-zeile { margin: 4px 0; padding: 8px 10px; border: 2px dashed #888; border-radius: 12px; background: #fafcf8; font-size: .92rem; }
+.kreis-zeile p { margin: 0 0 6px; }
+.kreis-zeile small { color: #555; }
+.kreis-leiste { display: flex; flex-direction: column; gap: 6px; }
+.kreis-leiste p { margin: 0; }
+.kreis-zeile-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; }
+.kreis-radius { display: flex; flex-direction: column; font-size: .85rem; }
+.kreis-radius input { width: 96px; font-size: 1.1rem; }
+.kreis-schnell { display: flex; gap: 4px; flex-wrap: wrap; }
+.kreis-schnell button { min-width: 44px; padding: 6px 8px; }
+.kreis-schnell button.aktiv { background: var(--gruen); color: #fff; border-color: var(--gruen); }
+.kreis-bindung { display: flex; flex-direction: column; gap: 2px; font-size: .92rem; }
+.kreis-bindung small { color: #555; }
+.kreis-griff { background: var(--orange) !important; color: #fff; font-weight: 700; font-size: 16px; display: flex; align-items: center; justify-content: center; width: 30px !important; height: 30px !important; border: 3px solid #fff; box-shadow: 0 1px 6px rgba(0,0,0,.5); }
+.kreis-griff-mini { display: inline-block; background: var(--orange); color: #fff; border-radius: 50%; width: 1.4em; text-align: center; font-weight: 700; }
+.kreis-marke { margin-left: 6px; padding: 0 6px; border: 2px dashed #888; border-radius: 999px; font-size: .75rem; font-weight: 600; white-space: nowrap; }
+.kreis-bindung label { display: flex !important; flex-direction: row !important; align-items: center; gap: 8px; font-weight: 500; }
+.kreis-bindung input[type=radio] { width: 20px !important; height: 20px; flex: none; margin: 0; }
+.kreis-bindung label small { font-weight: 400; }

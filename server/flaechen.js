@@ -83,6 +83,8 @@ export function steckbriefSauber(s) {
 }
 // Eintrag: Steckbrief nur an Flächen; Fehlertext oder null
 export function flaecheSauber(e) {
+  // Kreis um Nadel („eingezäunt“): nur an Nadeln
+  if (e.typ === 'pin') { const k = kreisSauber(e.kreis, e.position); if (k) e.kreis = k; else delete e.kreis } else delete e.kreis
   if (e.typ !== 'flaeche') { delete e.steckbrief; return null }
   const s = steckbriefSauber(e.steckbrief)
   if (s) e.steckbrief = s; else delete e.steckbrief
@@ -203,4 +205,41 @@ export function flaechenSummen(eintraege, pacht) {
     } else if (e.steckbrief?.besitz === 'eigentum') s.eigentumHa += ha
   }
   return s
+}
+
+// ---- Kreis um Nadel (schnelle Einzäunung statt Fläche zeichnen) ----
+export const KREIS_STANDARD = 30 // m
+export const KREIS_MIN = 3, KREIS_MAX = 2000
+export const NETZ_LAENGE = 50
+const pktOk = (p) => p && Number.isFinite(p.lat) && Number.isFinite(p.lng) && Math.abs(p.lat) <= 90 && Math.abs(p.lng) <= 180
+// gebunden: Mittelpunkt = Nadel (wandert mit); sonst fester Mittelpunkt (bleibt, wenn die Nadel versetzt wird)
+export function kreisSauber(k, position) {
+  if (!k || typeof k !== 'object' || !Number.isFinite(Number(k.radius))) return null
+  const radius = Math.round(Math.min(KREIS_MAX, Math.max(KREIS_MIN, Number(k.radius))) * 10) / 10
+  const gebunden = k.gebunden !== false
+  const mitte = gebunden ? (pktOk(position) ? { lat: position.lat, lng: position.lng } : null) : (pktOk(k.mitte) ? { lat: k.mitte.lat, lng: k.mitte.lng } : pktOk(position) ? { lat: position.lat, lng: position.lng } : null)
+  if (!mitte) return null
+  return ohneLeere({ radius, farbe: typeof k.farbe === 'string' && /^#[0-9a-f]{6}$/i.test(k.farbe) ? k.farbe.toLowerCase() : undefined, gebunden, mitte, seit: tagOk(k.seit) ? k.seit : undefined })
+}
+export const kreisMitte = (e) => (e.kreis ? (e.kreis.gebunden !== false && e.position ? e.position : e.kreis.mitte) : null)
+export function kreisMasse(r) {
+  const m2 = Math.PI * r * r, umfang = 2 * Math.PI * r
+  return { m2, ha: m2 / 10000, umfang, netze: Math.ceil(umfang / NETZ_LAENGE) }
+}
+// Kreis als Vieleck (für KML/Excel/PDF), Abstand auf der Kugel
+export function kreisPolygon(mitte, r, n = 48) {
+  const R = 6378137, d = r / R, la = (mitte.lat * Math.PI) / 180, lo = (mitte.lng * Math.PI) / 180, aus = []
+  for (let i = 0; i < n; i++) {
+    const b = (2 * Math.PI * i) / n
+    const la2 = Math.asin(Math.sin(la) * Math.cos(d) + Math.cos(la) * Math.sin(d) * Math.cos(b))
+    const lo2 = lo + Math.atan2(Math.sin(b) * Math.sin(d) * Math.cos(la), Math.cos(d) - Math.sin(la) * Math.sin(la2))
+    aus.push({ lat: Math.round(((la2 * 180) / Math.PI) * 1e7) / 1e7, lng: Math.round(((lo2 * 180) / Math.PI) * 1e7) / 1e7 })
+  }
+  return aus
+}
+// Entfernung in m (für den Zieh-Griff)
+export function abstand(a, b) {
+  const R = 6371008.8, r = Math.PI / 180, dla = (b.lat - a.lat) * r, dlo = (b.lng - a.lng) * r
+  const h = Math.sin(dla / 2) ** 2 + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin(dlo / 2) ** 2
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)))
 }

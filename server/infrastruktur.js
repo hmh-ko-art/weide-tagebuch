@@ -28,6 +28,9 @@ const MAX_PUNKTE = 2000, MAX_TORE = 50, MAX_PRUEFUNGEN = 30
 
 export const linienArt = (w) => LINIEN_ARTEN.find((a) => a.wert === w) ?? LINIEN_ARTEN[LINIEN_ARTEN.length - 1]
 export const infraArt = (w) => INFRA_ARTEN.find((a) => a.wert === w) ?? null
+// 7j: Tor, Unterstand, Salzleckstein werden nicht mehr neu angelegt – bestehende Einträge bleiben (Anzeige, Bearbeiten, Löschen, Export/Import)
+export const INFRA_ALT = ['tor', 'unterstand', 'salz']
+export const infraWaehlbar = (aktuell) => INFRA_ARTEN.filter((a) => !INFRA_ALT.includes(a.wert) || a.wert === aktuell)
 export const istLinie = (e) => e?.typ === 'linie'
 export const istInfra = (e) => e?.typ === 'pin' && !!infraArt(e.infra)
 // „normale“ Einträge (Nadeln mit Tieren/Notizen, Flächen) – ohne Zäune/Technik
@@ -202,8 +205,6 @@ export function infraRaten(name) {
   const n = norm(name)
   if (/tr[äa]nke|wasser|brunnen|pumpe|fass/.test(n)) return 'traenke'
   if (/weidezaunger[äa]t|zaunger[äa]t|ger[äa]t|akku|batterie/.test(n)) return 'geraet'
-  if (/\btor\b|gatter|durchgang|tür|tuer/.test(n)) return 'tor'
-  if (/unterstand|stall|h[üu]tte|schutz/.test(n)) return 'unterstand'
-  if (/salz|leckstein|leckschale|mineral/.test(n)) return 'salz'
+  // 7j: Tor/Unterstand/Salzleckstein werden nicht mehr am Namen erkannt (bleiben normale Nadeln)
   return null
 }

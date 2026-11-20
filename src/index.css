@@ -830,3 +830,39 @@ button.klein { padding: 6px 10px; font-size: .88rem; flex: none; }
   .desktop-leiste.panel-offen:not(.liste-offen) .info-stapel { max-width: calc(100% - 24px - 420px); }
 }
 @media (max-width: 899px) { .erster-start { bottom: calc(var(--attr-h, 16px) + 86px + env(safe-area-inset-bottom)); } }
+
+/* 7j – kompakte Farbauswahl: ein Knopf mit Farbmuster, Palette klappt darunter auf */
+.farb-menue { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; margin-top: 4px; }
+.farb-knopf { display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px 6px 6px; border-radius: 12px; min-height: 40px; text-align: left; }
+.farb-muster { width: 28px; height: 28px; border-radius: 50%; border: 2px solid rgba(0,0,0,.25); flex: none; }
+.farb-knopf-text { display: flex; flex-direction: column; line-height: 1.15; font-weight: 600; font-size: .92rem; }
+.farb-knopf-text small { font-weight: 400; color: #5a6a57; font-size: .76rem; }
+.farb-pfeil { color: #5a6a57; transition: transform .15s; }
+.farb-menue.auf .farb-pfeil { transform: rotate(180deg); }
+.farb-pop { margin: 0; padding: 8px; background: #fff; border: 1px solid #d8dfd3; border-radius: 12px; box-shadow: 0 4px 14px rgba(0,0,0,.15); animation: hinweis-rein .14s ease-out; max-width: 100%; box-sizing: border-box; }
+.farb-menue.klein .farb-knopf { min-height: 34px; padding: 4px 8px 4px 4px; }
+.farb-menue.klein .farb-muster { width: 22px; height: 22px; }
+.kreis-pop .farb-menue { margin: 0; }
+
+/* 7j – „Nadel bearbeiten“ aufgeräumt: kompakter, Fuß mit Speichern/Abbrechen bleibt sichtbar */
+.formular { padding-bottom: 0 !important; }
+.formular input, .formular select, .formular textarea { box-sizing: border-box; max-width: 100%; }
+.formular form > label, .formular .infra-form > label, .formular .einheiten, .formular .feldname { margin-top: 8px; }
+.formular label { gap: 3px; }
+.formular .sheet-kopf h2 { font-size: 1.1rem; }
+.formular .hinweis.klein { margin: 4px 0 0; }
+.formular .infra-chips { gap: 6px; }
+.formular .infra-chips button { flex: 1 0 auto; justify-content: center; padding: 6px 8px; font-size: .88rem; min-height: 38px; }
+.formular .farbwahl { margin-top: 8px; }
+.formular .einheiten { gap: 6px; }
+.formular .tierliste-modus { margin-top: 0; }
+.formular .datum-herde { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; align-items: end; }
+.formular .datum-herde label { margin-top: 8px; min-width: 0; }
+.formular .datum-herde input { height: 44px; padding: 0 10px; min-width: 0; width: 100%; }
+.formular-fuss { position: sticky; bottom: 0; z-index: 2; display: flex; align-items: center; gap: 8px; margin: 10px -16px 0; padding: 10px 16px calc(10px + env(safe-area-inset-bottom)); background: #fff; border-top: 1px solid #e3e8df; box-shadow: 0 -4px 10px rgba(0,0,0,.06); }
+.formular-fuss .primaer { flex: 1 1 auto; }
+.formular-fuss button { padding: 10px 14px; }
+.loeschen-klein { margin-left: auto; border: 0 !important; background: none !important; color: var(--rot, #c62828); font-size: .85rem; padding: 6px 4px !important; text-decoration: underline; }
+@media (max-width: 360px) { .formular .infra-chips button { padding: 5px 6px; font-size: .82rem; } .formular-fuss button { padding: 10px 10px; } }
+.formular .einheiten .feldname { margin-top: 0; }
+.loeschen-klein { white-space: nowrap; }

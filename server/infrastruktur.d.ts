@@ -14,6 +14,8 @@ export const NETZ_LAENGE: number
 export const TOR_BREITE: number
 export function linienArt(w?: string): (typeof LINIEN_ARTEN)[number]
 export function infraArt(w?: string): (typeof INFRA_ARTEN)[number] | null
+export const INFRA_ALT: InfraArt[]
+export function infraWaehlbar(aktuell?: InfraArt | null): (typeof INFRA_ARTEN)[number][]
 export function istLinie(e: Eintrag | undefined | null): e is Linie
 export function istInfra(e: Eintrag | undefined | null): e is Pin & { infra: InfraArt }
 export function istFrei(e: Eintrag | undefined | null): e is Pin & { frei: true }

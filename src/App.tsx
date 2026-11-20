@@ -13,6 +13,7 @@ import { FlaechenUebersicht, MessText, SteckbriefDetail, SteckbriefFormular, fri
 import { nadelHtml } from './map/nadel'
 import { SpannungZeile } from './spannung/Spannung'
 import { InfoKarte, InfoHinweis, Tipp } from './InfoKarte'
+import { FarbMenue } from './FarbMenue'
 import { schwelleLesen, schwelleSetzen } from './spannung/schwelle'
 import * as SP from '../server/spannung.js'
 import { FreiKreisDetail, KreisDetail, KreisLeiste, KreisPop, kreisAendern, kreisAnzahl, kreisAusEdit, kreisNachVerschieben, kreisStart, kreisVorgaben, kreisVorgabenSetzen, type KreisEdit } from './kreis/Kreis'
@@ -926,16 +927,16 @@ function Detail(p: { e: Eintrag; routeInfo: string; darfBearbeiten: boolean; kan
           <span>Geändert: {datum(e.geaendert)}</span>
         </div>
         <div className="knoepfe">
+          <a className="btn" href={googleNaviLink(ziel)} target="_blank" rel="noreferrer" title="In Google Maps navigieren">🧭 Navigieren</a>
           {p.routeInfo ? <button onClick={p.onRouteAus}>Route ausblenden</button> : <button onClick={p.onRoute}>Route anzeigen</button>}
           {p.kannBearbeiten && <button className="gefahr" onClick={p.onLoeschen}>Löschen</button>}
         </div>
         {e.erstelltVon && !p.kannBearbeiten && p.darfBearbeiten && <p className="hinweis klein">Diesen Eintrag kann nur die Person, die ihn angelegt hat, oder ein Admin ändern. Notizen kannst du trotzdem hinzufügen.</p>}
       </>}>
       {p.routeInfo && <p className="route-info">🚗 {p.routeInfo} <button className="link-knopf" onClick={p.onRouteAus}>ausblenden</button></p>}
-      <div className="knoepfe haupt-knoepfe">
-        <a className="btn primaer" href={googleNaviLink(ziel)} target="_blank" rel="noreferrer" title="In Google Maps navigieren">🧭 Navigieren</a>
-        {p.kannBearbeiten && <button onClick={p.onBearbeiten}>✏️ Bearbeiten</button>}
-      </div>
+      {p.kannBearbeiten && <div className="knoepfe haupt-knoepfe">
+        <button onClick={p.onBearbeiten}>✏️ Bearbeiten</button>
+      </div>}
       {p.planZeile}
     </InfoKarte>
   )
@@ -1036,19 +1037,13 @@ function Formular(p: { gruppeName?: string; start: Eintrag; neu: boolean; istAdm
         {p.neu ? (
           <label>Erste Notiz<textarea rows={3} value={ersteNotiz} placeholder="Was ist hier los? Wasser, Zaun, Lämmer …" onChange={(x) => setErsteNotiz(x.target.value)} /></label>
         ) : (
-          <p className="hinweis klein">Notizen ({e.notizen.length}) fügst du in der Detailansicht hinzu bzw. bearbeitest sie dort.</p>
+          <p className="hinweis klein">📝 {e.notizen.length} {e.notizen.length === 1 ? 'Notiz' : 'Notizen'} – bearbeiten in der Infokarte.</p>
         )}
         {!istInfra(e) && !istFrei(e) && (
           <div className="farbwahl">
-            <span className="feldname">{e.typ === 'pin' ? 'Farbe der Nadel' : e.typ === 'linie' ? 'Farbe der Linie' : 'Farbe der Fläche'}</span>
-            {p.gruppeName && <p className="hinweis klein">Solange die Nadel in der Gruppe „{p.gruppeName}“ ist, zeigt die Karte sie in der Gruppenfarbe. Diese Farbe gilt wieder ohne Gruppe.</p>}
-            <div className="farben" role="radiogroup" aria-label={e.typ === 'pin' ? 'Farbe der Nadel' : 'Farbe der Fläche'}>
-              {(e.typ === 'pin' ? FARBEN : e.typ === 'linie' ? [{ wert: linienArt(e.linienArt).farbe, name: `Standard (${linienArt(e.linienArt).name})` }, ...FLAECHEN_FARBEN.filter((f) => f.wert !== linienArt(e.linienArt).farbe)] : FLAECHEN_FARBEN).map((f) => (
-                <button type="button" key={f.wert} title={f.name} aria-label={f.name} aria-checked={pinFarbe(e) === f.wert} role="radio"
-                  className={pinFarbe(e) === f.wert ? 'aktiv' : ''} style={{ background: f.wert }} onClick={() => setE({ ...e, farbe: f.wert })} />
-              ))}
-              <label className="frei" title="Eigene Farbe">eigene:<input type="color" value={pinFarbe(e)} onChange={(x) => setE({ ...e, farbe: x.target.value })} /></label>
-            </div>
+            {p.gruppeName && <p className="hinweis klein">In Gruppe „{p.gruppeName}“: Karte zeigt die Gruppenfarbe.</p>}
+            <FarbMenue label={e.typ === 'pin' ? 'Farbe der Nadel' : e.typ === 'linie' ? 'Farbe der Linie' : 'Farbe der Fläche'} wert={pinFarbe(e)} onWahl={(f) => setE({ ...e, farbe: f })}
+              farben={e.typ === 'pin' ? FARBEN : e.typ === 'linie' ? [{ wert: linienArt(e.linienArt).farbe, name: `Standard (${linienArt(e.linienArt).name})` }, ...FLAECHEN_FARBEN.filter((f) => f.wert !== linienArt(e.linienArt).farbe)] : FLAECHEN_FARBEN} />
           </div>
         )}
         {normal && <div className="einheiten">
@@ -1062,21 +1057,21 @@ function Formular(p: { gruppeName?: string; start: Eintrag; neu: boolean; istAdm
               <button type="button" className="x" aria-label={`Zeile ${i + 1} entfernen`} title="Zeile entfernen" onClick={() => setZeilen((l) => l.filter((x) => x.id !== z.id))}><Icon name="x" /></button>
             </div>
           ))}
+          <button type="button" className="tiere-plus" onClick={() => setZeilen((l) => [...l, { id: neueId(), art: l.length ? l[l.length - 1].art : 'schaf', anzahl: '' }])}>＋ Tiere hinzufügen</button>
           <label className="tierliste-modus">Tierliste<select value={e.tierlisteModus ?? 'fest'} onChange={(x) => setE({ ...e, tierlisteModus: x.target.value as 'fest' | 'ausblendbar' })}>
             <option value="fest">fest anzeigen (immer sichtbar)</option>
             <option value="ausblendbar">ausblendbar (Betrachter kann sie einklappen)</option>
           </select></label>
-          <button type="button" className="tiere-plus" onClick={() => setZeilen((l) => [...l, { id: neueId(), art: l.length ? l[l.length - 1].art : 'schaf', anzahl: '' }])}>＋ Tiere hinzufügen</button>
         </div>}
         {e.typ === 'flaeche' && <SteckbriefFormular e={e} setE={(x) => setE(x)} istAdmin={p.istAdmin} pacht={pachtForm} setPacht={setPachtForm} />}
-        <div className="zeile">
+        <div className="zeile datum-herde">
           <label>Datum<input type="date" required value={eintragDatum(e)} onChange={(x) => x.target.value && setE({ ...e, datum: x.target.value })} /></label>
           {normal && <label>Herde<input value={e.herde ?? ''} placeholder="optional" onChange={(x) => setE({ ...e, herde: x.target.value || undefined })} /></label>}
         </div>
-        <div className="knoepfe">
+        <div className="formular-fuss">
           <button type="submit" className="primaer">Speichern</button>
           <button type="button" onClick={p.onAbbrechen}>Abbrechen</button>
-          {p.onLoeschen && <button type="button" className="gefahr" onClick={p.onLoeschen}>Löschen</button>}
+          {p.onLoeschen && <button type="button" className="loeschen-klein" onClick={p.onLoeschen}>🗑 Löschen</button>}
         </div>
       </form>
     </section>
@@ -1204,12 +1199,7 @@ function Liste(p: ListeProps) {
         <div className="gruppe-name-form">
           <input autoFocus aria-label={gForm.id ? 'Name der Gruppe' : 'Name der neuen Gruppe'} maxLength={40} value={gForm.name} onFocus={(x) => x.target.select()} onChange={(x) => setGForm({ ...gForm, name: x.target.value })} />
         </div>
-        <div className="farben gruppe-farben" role="radiogroup" aria-label="Farbe der Gruppe">
-          {GRUPPEN_FARBEN.map((f) => (
-            <button type="button" key={f} role="radio" aria-checked={gForm.farbe === f} aria-label={farbName(f)} title={farbName(f)} className={gForm.farbe === f ? 'aktiv' : ''} style={{ background: f }} onClick={() => setGForm({ ...gForm, farbe: f })} />
-          ))}
-          <label className="frei" title="Eigene Farbe">eigene:<input type="color" value={gForm.farbe} onChange={(x) => setGForm({ ...gForm, farbe: x.target.value.toLowerCase() })} /></label>
-        </div>
+        <FarbMenue label="Farbe der Gruppe" wert={gForm.farbe} farben={GRUPPEN_FARBEN.map((f) => ({ wert: f, name: farbName(f) }))} onWahl={(f) => setGForm({ ...gForm, farbe: f.toLowerCase() })} />
         <div className="gruppe-name-form">
           <button type="submit" className="primaer" disabled={!nameSauber(gForm.name)}>{gForm.id ? 'Speichern' : 'Anlegen'}</button>
           <button type="button" onClick={() => setGForm(null)}>Abbrechen</button>

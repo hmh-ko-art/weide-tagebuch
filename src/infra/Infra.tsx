@@ -1,6 +1,6 @@
-// Zäune & Wasser: Zaunlinien/Wege/Gräben und Weide-Technik (Tränke, Weidezaungerät, Tor, Unterstand, Salzleckstein)
+// Zäune & Wasser: Zaunlinien/Wege/Gräben und Weide-Technik (Tränke, Weidezaungerät; Tor/Unterstand/Salzleckstein nur noch als Altbestand)
 import { useEffect, useState } from 'react'
-import { INFRA_ARTEN, LINIEN_ARTEN, NETZ_LAENGE, PRUEF_STANDARD, STAENDE, STROM_ARTEN, infraArt, istInfra, istLinie, laengeText, linienArt, linienLaenge, netzAnzahl, type Geraet, type InfraArt, type LinienArt } from '../../server/infrastruktur.js'
+import { INFRA_ALT, INFRA_ARTEN, LINIEN_ARTEN, NETZ_LAENGE, PRUEF_STANDARD, STAENDE, STROM_ARTEN, infraArt, infraWaehlbar, istInfra, istLinie, laengeText, linienArt, linienLaenge, netzAnzahl, type Geraet, type InfraArt, type LinienArt } from '../../server/infrastruktur.js'
 import { heute, tagPlus, tageZwischen } from '../../server/weideplan.js'
 import { pinFarbe, tagText, type Eintrag, type Linie, type Pin } from '../types'
 import { infraSvg } from '../map/symbole'
@@ -162,10 +162,10 @@ export function InfraFormular(p: { e: Eintrag; setE: (e: Eintrag) => void; neu: 
       <span className="feldname">Was ist hier?</span>
       <div className="infra-chips" role="radiogroup" aria-label="Art der Nadel">
         <button type="button" role="radio" aria-checked={!e.infra} className={!e.infra ? 'aktiv' : ''} onClick={() => p.setE({ ...e, infra: undefined, geraet: undefined })}>📍 Nadel</button>
-        {INFRA_ARTEN.map((a) => (
+        {infraWaehlbar(e.infra).map((a) => (
           <button type="button" key={a.wert} role="radio" aria-checked={e.infra === a.wert} className={e.infra === a.wert ? 'aktiv' : ''}
             onClick={() => p.setE({ ...e, infra: a.wert, geraet: a.wert === 'geraet' ? { intervall: PRUEF_STANDARD, strom: 'akku', ...e.geraet } : undefined })}>
-            <InfraSymbol art={a.wert} groesse={18} /> {a.kurz}
+            <InfraSymbol art={a.wert} groesse={18} /> {a.kurz}{INFRA_ALT.includes(a.wert) && <small> (alt)</small>}
           </button>
         ))}
       </div>
@@ -215,7 +215,7 @@ export function InfraListe(p: { eintraege: Eintrag[]; aus: string[]; onUmschalte
         <ul className="hinweis-liste">
           <li><strong>Zaun, Weg oder Graben:</strong> unten auf „〰 Zaun“ tippen und die Punkte entlang der Linie antippen.</li>
           <li><strong>Zaun um eine Fläche:</strong> Fläche antippen → „Zaun um Fläche erzeugen“.</li>
-          <li><strong>Tränke, Weidezaungerät, Tor, Unterstand, Salzleckstein:</strong> eine Nadel setzen und oben im Formular die Art wählen.</li>
+          <li><strong>Tränke oder Weidezaungerät:</strong> eine Nadel setzen und oben im Formular die Art wählen.</li>
         </ul>
       </div>
     )

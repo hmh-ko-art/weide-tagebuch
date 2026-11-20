@@ -3,6 +3,7 @@ import { FARBEN, FLAECHE_STANDARD, pinFarbe, type LatLng, type Pin } from '../ty
 import type { Kreis } from '../../server/flaechen.js'
 import * as FL from '../../server/flaechen.js'
 import { InfoKarte, Tipp } from '../InfoKarte'
+import { FarbMenue } from '../FarbMenue'
 
 export interface KreisEdit { id: string; radius: number; farbe: string; gebunden: boolean; mitte: LatLng; neu: boolean; alsStandard: boolean; frei?: boolean }
 export const KREIS_FARBEN = [{ name: 'Grün', wert: FLAECHE_STANDARD }, ...FARBEN]
@@ -109,10 +110,7 @@ export function KreisLeiste(p: { k: KreisEdit; name: string; standard: number; a
         <div className="kreis-schnell">{[10, 20, 30, 50, 100].map((r) => <button key={r} type="button" className={k.radius === r ? 'aktiv' : ''} onClick={() => p.set({ ...k, radius: r })}>{r}</button>)}</div>
       </div>
       <p className="hinweis klein mess-text">{kreisText(k.radius)}</p>
-      <div className="farben" role="radiogroup" aria-label="Farbe des Kreises">
-        {KREIS_FARBEN.map((f) => <button type="button" key={f.wert} title={f.name} aria-label={f.name} role="radio" aria-checked={k.farbe === f.wert} className={k.farbe === f.wert ? 'aktiv' : ''} style={{ background: f.wert }} onClick={() => p.set({ ...k, farbe: f.wert })} />)}
-        <label className="frei" title="Eigene Farbe">eigene:<input type="color" value={k.farbe} onChange={(x) => p.set({ ...k, farbe: x.target.value })} /></label>
-      </div>
+      <FarbMenue label="Farbe des Kreises" wert={k.farbe} farben={KREIS_FARBEN} onWahl={(f) => p.set({ ...k, farbe: f })} />
       <details className="kreis-mehr">
         <summary>Standard-Radius{p.andere > 0 ? ' · auf andere Kreise übernehmen' : ''}</summary>
         <div className="kreis-standard">
@@ -141,13 +139,13 @@ export function KreisLeiste(p: { k: KreisEdit; name: string; standard: number; a
 
 // Kleine Farb-Auswahl direkt am Kreis (Tipp auf den Kreis in der Karte)
 export function KreisPop(p: { x: number; y: number; titel: string; farbe: string; onFarbe: (f: string) => void; onAendern?: () => void; onAbgebaut: () => void; onZu: () => void }) {
-  const w = 250, h = 160
+  const w = 250, h = 130
   const left = Math.max(6, Math.min(window.innerWidth - w - 6, p.x - w / 2))
   const top = p.y + 14 + h < window.innerHeight ? p.y + 14 : Math.max(6, p.y - h - 14)
   return (
     <div className="kreis-pop" role="dialog" aria-label="Farbe des Kreises" style={{ left, top, width: w }} onClick={(x) => x.stopPropagation()}>
       <div className="kreis-pop-kopf"><span>◯ {p.titel}</span><button className="kreis-pop-zu" aria-label="Schließen" onClick={p.onZu}>✕</button></div>
-      <div className="farben">{KREIS_FARBEN.map((f) => <button type="button" key={f.wert} title={f.name} aria-label={f.name} className={p.farbe === f.wert ? 'aktiv' : ''} style={{ background: f.wert }} onClick={() => p.onFarbe(f.wert)} />)}</div>
+      <FarbMenue label="Farbe des Kreises" wert={p.farbe} farben={KREIS_FARBEN} onWahl={p.onFarbe} eigene={false} klein />
       <div className="kreis-pop-knoepfe">
         {p.onAendern && <button onClick={p.onAendern}>Radius …</button>}
         <button onClick={p.onAbgebaut}>✂️ Abgebaut</button>

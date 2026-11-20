@@ -93,8 +93,8 @@ export default function GoogleKarte(p: KartenProps) {
         mapId={MAP_ID}
         defaultCenter={START}
         defaultZoom={START_ZOOM}
-        mapTypeId="hybrid" // Standard: Satellit mit Beschriftung
-        mapTypeControl
+        mapTypeId={p.kartenAnsicht === 'karte' ? 'roadmap' : p.kartenAnsicht === 'satpur' ? 'satellite' : 'hybrid'} // 7j: aus Einstellungen → Darstellung
+        mapTypeControl={false}
         gestureHandling="greedy"
         disableDefaultUI={false}
         clickableIcons={false}

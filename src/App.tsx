@@ -6,10 +6,10 @@ import { OfflineAbschnitt } from './OfflineAbschnitt'
 import { Austausch, type ExportFilter } from './Austausch'
 import { RechtLinks } from './recht/Recht'
 import { MeineDaten } from './recht/MeineDaten'
-import { WeideplanPanel, PlanZeile, type PlanStart } from './weideplan/Weideplan'
-import { planFarben as planFarbenAnwenden, faelligAnzahl } from './weideplan/hilfen'
-import { STATUS_FARBEN, heute } from '../server/weideplan.js'
-import { FlaechenUebersicht, MessText, SteckbriefDetail, SteckbriefFormular, fristenListe, pachtAusForm, pachtFormAus } from './flaechen/Flaechen'
+// 7j: Weideplan in der Oberfläche ausgeblendet – Daten bleiben (Sicherung/Export/Import), Fristen stehen in der Flächen-Übersicht
+import { heute } from '../server/weideplan.js'
+import type { KartenAnsicht } from './map/props'
+import { FlaechenUebersicht, FristKarten, MessText, SteckbriefDetail, SteckbriefFormular, fristenListe, pachtAusForm, pachtFormAus } from './flaechen/Flaechen'
 import { nadelHtml } from './map/nadel'
 import { SpannungZeile } from './spannung/Spannung'
 import { InfoKarte, InfoHinweis, Tipp } from './InfoKarte'
@@ -173,15 +173,16 @@ export default function App() {
   const hervorUmschalten = (f: string) => setHervorWahl((l) => (l.includes(f) ? l.filter((x) => x !== f) : [...l, f]))
   const [fokus, setFokus] = useState<Fokus | null>(null)
   const [meldung, setMeldung] = useState<string>('')
-  const [planStart, setPlanStart] = useState<PlanStart>(null)
-  const [planFarben, setPlanFarbenRoh] = useState(() => localStorage.getItem('wt-planfarben') === 'an')
-  const setPlanFarben = (b: boolean) => { setPlanFarbenRoh(b); localStorage.setItem('wt-planfarben', b ? 'an' : 'aus') }
+  // 7j: Kartenansicht (früher Ebenen-Knopf auf der Karte) – Einstellungen → Darstellung
+  const [kartenAnsicht, setKartenAnsichtRoh] = useState<KartenAnsicht>(() => { const v = localStorage.getItem('wt-kartenansicht'); return v === 'satpur' || v === 'karte' ? v : 'satellit' })
+  const setKartenAnsicht = (v: KartenAnsicht) => { setKartenAnsichtRoh(v); localStorage.setItem('wt-kartenansicht', v) }
+  const [ansichtAuf, setAnsichtAuf] = useState(false) // kompakter Ansicht-Knopf oben links (Beschriftung, Zäune, Farben)
   // Fällige Geräte-Prüfungen (überfällig, heute, Akku leer) zählen im Weideplan-Abzeichen mit
   const geraeteDran = useMemo(() => geraeteFaellig(k.eintraege).filter((x) => x.stufe !== 'bald'), [k.eintraege])
   // Flächen-Fristen (Antrag, Schnitt, Sperrfrist-Verstoß) und – nur Admins – Pacht-Erinnerungen
   const fristenDran = useMemo(() => FL.fristenDran(fristenListe(k.eintraege, k.istAdmin ? k.pacht : null, k.weideplan)), [k.eintraege, k.pacht, k.istAdmin, k.weideplan])
-  const faellig = useMemo(() => faelligAnzahl(k.weideplan), [k.weideplan]) + geraeteDran.length + fristenDran.length
-  const planAn = planFarben && !!k.weideplan?.belegungen.length
+  const faellig = geraeteDran.length + fristenDran.length
+  const fristenAlle = useMemo(() => fristenListe(k.eintraege, k.istAdmin ? k.pacht : null, k.weideplan), [k.eintraege, k.pacht, k.istAdmin, k.weideplan])
   // Zuletzt verschobene Nadel (für „Rückgängig“)
   // vorlaeufig (7h): Nadel aus ihrem festen Kreis verschoben – alter Kreis bleibt / neuer Kreis entsteht erst NACH dem Countdown
   // (bis dahin nur gestrichelte Vorschau, gespeichert/synchronisiert wird nur die Position; erneutes Verschieben ersetzt die Vorschau, Rückgängig verwirft sie)
@@ -524,8 +525,7 @@ export default function App() {
           <small className={`status ${k.status}${k.wartend ? ' wartend' : ''}`} role="status" aria-live="polite"><span className="status-punkt" aria-hidden="true" />{statusText}{k.karteId && k.ich && <> · <button className="name-knopf" title="Meinen Namen ändern" onClick={() => setPanel(panel === 'profil' ? null : 'profil')}>{k.ich.name}{k.hof?.rolle ? ` (${ROLLEN[k.hof.rolle].name})` : k.ich.rolle === 'admin' ? ' (Admin)' : ''} <Icon name="stift" /></button></>}{!k.darfBearbeiten && !(k.ich?.rolle === 'ansehen') && ' · nur ansehen'}</small>
         </div>
         <nav>
-          <button className="kopf-knopf mit-text" aria-pressed={panel === 'liste'} title="Liste" aria-label="Liste" onClick={() => setPanel(panel === 'liste' ? null : 'liste')}><Icon name="liste" /><span>Liste</span></button>
-          <button className="kopf-knopf wp-kopf" aria-pressed={panel === 'weideplan'} title={faellig ? `Weideplan – ${faellig} fällig` : 'Weideplan'} aria-label={faellig ? `Weideplan, ${faellig} fällig` : 'Weideplan'} onClick={() => { setPlanStart(null); setPanel(panel === 'weideplan' ? null : 'weideplan') }}><Icon name="kalender" />{faellig > 0 && <span className="wp-badge" aria-hidden="true">{faellig}</span>}</button>
+          <button className="kopf-knopf mit-text wp-kopf" aria-pressed={panel === 'liste'} title={faellig ? `Liste – ${faellig} fällig (Fristen/Geräte)` : 'Liste'} aria-label={faellig ? `Liste, ${faellig} fällig` : 'Liste'} onClick={() => setPanel(panel === 'liste' ? null : 'liste')}><Icon name="liste" /><span>Liste</span>{faellig > 0 && <span className="wp-badge" aria-hidden="true">{faellig}</span>}</button>
           {k.karteId && k.hof?.rolle && <button className="kopf-knopf" aria-pressed={panel === 'hof'} title="Mein Hof" aria-label="Mein Hof" onClick={() => setPanel(panel === 'hof' ? null : 'hof')}><Icon name="nutzer" /></button>}
           {k.karteId && !k.hof && k.istAdmin && <button className="kopf-knopf" aria-pressed={panel === 'nutzer'} title="Nutzer verwalten" aria-label="Nutzer verwalten" onClick={() => setPanel(panel === 'nutzer' ? null : 'nutzer')}><Icon name="nutzer" /></button>}
           <button className="kopf-knopf" aria-pressed={panel === 'einstellungen'} title="Einstellungen" aria-label="Einstellungen" onClick={() => setPanel(panel === 'einstellungen' ? null : 'einstellungen')}><Icon name="zahnrad" /></button>
@@ -534,7 +534,8 @@ export default function App() {
 
       <main className="haupt">
         <Karte
-          eintraege={planAn ? planFarbenAnwenden(aufKarte, k.weideplan) : aufKarte}
+          eintraege={aufKarte}
+          kartenAnsicht={kartenAnsicht}
           nummern={anzeige.nummern}
           ausgewaehlt={ausgewaehlt}
           zeichenPunkte={zeichenPunkte}
@@ -574,8 +575,13 @@ export default function App() {
         />
 
 
-        {/* Kartenwerkzeuge oben links: Beschriftung an/aus + Farb-Schnellauswahl */}
-        <div className="karten-werkzeug">
+        {/* Kartenwerkzeuge oben links: 7j ein kompakter Ansicht-Knopf, darunter (aufgeklappt) Beschriftung, Zäune, Farb-Schnellauswahl */}
+        <div className={`karten-werkzeug${ansichtAuf ? ' auf' : ''}`}>
+          <button className={`werkzeug-knopf ansicht-knopf${ansichtAuf ? ' an' : ''}`} aria-expanded={ansichtAuf} title={ansichtAuf ? 'Ansicht-Werkzeuge zuklappen' : 'Ansicht: Beschriftung, Zäune, Farben hervorheben'} aria-label="Ansicht-Werkzeuge" onClick={() => setAnsichtAuf((a) => !a)}>
+            <svg className="icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z" /><circle cx="12" cy="12" r="3" /></svg>
+            {!ansichtAuf && (hervor.length > 0 || !beschriftung || infraAus.aus.includes('__alle')) && <span className="ansicht-punkt" style={hervor[0] ? { background: hervor[0] } : undefined} aria-hidden="true" />}
+          </button>
+          {ansichtAuf && <>
           <button className={`werkzeug-knopf${beschriftung ? ' an' : ''}`} aria-pressed={beschriftung} title={beschriftung ? 'Beschriftung ausblenden' : 'Beschriftung einblenden'} onClick={() => setBeschriftung((b) => !b)}>
             <Icon name="etikett" /><small>{beschriftung ? 'an' : 'aus'}</small>
           </button>
@@ -592,12 +598,7 @@ export default function App() {
               ))}
             </div>
           )}
-          {planAn && (
-            <div className="wp-karten-legende" role="note" aria-label="Weideplan-Farben">
-              {(['belegt', 'ruht', 'bereit', 'frei'] as const).map((st) => <span key={st}><i style={{ background: STATUS_FARBEN[st] }} />{st === 'frei' ? 'k. A.' : st}</span>)}
-              <button className="link-knopf" onClick={() => setPlanFarben(false)}>aus</button>
-            </div>
-          )}
+          </>}
         </div>
 
         {/* Handy (≤ 600 px): ein runder ＋-Knopf klappt Nadel/Standort/Fläche/Zaun als Menü auf (Speed-Dial); Desktop unverändert */}
@@ -795,7 +796,6 @@ export default function App() {
             kannGruppieren={k.darfBearbeiten && kannEintrag(auswahl)}
             onGruppe={(v) => { const g = v === '__neu' ? neueGruppe() : v ? k.gruppen.find((x) => x.id === v) ?? null : null; if (v === '__neu' && !g) return; inGruppe(g, [auswahl]) }}
             planZeile={<>
-              {istNormal(auswahl) && <PlanZeile k={k} e={auswahl} onOeffnen={(s) => { setPlanStart(s); setPanel('weideplan') }} />}
               <InfraDetail e={auswahl} alle={k.eintraege} darfBearbeiten={k.darfBearbeiten} kannBearbeiten={k.darfBearbeiten && kannEintrag(auswahl)}
                 onGeprueft={(x) => { k.geprueft(auswahl.id, x); setMeldung('Prüfung eingetragen ✓') }}
                 onPunkte={() => punkteStart(auswahl)} onTore={() => { setTorId(auswahl.id); setModus('tor') }} onZaun={() => zaunUm(auswahl)}
@@ -819,12 +819,19 @@ export default function App() {
             onSichtbar={(gid) => setGruppenAus((l) => (l.includes(gid) ? l.filter((x) => x !== gid) : [...l, gid]))} onReihenfolge={k.reihenfolge} onSchliessen={() => setPanel(null)} onWahl={(e) => { fliege(mitte(e), e.typ === 'pin' ? 15 : undefined); waehle(e.id) }}
             darfBearbeiten={k.darfBearbeiten} kannEintrag={kannEintrag} kannGruppe={kannGruppe} ichId={k.ich?.id}
             onGruppeSpeichern={k.gruppeSpeichern} onGruppeLoeschen={k.gruppeLoeschen} onInGruppe={inGruppe} neueGruppe={neueGruppe}
-            onExport={(f) => { setExportFilter(f); setPanel('austausch') }} onUebersicht={() => setPanel('flaechen')}
+            onExport={(f) => { setExportFilter(f); setPanel('austausch') }} onUebersicht={() => setPanel('flaechen')} fristenN={fristenDran.length} geraeteN={geraeteDran.length}
             infraAus={infraAus.aus} onInfraUmschalten={infraAus.umschalten} onGeprueft={(id) => { k.geprueft(id, { datum: heute() }); setMeldung('Prüfung eingetragen ✓') }} />
         )}
         {panel === 'flaechen' && (
           <section className="panel flaechen-panel">
             <div className="sheet-kopf"><h2>⬠ Flächen-Übersicht</h2><button className="x" onClick={() => setPanel(null)} aria-label="Schließen"><Icon name="x" /></button></div>
+            {/* 7j: Fällige Fristen (Förder-/Sperrfristen, Pacht-Kündigung) – früher im Weideplan */}
+            <div className="faellige-fristen">
+              <FristKarten liste={fristenAlle} darf={k.darfBearbeiten} istAdmin={k.istAdmin} onZeigen={(id) => { const e = k.eintraege.find((x) => x.id === id); if (e) { fliege(mitte(e)); waehle(e.id) } }}
+                onErledigt={(eid, fid, d) => { k.fristErledigt(eid, fid, d); setMeldung('Frist erledigt ✓') }}
+                onPachtErledigt={(eid, d) => { const pa = k.pacht[eid]; if (pa) { k.pachtSpeichern(eid, { ...pa, erledigt: d }); setMeldung('Pacht-Erinnerung erledigt ✓') } }} />
+              {!fristenAlle.length && <p className="hinweis klein">✓ Keine fälligen Fristen.</p>}
+            </div>
             <FlaechenUebersicht eintraege={k.eintraege} pacht={k.pacht} istAdmin={k.istAdmin} onWahl={(e) => { fliege(mitte(e)); waehle(e.id) }} onExport={async (art) => {
               const pacht = k.istAdmin && Object.keys(k.pacht).length ? k.pacht : null
               const { dateiName, herunterladen } = await import('./austausch/zeilen')
@@ -843,9 +850,7 @@ export default function App() {
           </section>
         )}
         {panel === 'austausch' && <Austausch k={k} eintraege={anzeige.eintraege} filter={exportFilter} meldung={setMeldung} onSchliessen={() => setPanel(null)} />}
-        {panel === 'einstellungen' && <Einstellungen k={k} onMeineDaten={() => setPanel('meinedaten')} onAustausch={() => { setExportFilter(null); setPanel('austausch') }} onSchliessen={() => setPanel(null)} meldung={setMeldung} onNutzer={() => setPanel(k.hof?.rolle ? 'hof' : 'nutzer')} onHof={() => setPanel('hof')} onProfil={() => setPanel('profil')} kopfFarbe={kopfFarbe} setKopfFarbe={setKopfFarbe} rueckS={rueckS} setRueckS={setRueckS} schwelle={schwelle} setSchwelle={setSchwelle} />}
-        {panel === 'weideplan' && <WeideplanPanel k={k} start={planStart} meldung={setMeldung} planFarben={planFarben} setPlanFarben={setPlanFarben} onSchliessen={() => { setPanel(null); setPlanStart(null) }}
-          onZeigen={(id) => { const e = k.eintraege.find((x) => x.id === id); if (e) { fliege(mitte(e), e.typ === 'pin' ? 15 : undefined); waehle(e.id) } }} />}
+        {panel === 'einstellungen' && <Einstellungen k={k} onMeineDaten={() => setPanel('meinedaten')} onAustausch={() => { setExportFilter(null); setPanel('austausch') }} onSchliessen={() => setPanel(null)} meldung={setMeldung} onNutzer={() => setPanel(k.hof?.rolle ? 'hof' : 'nutzer')} onHof={() => setPanel('hof')} onProfil={() => setPanel('profil')} kopfFarbe={kopfFarbe} setKopfFarbe={setKopfFarbe} kartenAnsicht={kartenAnsicht} setKartenAnsicht={setKartenAnsicht} rueckS={rueckS} setRueckS={setRueckS} schwelle={schwelle} setSchwelle={setSchwelle} />}
         {panel === 'meinedaten' && <MeineDaten k={k} meldung={setMeldung} onSchliessen={() => setPanel(null)} />}
         {k.geloescht && panel !== 'austausch' && <GeloeschtHinweis k={k} meldung={setMeldung} onExport={() => { setExportFilter(null); setPanel('austausch') }} />}
         {k.einladung && !k.ich && k.status !== 'verbinde' && <Beitreten k={k} />}
@@ -1088,6 +1093,7 @@ type ListeProps = {
   nummern: Record<string, number>; gruppenAus: string[]; onSichtbar: (gid: string) => void; onReihenfolge: (gid: string, ids: string[]) => void
   onExport: (f: ExportFilter) => void
   onUebersicht: () => void
+  fristenN?: number; geraeteN?: number // 7j: Badges (fällige Fristen / Geräte-Prüfungen)
   infraAus: string[]; onInfraUmschalten: (w: string) => void; onGeprueft: (id: string) => void
 }
 function Liste(p: ListeProps) {
@@ -1327,7 +1333,7 @@ function Liste(p: ListeProps) {
       <div className="tabs reiter" role="tablist">
         {(['pin', 'flaeche', 'infra'] as const).map((f) => (
           <button key={f} role="tab" aria-selected={reiter === f} className={reiter === f ? 'aktiv' : ''} onClick={() => { setReiter(f); setFarbFilter(null) }}>
-            {f === 'pin' ? '📍 Nadeln' : f === 'flaeche' ? '⬠ Flächen' : <>〰 Zäune<span className="nur-breit"> &amp; Wasser</span></>} ({anzahl[f]})
+            {f === 'pin' ? '📍 Nadeln' : f === 'flaeche' ? '⬠ Flächen' : <>〰 Zäune<span className="nur-breit"> &amp; Wasser</span></>} ({anzahl[f]}){f === 'flaeche' && !!p.fristenN && <span className="reiter-badge" title={`${p.fristenN} fällige Fristen`}>{p.fristenN}</span>}{f === 'infra' && !!p.geraeteN && <span className="reiter-badge" title={`${p.geraeteN} Geräte-Prüfungen fällig`}>{p.geraeteN}</span>}
           </button>
         ))}
       </div>
@@ -1335,7 +1341,7 @@ function Liste(p: ListeProps) {
       <p className="hinweis summe">
         {zeitraumAktiv && <strong>{zeitraumText}: </strong>}{alle.length} {alle.length === 1 ? wort[0] : wort[1]}
         {reiter === 'pin' && alle.some((e) => e.typ === 'pin' && kreisAnzahl(e) > 0) && <> · ◯ {alle.reduce((n, e) => n + (e.typ === 'pin' ? kreisAnzahl(e) : 0), 0)} eingezäunt</>}
-        {reiter === 'flaeche' && alle.length > 0 && <> · {FL.haText(ha)} · <button className="link-knopf" onClick={p.onUebersicht}>📊 Übersicht, Pacht & Summen</button></>}
+        {reiter === 'flaeche' && alle.length > 0 && <> · {FL.haText(ha)} · <button className="link-knopf" onClick={p.onUebersicht}>📊 Übersicht, Fristen & Pacht{p.fristenN ? <span className="reiter-badge">{p.fristenN}</span> : null}</button></>}
         {summen.length > 0 ? <> · <TierAnzeige summen={summen} /></> : reiter === 'pin' ? ' · 0 Tiere' : ''}
       </p>
       <div className="zeitraum">
@@ -1516,7 +1522,7 @@ function Liste(p: ListeProps) {
   )
 }
 
-function Einstellungen(p: { k: ReturnType<typeof useKarte>; onMeineDaten: () => void; onAustausch: () => void; onSchliessen: () => void; meldung: (s: string) => void; onNutzer: () => void; onHof: () => void; onProfil: () => void; kopfFarbe: string | null; setKopfFarbe: (f: string | null) => void; rueckS: number; setRueckS: (n: number) => void; schwelle: number; setSchwelle: (n: number) => void }) {
+function Einstellungen(p: { k: ReturnType<typeof useKarte>; onMeineDaten: () => void; onAustausch: () => void; onSchliessen: () => void; meldung: (s: string) => void; onNutzer: () => void; onHof: () => void; onProfil: () => void; kopfFarbe: string | null; setKopfFarbe: (f: string | null) => void; kartenAnsicht: KartenAnsicht; setKartenAnsicht: (v: KartenAnsicht) => void; rueckS: number; setRueckS: (n: number) => void; schwelle: number; setSchwelle: (n: number) => void }) {
   const { k } = p
   const [name, setName] = useState('Weidekarte Deichschäferei')
   const [kartenName, setKartenName] = useState(k.kartenName)
@@ -1597,6 +1603,13 @@ function Einstellungen(p: { k: ReturnType<typeof useKarte>; onMeineDaten: () => 
       <OfflineAbschnitt k={k} meldung={p.meldung} />
 
       <h3>Darstellung</h3>
+      <label className="karten-ansicht">Kartenansicht
+        <select value={p.kartenAnsicht} onChange={(e) => p.setKartenAnsicht(e.target.value as KartenAnsicht)}>
+          <option value="satellit">🛰 Satellit (mit Orten & Straßen)</option>
+          <option value="satpur">🛰 Satellit ohne Beschriftung</option>
+          <option value="karte">🗺 Karte (OpenStreetMap)</option>
+        </select>
+      </label>
       <div className="kopf-farbe">
         <label className="frei">Farbe der Kopfleiste<input type="color" value={p.kopfFarbe || KOPF_STANDARD} onChange={(e) => p.setKopfFarbe(e.target.value)} /></label>
         <button onClick={() => p.setKopfFarbe(null)} disabled={!p.kopfFarbe}>Standard</button>

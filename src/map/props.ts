@@ -2,6 +2,7 @@ import type { Eintrag, Fokus, LatLng, Route } from '../types'
 
 export interface PunkteBearbeiten { punkte: LatLng[]; geschlossen: boolean; sel: number | null; linie: boolean }
 
+export type KartenAnsicht = 'satellit' | 'satpur' | 'karte'
 export interface KartenProps {
   eintraege: Eintrag[]
   ausgewaehlt: string | null
@@ -17,6 +18,7 @@ export interface KartenProps {
   onLangDruck?: (p: LatLng, x: number, y: number) => void // langes Drücken / Rechtsklick auf die Karte (Kreis-Farbe)
   onKreisKlick?: (id: string, stehenId: string | null, x: number, y: number) => void // Tipp auf einen Kreis (Farbe direkt wählen)
   spannungSchwelle?: number // kV: darunter rotes ⚡-Schild
+  kartenAnsicht?: KartenAnsicht // 7j: Satellit / Satellit ohne Beschriftung / Karte (Einstellungen → Darstellung)
   warnIds?: string[] // Weidezaungeräte mit fälliger Prüfung (rot umrandet)
   route: Route | null
   standort: LatLng | null

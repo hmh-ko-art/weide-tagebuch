@@ -213,7 +213,7 @@ export function FlaechenUebersicht(p: { eintraege: Eintrag[]; pacht: PachtListe;
 export function FristKarten(p: { liste: FristFaellig[]; darf: boolean; istAdmin: boolean; onErledigt: (eid: string, fid: string, datum: string) => void; onPachtErledigt: (eid: string, datum: string) => void; onZeigen: (id: string) => void }) {
   if (!p.liste.length) return null
   return <>
-    <h3>📋 Fristen & Pacht</h3>
+    <h3>📋 Fällige Fristen ({p.liste.length})</h3>
     {p.liste.map((x) => (
       <div key={`${x.eintrag.id}-${x.frist?.id ?? x.art}`} className={`wp-karte wp-${x.stufe}`}>
         <div className="wp-karte-kopf"><span className="wp-stufe">{faelligText(x)}</span></div>

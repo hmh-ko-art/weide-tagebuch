@@ -57,7 +57,7 @@ Panel „Export & Import“ (Liste → „⬇️ Export“ oder Einstellungen �
 
 ## Weideplan
 
-Kalender-Knopf in der Kopfleiste (rotes Badge = heute fällige/überfällige Umtriebe). Code: `server/weideplan.js` (gemeinsame Logik für Server **und** App, Typen in `weideplan.d.ts`), `src/weideplan/`.
+**Seit 7j in der Oberfläche ausgeblendet** (kein Kalender-Knopf, keine Plan-Ansichten, keine Plan-Farben auf der Karte). Gespeicherte Weideplan-Daten bleiben unverändert in der Datenbank, in Sicherung, Export und Import erhalten. Die Flächen-Fristen stehen jetzt in der Flächen-Übersicht. Code: `server/weideplan.js` (gemeinsame Logik für Server **und** App, Typen in `weideplan.d.ts`), `src/weideplan/`.
 
 - **Daten** (`karte.weideplan`, nur vorhanden wenn genutzt – alte Karten bleiben byte-gleich): `herden[]` (id, name, farbe), `belegungen[]` (herde, flaeche = Eintrags-ID einer Fläche *oder* Nadel, tiere {schaf,bock,lamm}, von, bis = geplant bis, ende, naechste, status geplant/aktiv/beendet), `bewegungen[]` (Protokoll: art auftrieb/umtrieb/abtrieb, datum, von/nach als Orts-Schnappschuss {id,name,lat,lng}, tiere, autor/autorId, zeitpunkt, optional `karte` = Delta der Tierzahl-Einheiten), `ruhetage` (Standard 28) und `ruhe{flaecheId: Tage}`.
 - **Bewegungs-Protokoll** ist bewusst so gebaut, dass der spätere Schritt „Tierbewegungen“ (HI-Tier-Meldungen, Bestandsregister) direkt darauf aufsetzen kann.
@@ -96,6 +96,9 @@ Code: `server/flaechen.js` (gemeinsam für Server **und** App: Messen, Steckbrie
 - **Farbauswahl kompakt:** Überall (Nadel/Fläche/Linie bearbeiten, Gruppe, Kreis-Blatt, freier Kreis, Kreis-Palette auf der Karte) steht nur noch ein Knopf **„Farbe“ mit der aktuellen Farbe**. Antippen klappt die Palette auf, die Wahl klappt sie wieder zu (Tippen daneben schließt sie auch).
 - **„Nadel bearbeiten“ aufgeräumt:** „Was ist hier?“ in einer Zeile, Farbe als ein Knopf, bei Tieren zuerst „＋ Tiere hinzufügen“ und darunter die Tierliste-Einstellung, Datum und Herde gleich hoch nebeneinander, Speichern/Abbrechen unten fest sichtbar, Löschen nur noch als kleiner Textknopf, kürzere Hinweise und weniger Abstände.
 - „🚪 Tore setzen“ an Zaunlinien (Lücken, die von der Länge abgezogen werden) ist davon unabhängig und bleibt.
+- **Weideplan ausgeblendet, Fristen in der Flächen-Übersicht:** Der Kalender-Knopf ist weg (Daten bleiben gespeichert). Förder-/Sperrfristen und Pacht-Kündigungsfristen stehen als **„📋 Fällige Fristen“** oben in der Flächen-Übersicht, jeweils mit „✓ Erledigt“ und „Zeigen“. Ein rotes Abzeichen am **Liste-Knopf** zählt fällige Fristen und fällige Geräte-Prüfungen; in der Liste zeigen der Reiter „Flächen“ (Fristen) und „Zäune & Wasser“ (Geräte) die Zahl ebenfalls.
+- **Kartenansicht in den Einstellungen:** Der Ebenen-Knopf oben rechts auf der Karte ist weg. Satellit / Satellit ohne Beschriftung / Karte (OpenStreetMap) wählt man unter **Einstellungen → Darstellung → Kartenansicht** (gilt für dieses Gerät).
+- **Mehr Platz für die Karte:** Kopfleiste auf dem Handy schmaler (eine Zeile Titel, kleine Statuszeile). Oben links nur noch **ein Knopf 👁 „Ansicht“**, der Beschriftung, Zäune ein/aus und die Farb-Hervorhebung aufklappt; ein Punkt am Knopf zeigt, wenn etwas aus- oder hervorgehoben ist. Die +/- Zoomknöpfe gibt es nur noch am PC, auf dem Handy wird mit zwei Fingern gezoomt.
 
 ## Infokarten unten links (7i)
 

@@ -44,6 +44,8 @@ const pinIcon = (aktiv: boolean, label: string, farbe: string, hervor: boolean, 
   })
 
 // Kostenlose OpenStreetMap-Karte (Fallback ohne Google-Key)
+const EBENEN_NAME = { satellit: 'Satellit', satpur: 'Satellit ohne Beschriftung', karte: 'Karte' } as const
+
 export default function LeafletKarte(p: KartenProps) {
   const el = useRef<HTMLDivElement>(null)
   const map = useRef<L.Map | null>(null)
@@ -54,6 +56,7 @@ export default function LeafletKarte(p: KartenProps) {
   const standortEbene = useRef<L.LayerGroup | null>(null)
   const cb = useRef(p)
   cb.current = p
+  const grundEbenen = useRef<Record<'satellit' | 'satpur' | 'karte', L.Layer> | null>(null)
   const zieht = useRef(false) // während des Ziehens Marker nicht neu aufbauen
 
   useEffect(() => {
@@ -68,8 +71,9 @@ export default function LeafletKarte(p: KartenProps) {
     const strassen = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, crossOrigin: true })
     const satellit = L.layerGroup([sat, strassen, orte])
     const satPur = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: '<a href="#recht/quellen">Esri, Maxar, Earthstar Geographics, GIS User Community</a>', crossOrigin: true })
-    satellit.addTo(m) // Standard: Satellit mit Beschriftung
-    L.control.layers({ 'Satellit': satellit, 'Satellit ohne Beschriftung': satPur, 'Karte': osm }, undefined, { position: 'topright' }).addTo(m)
+    // 7j: Kartenansicht kommt aus Einstellungen → Darstellung (kein Ebenen-Knopf mehr auf der Karte)
+    grundEbenen.current = { satellit, satpur: satPur, karte: osm }
+    grundEbenen.current[cb.current.kartenAnsicht ?? 'satellit'].addTo(m)
     L.control.zoom({ position: 'topright' }).addTo(m)
     ebene.current = L.layerGroup().addTo(m)
     zeichnen.current = L.layerGroup().addTo(m)
@@ -109,7 +113,7 @@ export default function LeafletKarte(p: KartenProps) {
     // Kartengröße ändert sich (Seitenleiste auf/zu) -> Leaflet neu vermessen
     const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => m.invalidateSize({ pan: false })) : null
     ro?.observe(c0)
-    let ebeneName = 'Satellit'
+    let ebeneName: string = EBENEN_NAME[cb.current.kartenAnsicht ?? 'satellit']
     const ansichtMerken = () => { const b = m.getBounds(), c = m.getCenter(); ansichtSetzen({ nord: b.getNorth(), sued: b.getSouth(), west: b.getWest(), ost: b.getEast(), zoom: m.getZoom(), ebene: ebeneName, lat: c.lat, lng: c.lng }) }
     m.on('baselayerchange', (e) => { ebeneName = e.name; ansichtMerken() })
     m.on('moveend', () => { const c = m.getCenter(); cb.current.onMitte({ lat: c.lat, lng: c.lng }); ansichtMerken() })
@@ -117,6 +121,17 @@ export default function LeafletKarte(p: KartenProps) {
     map.current = m
     return () => { ro?.disconnect(); m.remove() }
   }, [])
+
+  // 7j: Kartenansicht wechseln (Einstellungen → Darstellung)
+  useEffect(() => {
+    const m = map.current, g = grundEbenen.current
+    if (!m || !g) return
+    const ziel = p.kartenAnsicht ?? 'satellit'
+    if (m.hasLayer(g[ziel])) return
+    for (const l of Object.values(g)) if (m.hasLayer(l)) m.removeLayer(l)
+    g[ziel].addTo(m)
+    m.fire('baselayerchange', { name: EBENEN_NAME[ziel], layer: g[ziel] })
+  }, [p.kartenAnsicht])
 
   // Einträge
   useEffect(() => {

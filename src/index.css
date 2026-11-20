@@ -31,7 +31,7 @@ button, .btn, input, textarea { font: inherit; }
 .kopf-hell .kopf-knopf[aria-pressed="true"] { background: #1d2a1d; color: #fff; }
 .kopf-knopf:focus-visible { outline: 2px solid var(--orange); outline-offset: 2px; }
 @media (min-width: 700px) { .marke-wort { display: inline; } .kopf { grid-template-areas: 'marke titel nav' 'marke status nav'; padding-left: 16px; padding-right: 14px; column-gap: 12px; } .kopf .marke { width: 38px; height: 38px; } }
-@media (max-width: 480px) { .kopf-knopf.mit-text span { display: none; } .kopf .kopf-titel { font-size: 1.3rem; } }
+@media (max-width: 480px) { .kopf-knopf.mit-text span:not(.wp-badge) { display: none; } .kopf .kopf-titel { font-size: 1.3rem; } }
 @media (max-width: 359px) { .kopf-knopf { padding: 0 8px; } .kopf nav { gap: 4px; } .kopf .marke { width: 30px; height: 30px; } .kopf { column-gap: 8px; } }
 .haupt { position: relative; flex: 1; overflow: hidden; }
 .karte { position: absolute; inset: 0; }
@@ -866,3 +866,26 @@ button.klein { padding: 6px 10px; font-size: .88rem; flex: none; }
 @media (max-width: 360px) { .formular .infra-chips button { padding: 5px 6px; font-size: .82rem; } .formular-fuss button { padding: 10px 10px; } }
 .formular .einheiten .feldname { margin-top: 0; }
 .loeschen-klein { white-space: nowrap; }
+
+/* ---------- 7j: mehr Platz für die Karte ---------- */
+/* Ansicht-Knopf oben links (klappt Beschriftung, Zäune, Farben auf) */
+.ansicht-knopf { position: relative; }
+.ansicht-knopf.an .icon { opacity: 1; }
+.ansicht-punkt { position: absolute; top: 4px; right: 4px; width: 9px; height: 9px; border-radius: 50%; background: var(--orange, #e8682a); box-shadow: 0 0 0 2px #f4ecd8; }
+.karten-werkzeug.auf { background: rgba(255,255,255,.88); border-radius: 14px; padding: 4px; margin: -4px; box-shadow: 0 2px 10px rgba(0,0,0,.2); }
+/* Badges in der Liste (fällige Fristen / Geräte) */
+.reiter-badge { display: inline-block; margin-left: 5px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: #d32f2f; color: #fff; font-size: .7rem; font-weight: 700; line-height: 18px; text-align: center; vertical-align: 1px; }
+.faellige-fristen { margin-bottom: 8px; }
+.faellige-fristen h3 { margin-top: 4px; }
+.karten-ansicht { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+.karten-ansicht select { min-height: 44px; }
+/* Handy: Zoom per Fingergeste, keine +/-‑Knöpfe; Kopfleiste schmaler */
+@media (max-width: 699px) {
+  .leaflet-control-zoom { display: none; }
+  .kopf { grid-template-areas: 'marke titel nav' 'marke status nav'; min-height: 0; padding: 4px 8px 4px 10px; padding-top: max(4px, env(safe-area-inset-top)); gap: 0 8px; }
+  .kopf .marke { width: 30px; height: 30px; border-radius: 8px; }
+  .kopf .kopf-titel { font-size: 1.12rem; -webkit-line-clamp: 1; line-clamp: 1; }
+  .kopf .status { font-size: .7rem; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .kopf-knopf { height: 36px; min-width: 36px; padding: 0 8px; }
+  .kopf nav { gap: 4px; }
+}

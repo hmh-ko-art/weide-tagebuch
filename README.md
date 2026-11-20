@@ -89,6 +89,12 @@ Code: `server/flaechen.js` (gemeinsam für Server **und** App: Messen, Steckbrie
 - **Übersicht**: Liste → Flächen → „📊 Übersicht, Pacht & Summen“ (Summen gesamt/Pacht/€ je Jahr/je Art, sortierbare Tabelle, Excel/PDF „Flächenverzeichnis“).
 - **Export/Import**: Excel-Blätter „Flächenverzeichnis“, „Flächen-Summen“, „Fristen“; PDF-Kapitel; KML-ExtendedData `flockmap_steckbrief` (+ `flockmap_pacht` nur mit Admin-Option); JSON-Sicherung inkl. Pacht (nur Admin). Import: KML/GeoJSON (FLIK/Schlag/Nutzung aus Attributen geraten, MultiPolygon → mehrere Flächen) und Shapefile-ZIP (.shp/.dbf/.prj; WGS84 oder ETRS89/UTM 32/33 – Gauß-Krüger nicht unterstützt; nur Außenringe).
 
+## Kreis ohne Radius-Feld, Nadel ohne Datum/Herde, Gruppen mit einem Tipp (7k)
+
+- **Kreis-Blatt kürzer:** Kein Feld „Radius (m)“, keine 10/20/30/50/100-Knöpfe und keine lange ha/m²/Umfang-Zeile mehr (Kreis um Nadel und freier Kreis). Die Größe stellt man nur noch mit dem Griff ↔ am Kreisrand ein. Oben stehen Radius, Hektar und Netze als Chips; darunter Farbe, „Standard-Radius“ (aufklappbar: für neue Kreise merken, auf andere Kreise übernehmen) und die beiden Ein-Tipp-Speicherknöpfe bzw. Speichern/Abbrechen. In der Kreis-Palette auf der Karte heißt der Eintrag jetzt „↔ Größe ändern“ (öffnet das Blatt mit dem Griff).
+- **Nadel ohne Datum und Herde:** „Nadel bearbeiten“ und die Infokarte (Mehr) zeigen Datum und Herde nicht mehr. Vorhandene Werte bleiben gespeichert (Liste, Suche, Export, Sicherung); neue Nadeln haben weiterhin ihr Anlegedatum. Flächen und Linien behalten das Datum.
+- **Gruppen schnell wählen:** Im Formular stehen die Gruppen als Chips direkt unter dem Namen („ohne“, je Gruppe, „＋ neue Gruppe“). In der Infokarte steht die Gruppe vorne als Chip (bzw. „＋ Gruppe“); antippen öffnet die Gruppen-Chips, ein Tipp ordnet zu. Der Ansicht-Knopf 👁 oben links blendet Gruppen auf der Karte ein und aus.
+
 ## Weide-Technik: nur noch Tränke und Weidezaungerät, kompakte Farbauswahl (7j)
 
 - Beim Anlegen einer Nadel stehen unter „Was ist hier?“ nur noch **📍 Nadel, 💧 Tränke, ⚡ Zaungerät** zur Wahl. **Tor, Unterstand, Salzleckstein** sind entfallen, auch die automatische Erkennung am Namen beim KML-Import.

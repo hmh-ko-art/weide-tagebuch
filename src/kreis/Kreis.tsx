@@ -14,6 +14,8 @@ export function kreisText(r: number) {
   return `≈ ${FL.haText(m.ha)} · ${FL.m2Text(m.m2)} · Umfang ${FL.umfangText(m.umfang)} · ${m.netze} ${m.netze === 1 ? 'Netz' : 'Netze'} à ${FL.NETZ_LAENGE} m`
 }
 
+const netzText = (r: number) => { const n = FL.kreisMasse(r).netze; return `${n} ${n === 1 ? 'Netz' : 'Netze'}` }
+
 // Vorgaben pro Karte und Gerät: Standard-Radius, zuletzt gewähltes Verhalten und Farbe
 export interface KreisVorgaben { radius: number; gebunden: boolean; farbe?: string }
 const vKey = (karte: string) => `wt-kreis-vorgaben:${karte}`
@@ -91,30 +93,23 @@ export function KreisDetail(p: { e: Pin; karte: string; darf: boolean; onEinkrei
   </>)
 }
 
-// Leiste beim Bearbeiten: Radius (Griff/Zahl) mit Standard-Radius, Farbe, dann Schnellauswahl gebunden/fest = speichern
+// Leiste beim Bearbeiten: Radius nur noch per Griff auf der Karte (7k), Farbe, Standard-Radius, dann Schnellauswahl gebunden/fest = speichern
 export function KreisLeiste(p: { k: KreisEdit; name: string; standard: number; andere: number; set: (k: KreisEdit) => void; onSpeichern: (gebunden: boolean) => void; onAlle: () => void; onAbbrechen: () => void }) {
   const k = p.k
   return (
     <InfoKarte art="kreis" className="leiste kreis-leiste" role="dialog" label={k.frei ? 'Freier Kreis' : 'Kreis um Nadel'} klappbar onZu={p.onAbbrechen}
       titel={k.frei ? <>◯ {k.neu ? 'Freier Kreis' : `Freier Kreis${p.name ? ` „${p.name}“` : ''}`} <small>(ohne Nadel)</small></> : <>◯ Kreis um „{p.name || 'Nadel'}“</>}
-      zusammen={<><span className="chip stark"><i className="chip-punkt" style={{ background: k.farbe }} />{zahl(Math.round(k.radius))} m</span><span className="chip">{kreisText(k.radius).split(' · ')[0]}</span></>}
+      zusammen={<><span className="chip stark" title={kreisText(k.radius)}><i className="chip-punkt" style={{ background: k.farbe }} />{zahl(Math.round(k.radius))} m</span><span className="chip">{kreisText(k.radius).split(' · ')[0]}</span><span className="chip kreis-netze">{netzText(k.radius)}</span></>}
       schnell={k.frei
         ? <><button className="primaer" onClick={() => p.onSpeichern(false)}>✓ {k.neu ? 'Kreis setzen' : 'Speichern'}</button><button onClick={p.onAbbrechen}>Abbrechen</button></>
         : <><button className={k.gebunden ? 'primaer' : ''} onClick={() => p.onSpeichern(true)}>🔗 Gebunden</button><button className={!k.gebunden ? 'primaer' : ''} onClick={() => p.onSpeichern(false)}>📍 Bleibt</button></>}>
-      <Tipp lang={<>Griff <span className="kreis-griff-mini">↔</span> am Rand ziehen oder Meter eingeben{k.frei ? ' · Karte antippen verschiebt die Mitte' : ''}</>}
+      <Tipp lang={<>Größe: Griff <span className="kreis-griff-mini">↔</span> am Rand ziehen{k.frei ? ' · Karte antippen verschiebt die Mitte' : ''}</>}
         kurz={<>Griff <span className="kreis-griff-mini">↔</span> ziehen{k.frei ? ' · Tippen = Mitte' : ''}</>} />
-      <div className="kreis-zeile-form">
-        <label className="kreis-radius">Radius (m)<input type="number" inputMode="numeric" min={FL.KREIS_MIN} max={FL.KREIS_MAX} step={1} value={k.radius}
-          onChange={(x) => { const r = Number(x.target.value); if (Number.isFinite(r) && r > 0) p.set({ ...k, radius: Math.min(FL.KREIS_MAX, r) }) }}
-          onBlur={() => p.set({ ...k, radius: Math.max(FL.KREIS_MIN, Math.round(k.radius)) })} /></label>
-        <div className="kreis-schnell">{[10, 20, 30, 50, 100].map((r) => <button key={r} type="button" className={k.radius === r ? 'aktiv' : ''} onClick={() => p.set({ ...k, radius: r })}>{r}</button>)}</div>
-      </div>
-      <p className="hinweis klein mess-text">{kreisText(k.radius)}</p>
       <FarbMenue label="Farbe des Kreises" wert={k.farbe} farben={KREIS_FARBEN} onWahl={(f) => p.set({ ...k, farbe: f })} />
       <details className="kreis-mehr">
         <summary>Standard-Radius{p.andere > 0 ? ' · auf andere Kreise übernehmen' : ''}</summary>
         <div className="kreis-standard">
-          <label><input type="checkbox" checked={k.alsStandard} onChange={(x) => p.set({ ...k, alsStandard: x.target.checked })} /> Standard-Radius für alle neuen Kreise <small>(jetzt {zahl(p.standard)} m{k.alsStandard && Math.round(k.radius) !== p.standard ? ` → ${zahl(Math.round(k.radius))} m` : ''})</small></label>
+          <label><input type="checkbox" checked={k.alsStandard} onChange={(x) => p.set({ ...k, alsStandard: x.target.checked })} /> Für neue Kreise merken <small>(jetzt {zahl(p.standard)} m{k.alsStandard && Math.round(k.radius) !== p.standard ? ` → ${zahl(Math.round(k.radius))} m` : ''})</small></label>
           {p.andere > 0 && <button type="button" className="kreis-alle" onClick={p.onAlle}>↺ {zahl(Math.round(k.radius))} m auf {p.andere === 1 ? 'den anderen Kreis' : `alle ${p.andere} anderen Kreise`} übernehmen</button>}
         </div>
       </details>
@@ -124,7 +119,6 @@ export function KreisLeiste(p: { k: KreisEdit; name: string; standard: number; a
           <button onClick={p.onAbbrechen}>Abbrechen</button>
         </div>
       ) : <>
-      <p className="hinweis klein kreis-wahl-titel">Mit einem Tipp speichern:</p>
       <div className="kreis-wahl">
         <button type="button" className={k.gebunden ? 'aktiv' : ''} onClick={() => p.onSpeichern(true)}><span>🔗 An Nadel gebunden</span><small>wandert mit der Nadel</small></button>
         <button type="button" className={!k.gebunden ? 'aktiv' : ''} onClick={() => p.onSpeichern(false)}><span>📍 Bleibt am Standort</span><small>fester Pferch · Karte antippen setzt Mitte</small></button>
@@ -147,7 +141,7 @@ export function KreisPop(p: { x: number; y: number; titel: string; farbe: string
       <div className="kreis-pop-kopf"><span>◯ {p.titel}</span><button className="kreis-pop-zu" aria-label="Schließen" onClick={p.onZu}>✕</button></div>
       <FarbMenue label="Farbe des Kreises" wert={p.farbe} farben={KREIS_FARBEN} onWahl={p.onFarbe} eigene={false} klein />
       <div className="kreis-pop-knoepfe">
-        {p.onAendern && <button onClick={p.onAendern}>Radius …</button>}
+        {p.onAendern && <button onClick={p.onAendern} title="Kreis bearbeiten: Größe per Griff am Rand, Farbe, Verhalten">↔ Größe ändern</button>}
         <button onClick={p.onAbgebaut}>✂️ Abgebaut</button>
       </div>
     </div>

@@ -8,6 +8,7 @@ import { RechtLinks } from './recht/Recht'
 import { MeineDaten } from './recht/MeineDaten'
 // 7j: Weideplan in der Oberfläche ausgeblendet – Daten bleiben (Sicherung/Export/Import), Fristen stehen in der Flächen-Übersicht
 import { heute } from '../server/weideplan.js'
+import { GruppenChips } from './GruppenChips'
 import type { KartenAnsicht } from './map/props'
 import { FlaechenUebersicht, FristKarten, MessText, SteckbriefDetail, SteckbriefFormular, fristenListe, pachtAusForm, pachtFormAus } from './flaechen/Flaechen'
 import { nadelHtml } from './map/nadel'
@@ -443,11 +444,12 @@ export default function App() {
     setFormular({ neu: true, e: { ...z, ...(k.ich ? { erstelltVon: k.ich.id } : {}) } })
   }
 
-  const speichern = (e: Eintrag, basis?: Einheit[]) => {
+  const speichern = (e: Eintrag, basis?: Einheit[], gruppe?: string | null) => {
     const fertig = { ...e, titel: e.titel.trim(), geaendert: new Date().toISOString() }
     if (fertig.typ === 'linie') localStorage.setItem('wt-letzte-linienart', fertig.linienArt)
     if (fertig.farbe && istNormal(fertig)) localStorage.setItem(fertig.typ === 'pin' ? 'wt-letzte-farbe' : 'wt-letzte-flaechenfarbe', fertig.farbe)
     k.speichern(fertig, basis)
+    if (gruppe !== undefined) inGruppe(gruppe ? k.gruppen.find((g) => g.id === gruppe) ?? null : null, [fertig]) // 7k: Gruppe aus dem Formular (über „zuordnen“)
     setFormular(null)
     setAusgewaehlt(fertig.id)
     setMeldung('Gespeichert')
@@ -579,7 +581,7 @@ export default function App() {
         <div className={`karten-werkzeug${ansichtAuf ? ' auf' : ''}`}>
           <button className={`werkzeug-knopf ansicht-knopf${ansichtAuf ? ' an' : ''}`} aria-expanded={ansichtAuf} title={ansichtAuf ? 'Ansicht-Werkzeuge zuklappen' : 'Ansicht: Beschriftung, Zäune, Farben hervorheben'} aria-label="Ansicht-Werkzeuge" onClick={() => setAnsichtAuf((a) => !a)}>
             <svg className="icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z" /><circle cx="12" cy="12" r="3" /></svg>
-            {!ansichtAuf && (hervor.length > 0 || !beschriftung || infraAus.aus.includes('__alle')) && <span className="ansicht-punkt" style={hervor[0] ? { background: hervor[0] } : undefined} aria-hidden="true" />}
+            {!ansichtAuf && (hervor.length > 0 || !beschriftung || infraAus.aus.includes('__alle') || gruppenAus.some((g) => k.gruppen.some((x) => x.id === g))) && <span className="ansicht-punkt" style={hervor[0] ? { background: hervor[0] } : undefined} aria-hidden="true" />}
           </button>
           {ansichtAuf && <>
           <button className={`werkzeug-knopf${beschriftung ? ' an' : ''}`} aria-pressed={beschriftung} title={beschriftung ? 'Beschriftung ausblenden' : 'Beschriftung einblenden'} onClick={() => setBeschriftung((b) => !b)}>
@@ -596,6 +598,15 @@ export default function App() {
                 <button key={farbe} className={`farb-chip${hervor.includes(farbe) ? ' aktiv' : ''}`} style={{ background: farbe }} aria-pressed={hervor.includes(farbe)}
                   title={`${farbName(farbe)} (${n}) ${hervor.includes(farbe) ? '– Hervorhebung aufheben' : 'hervorheben'}`} aria-label={`${farbName(farbe)} hervorheben`} onClick={() => hervorUmschalten(farbe)} />
               ))}
+            </div>
+          )}
+          {k.gruppen.length > 0 && (
+            <div className="gruppen-filter" role="group" aria-label="Gruppen auf der Karte ein- und ausblenden">
+              {k.gruppen.map((g) => { const aus = gruppenAus.includes(g.id); return (
+                <button key={g.id} type="button" className={`gruppen-filter-knopf${aus ? ' aus' : ''}`} aria-pressed={!aus} title={`Gruppe „${g.name}“ ${aus ? 'einblenden' : 'ausblenden'}`}
+                  onClick={() => setGruppenAus((l) => (l.includes(g.id) ? l.filter((x) => x !== g.id) : [...l, g.id]))}>
+                  <i className="chip-punkt" style={{ background: gruppenFarbe(g, k.gruppen) }} />{g.name}
+                </button>) })}
             </div>
           )}
           </>}
@@ -811,7 +822,7 @@ export default function App() {
           />
         )}
 
-        {formular && <Formular gruppeName={k.gruppen.find((g) => g.id === formular.e.gruppe)?.name} start={formular.e} neu={formular.neu} istAdmin={k.istAdmin} pacht={k.pacht[formular.e.id]} onPacht={(p) => k.pachtSpeichern(formular.e.id, p)} onSpeichern={speichern} onAbbrechen={() => setFormular(null)} onLoeschen={formular.neu || !kannEintrag(formular.e) ? undefined : () => loeschen(formular.e)} />}
+        {formular && <Formular gruppen={k.gruppen} kannGruppieren={k.darfBearbeiten && kannEintrag(formular.e)} onNeueGruppe={neueGruppe} start={formular.e} neu={formular.neu} istAdmin={k.istAdmin} pacht={k.pacht[formular.e.id]} onPacht={(p) => k.pachtSpeichern(formular.e.id, p)} onSpeichern={speichern} onAbbrechen={() => setFormular(null)} onLoeschen={formular.neu || !kannEintrag(formular.e) ? undefined : () => loeschen(formular.e)} />}
         </div>
 
         {panel === 'liste' && (
@@ -893,6 +904,8 @@ function Detail(p: { e: Eintrag; routeInfo: string; darfBearbeiten: boolean; kan
   const { e } = p
   const gruppe = e.gruppe ? p.gruppen.find((g) => g.id === e.gruppe) : undefined
   const gf = gruppe ? gruppenFarbe(gruppe, p.gruppen) : null
+  const [gWahl, setGWahl] = useState(false) // 7k: Gruppen-Schnellwahl direkt an der Karte
+  const gruppierbar = e.typ === 'pin' && istNormal(e) && p.kannGruppieren
   const ziel = mitte(e)
   // 7i: kompakte Zusammenfassung (auch eingeklappt sichtbar) – Details/Nebensachen dahinter
   const sp = SP.spannungLetzte(e)
@@ -906,8 +919,13 @@ function Detail(p: { e: Eintrag; routeInfo: string; darfBearbeiten: boolean; kan
     {e.typ === 'pin' && !istFrei(e) && e.kreis && <span className="chip">◯ {e.kreis.radius} m</span>}
     {e.typ === 'flaeche' && <span className="chip stark">{FL.haText(hektar(e.punkte))}</span>}
     {istLinie(e) && <span className="chip stark">{laengeText(linienLaenge(e))}</span>}
-    {gruppe && <span className="chip"><i className="chip-punkt" style={{ background: gf ?? undefined }} />{gruppe.name}</span>}
+    {gruppierbar
+      ? <button type="button" className={`chip gruppe-chip${gruppe ? '' : ' leer'}`} aria-expanded={gWahl} title="Gruppe wechseln" onClick={(x) => { x.stopPropagation(); setGWahl(!gWahl) }}>
+          {gruppe ? <><i className="chip-punkt" style={{ background: gf ?? undefined }} />{gruppe.name} ▾</> : '＋ Gruppe'}
+        </button>
+      : gruppe && <span className="chip"><i className="chip-punkt" style={{ background: gf ?? undefined }} />{gruppe.name}</span>}
     {nNotiz > 0 && <span className="chip">📝 {nNotiz}</span>}
+    {gruppierbar && gWahl && <GruppenChips gruppen={p.gruppen} wert={gruppe?.id ?? null} label="Gruppe wählen" onWahl={(g) => { setGWahl(false); if (g !== (gruppe?.id ?? null)) p.onGruppe(g ?? '') }} onNeu={() => { setGWahl(false); p.onGruppe('__neu') }} />}
   </>
   return (
     <InfoKarte art="detail" className="sheet detail-karte" klappbar label={`Infokarte: ${e.titel || 'ohne Namen'}`} onZu={p.onSchliessen}
@@ -917,18 +935,11 @@ function Detail(p: { e: Eintrag; routeInfo: string; darfBearbeiten: boolean; kan
       mehr={<>
         <div className="meta">
           {istNormal(e) && <span>Farbe: {gf ? <>{farbName(gf)} (Gruppe) · eigene {farbName(pinFarbe(e))}</> : farbName(pinFarbe(e))}</span>}
-          {e.typ === 'pin' && istNormal(e) && (p.kannGruppieren
-            ? <label className="gruppe-wahl">In Gruppe<select value={gruppe?.id ?? ''} onChange={(x) => p.onGruppe(x.target.value)}>
-                <option value="">– ohne Gruppe –</option>
-                {p.gruppen.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
-                <option value="__neu">＋ Neue Gruppe …</option>
-              </select></label>
-            : gruppe && <span>Gruppe: {gruppe.name}</span>)}
           {tiere.length > 0 && istAusblendbar(e) && <button type="button" className="tiere-umschalten" aria-expanded={!p.tiereZu} title={p.tiereZu ? 'Tiere einblenden' : 'Tiere ausblenden'} onClick={p.onTiereUmschalten}>
             {p.tiereZu ? '▸ Tiere auf der Karte einblenden' : '▾ Tiere auf der Karte ausblenden'}
           </button>}
-          {e.herde && <span>Herde: {e.herde}</span>}
-          <span>Datum: {tagText(eintragDatum(e))}</span>
+          {/* 7k: Datum/Herde bei Nadeln nicht mehr angezeigt (Werte bleiben gespeichert, im Export und in der Liste) */}
+          {e.typ !== 'pin' && <span>Datum: {tagText(eintragDatum(e))}</span>}
           <span>Geändert: {datum(e.geaendert)}</span>
         </div>
         <div className="knoepfe">
@@ -1002,8 +1013,10 @@ function Notizen(p: { e: Eintrag; darfBearbeiten: boolean; kannNotiz: (n: Notiz)
   )
 }
 
-function Formular(p: { gruppeName?: string; start: Eintrag; neu: boolean; istAdmin: boolean; pacht?: Pacht; onPacht: (p: Pacht | null) => void; onSpeichern: (e: Eintrag, basis?: Einheit[]) => void; onAbbrechen: () => void; onLoeschen?: () => void }) {
+function Formular(p: { gruppen: Gruppe[]; kannGruppieren: boolean; onNeueGruppe: () => Gruppe | null; start: Eintrag; neu: boolean; istAdmin: boolean; pacht?: Pacht; onPacht: (p: Pacht | null) => void; onSpeichern: (e: Eintrag, basis?: Einheit[], gruppe?: string | null) => void; onAbbrechen: () => void; onLoeschen?: () => void }) {
   const [e, setE] = useState<Eintrag>(p.start)
+  const [gid, setGid] = useState<string | null>(p.start.gruppe && p.gruppen.some((g) => g.id === p.start.gruppe) ? p.start.gruppe : null) // 7k: Gruppe per Chip
+  const gruppeName = gid ? p.gruppen.find((g) => g.id === gid)?.name : undefined
   // Tiereinheiten als Zeilen (Anzahl als Text, damit das Feld beim Tippen leer sein darf)
   const [zeilen, setZeilen] = useState(() => (p.start.einheiten ?? []).map((x) => ({ ...x, anzahl: String(x.anzahl) })))
   const zeileAendern = (id: string, teil: Partial<{ art: Tierart; anzahl: string }>) => setZeilen((l) => l.map((z) => (z.id === id ? { ...z, ...teil } : z)))
@@ -1029,7 +1042,7 @@ function Formular(p: { gruppeName?: string; start: Eintrag; neu: boolean; istAdm
         }
         // Flächen: leeren Steckbrief entfernen (alte App-Versionen: null = „bewusst leer“)
         if (fertig.typ === 'flaeche') { const sb = FL.steckbriefSauber(fertig.steckbrief); fertig = { ...fertig, steckbrief: (sb ?? null) as never } }
-        p.onSpeichern(fertig, p.start.einheiten ?? [])
+        p.onSpeichern(fertig, p.start.einheiten ?? [], normal && fertig.typ === 'pin' && p.kannGruppieren && gid !== (p.start.gruppe ?? null) ? gid : undefined)
         // Pacht getrennt und nur für Admin/Inhaber speichern (vertraulich)
         if (fertig.typ === 'flaeche' && p.istAdmin) { const neu = pachtAusForm(pachtForm, p.pacht); if (!FL.pachtGleich(neu, p.pacht ?? null)) p.onPacht(neu) }
       }}>
@@ -1039,6 +1052,8 @@ function Formular(p: { gruppeName?: string; start: Eintrag; neu: boolean; istAdm
         </div>
         {((e.typ === 'pin' && !e.frei) || e.typ === 'linie') && <InfraFormular e={e} setE={setE} neu={p.neu} pruef={pruef} setPruef={setPruef} />}
         <label>Name<input autoFocus={e.typ !== 'pin' || !p.neu} value={e.titel} placeholder={istInfra(e) ? (e.infra === 'geraet' ? 'z. B. Gerät Deich Nord' : e.infra === 'traenke' ? 'z. B. Tränke am Siel' : 'optional') : e.typ === 'linie' ? 'z. B. Netz Koog-Weide 3' : e.typ === 'pin' ? 'z. B. Mutterschafe Deich Nord' : 'z. B. Koog-Weide 3'} onChange={(x) => setE({ ...e, titel: x.target.value })} /></label>
+        {normal && e.typ === 'pin' && p.kannGruppieren && <div className="gruppe-feld"><span className="feldname">Gruppe</span>
+          <GruppenChips gruppen={p.gruppen} wert={gid} onWahl={setGid} onNeu={() => { const g = p.onNeueGruppe(); if (g) setGid(g.id) }} /></div>}
         {p.neu ? (
           <label>Erste Notiz<textarea rows={3} value={ersteNotiz} placeholder="Was ist hier los? Wasser, Zaun, Lämmer …" onChange={(x) => setErsteNotiz(x.target.value)} /></label>
         ) : (
@@ -1046,7 +1061,7 @@ function Formular(p: { gruppeName?: string; start: Eintrag; neu: boolean; istAdm
         )}
         {!istInfra(e) && !istFrei(e) && (
           <div className="farbwahl">
-            {p.gruppeName && <p className="hinweis klein">In Gruppe „{p.gruppeName}“: Karte zeigt die Gruppenfarbe.</p>}
+            {gruppeName && <p className="hinweis klein">In Gruppe „{gruppeName}“: Karte zeigt die Gruppenfarbe.</p>}
             <FarbMenue label={e.typ === 'pin' ? 'Farbe der Nadel' : e.typ === 'linie' ? 'Farbe der Linie' : 'Farbe der Fläche'} wert={pinFarbe(e)} onWahl={(f) => setE({ ...e, farbe: f })}
               farben={e.typ === 'pin' ? FARBEN : e.typ === 'linie' ? [{ wert: linienArt(e.linienArt).farbe, name: `Standard (${linienArt(e.linienArt).name})` }, ...FLAECHEN_FARBEN.filter((f) => f.wert !== linienArt(e.linienArt).farbe)] : FLAECHEN_FARBEN} />
           </div>
@@ -1069,10 +1084,10 @@ function Formular(p: { gruppeName?: string; start: Eintrag; neu: boolean; istAdm
           </select></label>
         </div>}
         {e.typ === 'flaeche' && <SteckbriefFormular e={e} setE={(x) => setE(x)} istAdmin={p.istAdmin} pacht={pachtForm} setPacht={setPachtForm} />}
-        <div className="zeile datum-herde">
+        {/* 7k: Nadeln ohne Datum/Herde-Felder – vorhandene Werte bleiben unverändert erhalten, neue Nadeln haben ihr Anlegedatum (erstellt) */}
+        {e.typ !== 'pin' && <div className="zeile datum-herde">
           <label>Datum<input type="date" required value={eintragDatum(e)} onChange={(x) => x.target.value && setE({ ...e, datum: x.target.value })} /></label>
-          {normal && <label>Herde<input value={e.herde ?? ''} placeholder="optional" onChange={(x) => setE({ ...e, herde: x.target.value || undefined })} /></label>}
-        </div>
+        </div>}
         <div className="formular-fuss">
           <button type="submit" className="primaer">Speichern</button>
           <button type="button" onClick={p.onAbbrechen}>Abbrechen</button>

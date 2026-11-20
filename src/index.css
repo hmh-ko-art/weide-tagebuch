@@ -647,18 +647,11 @@ button.klein { padding: 6px 10px; font-size: .88rem; flex: none; }
 .kreis-zeile small { color: #555; }
 .kreis-leiste { display: flex; flex-direction: column; gap: 6px; }
 .kreis-leiste p { margin: 0; }
-.kreis-zeile-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; }
-.kreis-radius { display: flex; flex-direction: column; font-size: .85rem; }
-.kreis-radius input { width: 96px; font-size: 1.1rem; }
-.kreis-schnell { display: flex; gap: 4px; flex-wrap: wrap; }
-.kreis-schnell button { min-width: 44px; padding: 6px 8px; }
-.kreis-schnell button.aktiv { background: var(--gruen); color: #fff; border-color: var(--gruen); }
 .kreis-standard { display: flex; flex-direction: column; gap: 4px; font-size: .9rem; }
 .kreis-standard label { display: flex !important; flex-direction: row !important; align-items: center; gap: 8px; font-weight: 600; }
 .kreis-standard input[type=checkbox] { width: 20px !important; height: 20px; flex: none; margin: 0; }
 .kreis-standard small { font-weight: 400; color: #555; }
 .kreis-alle { align-self: flex-start; padding: 6px 10px; font-size: .88rem; }
-.kreis-wahl-titel { margin-top: 2px !important; font-weight: 600; color: #333; }
 .kreis-wahl { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .kreis-wahl button { min-height: 64px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 8px 6px; border: 2px solid var(--gruen); background: #fff; color: #1d2a1d; border-radius: 12px; font-size: 1rem; font-weight: 700; line-height: 1.2; }
 .kreis-wahl button small { font-size: .74rem; font-weight: 400; color: #555; }
@@ -872,7 +865,7 @@ button.klein { padding: 6px 10px; font-size: .88rem; flex: none; }
 .ansicht-knopf { position: relative; }
 .ansicht-knopf.an .icon { opacity: 1; }
 .ansicht-punkt { position: absolute; top: 4px; right: 4px; width: 9px; height: 9px; border-radius: 50%; background: var(--orange, #e8682a); box-shadow: 0 0 0 2px #f4ecd8; }
-.karten-werkzeug.auf { background: rgba(255,255,255,.88); border-radius: 14px; padding: 4px; margin: -4px; box-shadow: 0 2px 10px rgba(0,0,0,.2); }
+.karten-werkzeug.auf { z-index: 1070; max-height: calc(100% - 20px); overflow-y: auto; background: rgba(255,255,255,.88); border-radius: 14px; padding: 4px; margin: -4px; box-shadow: 0 2px 10px rgba(0,0,0,.2); }
 /* Badges in der Liste (fällige Fristen / Geräte) */
 .reiter-badge { display: inline-block; margin-left: 5px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: #d32f2f; color: #fff; font-size: .7rem; font-weight: 700; line-height: 18px; text-align: center; vertical-align: 1px; }
 .faellige-fristen { margin-bottom: 8px; }
@@ -889,3 +882,19 @@ button.klein { padding: 6px 10px; font-size: .88rem; flex: none; }
   .kopf-knopf { height: 36px; min-width: 36px; padding: 0 8px; }
   .kopf nav { gap: 4px; }
 }
+
+/* ---------- 7k: Gruppen schnell wählen ---------- */
+.gruppen-chips { display: flex; flex-wrap: wrap; gap: 6px; flex-basis: 100%; }
+.gruppen-chip { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 4px 12px; border-radius: 18px; border: 1.5px solid #d8d2c2; background: #fff; color: #1d2a1d; font: inherit; font-size: .9rem; font-weight: 600; cursor: pointer; }
+.gruppen-chip.aktiv { background: #1e4d2b; border-color: #1e4d2b; color: #fff; }
+.gruppen-chip.neu { border-style: dashed; color: #1e4d2b; background: transparent; }
+.gruppen-chip .chip-punkt, .gruppe-chip .chip-punkt, .gruppen-filter-knopf .chip-punkt { width: 10px; height: 10px; border-radius: 50%; flex: none; display: inline-block; }
+.gruppe-feld { display: flex; flex-direction: column; gap: 6px; }
+.gruppe-feld .feldname { font-weight: 600; font-size: .9rem; }
+button.chip.gruppe-chip { cursor: pointer; font: inherit; font-size: inherit; border: 1.5px solid #1e4d2b; background: #fff; color: #1e4d2b; font-weight: 600; }
+button.chip.gruppe-chip.leer { border-style: dashed; }
+.info-zusammen .gruppen-chips { margin-top: 4px; }
+.gruppen-filter { display: flex; flex-direction: column; gap: 4px; max-width: 150px; }
+.gruppen-filter-knopf { display: flex; align-items: center; gap: 6px; min-height: 32px; padding: 3px 8px; border-radius: 10px; border: 1.5px solid #d8d2c2; background: #f4ecd8; color: #1d2a1d; font: inherit; font-size: .78rem; font-weight: 600; text-align: left; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; cursor: pointer; }
+.gruppen-filter-knopf.aus { opacity: .5; text-decoration: line-through; }
+.kreis-netze { white-space: nowrap; }

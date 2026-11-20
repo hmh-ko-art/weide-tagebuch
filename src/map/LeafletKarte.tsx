@@ -299,6 +299,27 @@ export default function LeafletKarte(p: KartenProps) {
     m.on('dragend', () => { const q = m.getLatLng(); cb.current.onKreisRadius?.(Math.max(3, Math.round(abstand(kb.mitte, { lat: q.lat, lng: q.lng })))) })
   }, [kb?.id, kb?.mitte.lat, kb?.mitte.lng, kb?.radius, kb?.farbe])
 
+  // 7l: Lösch-✕ am ausgewählten Objekt (Nadel: daneben, Kreis: Westrand gegenüber dem Griff, Fläche/Linie: angetippte Stelle)
+  const xEbene = useRef<L.LayerGroup | null>(null)
+  const lx = p.loeschX
+  useEffect(() => {
+    if (!map.current) return
+    xEbene.current ??= L.layerGroup().addTo(map.current)
+    const g = xEbene.current
+    g.clearLayers()
+    if (!lx) return
+    const nadel = lx.art === 'nadel'
+    const icon = L.divIcon({ className: `loesch-x-icon${nadel ? ' an-nadel' : ''}`, html: '<span class="loesch-x" aria-hidden="true">✕</span>', iconSize: [44, 44], iconAnchor: nadel ? [-8, NADEL_HOEHE + 12] : [22, 22] })
+    const m = L.marker(ll(lx.pos), { icon, zIndexOffset: 3000, keyboard: true, title: 'Löschen', alt: 'Löschen' }).addTo(g)
+    m.on('click', (ev: L.LeafletMouseEvent) => {
+      L.DomEvent.stopPropagation(ev)
+      const r = m.getElement()?.getBoundingClientRect()
+      cb.current.onLoeschX?.(r ? r.left + r.width / 2 : ev.originalEvent?.clientX ?? 0, r ? r.top + r.height / 2 : ev.originalEvent?.clientY ?? 0)
+    })
+    m.getElement()?.setAttribute('aria-label', 'Löschen')
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- schluessel enthält Art + Position
+  }, [lx?.schluessel])
+
   // Route
   useEffect(() => {
     const g = routeEbene.current!

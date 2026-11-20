@@ -898,3 +898,14 @@ button.chip.gruppe-chip.leer { border-style: dashed; }
 .gruppen-filter-knopf { display: flex; align-items: center; gap: 6px; min-height: 32px; padding: 3px 8px; border-radius: 10px; border: 1.5px solid #d8d2c2; background: #f4ecd8; color: #1d2a1d; font: inherit; font-size: .78rem; font-weight: 600; text-align: left; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; cursor: pointer; }
 .gruppen-filter-knopf.aus { opacity: .5; text-decoration: line-through; }
 .kreis-netze { white-space: nowrap; }
+
+/* ---------- 7l: Schnell-Löschen ---------- */
+.loesch-x-icon { display: flex; align-items: center; justify-content: center; cursor: pointer; background: transparent; border: 0; }
+.loesch-x { display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 50%; background: #fff; color: #c62828; border: 2px solid #c62828; font-size: 17px; font-weight: 800; line-height: 1; box-shadow: 0 2px 8px rgba(0,0,0,.35); }
+.loesch-x-icon:hover .loesch-x, .loesch-x-icon:focus-visible .loesch-x { background: #c62828; color: #fff; }
+.loesch-schleier { position: fixed; inset: 0; z-index: 1490; background: rgba(0,0,0,.08); }
+.loesch-frage { position: fixed; z-index: 1500; background: #fff; border-radius: 14px; padding: 12px 14px; box-shadow: 0 6px 24px rgba(0,0,0,.3); box-sizing: border-box; }
+.loesch-frage p { margin: 0 0 10px; line-height: 1.35; }
+.loesch-frage small { color: #555; }
+.loesch-frage .knoepfe { display: flex; gap: 8px; }
+.loesch-frage .knoepfe button { flex: 1; min-height: 44px; }

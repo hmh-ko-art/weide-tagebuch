@@ -9,7 +9,7 @@ import { MeineDaten } from './recht/MeineDaten'
 // 7j: Weideplan in der Oberfläche ausgeblendet – Daten bleiben (Sicherung/Export/Import), Fristen stehen in der Flächen-Übersicht
 import { heute } from '../server/weideplan.js'
 import { GruppenChips } from './GruppenChips'
-import type { KartenAnsicht } from './map/props'
+import type { KartenAnsicht, KartenProps } from './map/props'
 import { FlaechenUebersicht, FristKarten, MessText, SteckbriefDetail, SteckbriefFormular, fristenListe, pachtAusForm, pachtFormAus } from './flaechen/Flaechen'
 import { nadelHtml } from './map/nadel'
 import { SpannungZeile } from './spannung/Spannung'
@@ -142,6 +142,9 @@ export default function App() {
   const tiereUmschalten = (id: string) => setTiereZu((l) => (l.includes(id) ? l.filter((x) => x !== id) : [...l, id]))
   // Schnellauswahl: hervorgehobene Nadelfarben (Mehrfachauswahl)
   const [hervorWahl, setHervorWahl] = useState<string[]>([])
+  // 7l: Schnell-Löschen – Eintrag erst nach Ablauf des Rückgängig-Countdowns wirklich löschen (bis dahin nur ausgeblendet)
+  const [wegGeplant, setWegGeplant] = useState<{ e: Eintrag; bis: number } | null>(null)
+  const wegId = wegGeplant?.e.id ?? null
   // Gruppen: Nadeln einer Gruppe in Gruppenfarbe (eigene Farbe bleibt gespeichert) mit laufender Nummer 1..n
   const anzeige = useMemo(() => {
     const nummern: Record<string, number> = {}
@@ -150,8 +153,8 @@ export default function App() {
       const f = gruppenFarbe(g, k.gruppen)
       gruppenOrdnung(g, k.eintraege).forEach((e, i) => { nummern[e.id] = i + 1; farbeVon.set(e.id, f) })
     }
-    return { nummern, eintraege: k.eintraege.map((e) => (farbeVon.has(e.id) ? { ...e, farbe: farbeVon.get(e.id) } : e)) }
-  }, [k.eintraege, k.gruppen])
+    return { nummern, eintraege: k.eintraege.filter((e) => e.id !== wegId).map((e) => (farbeVon.has(e.id) ? { ...e, farbe: farbeVon.get(e.id) } : e)) }
+  }, [k.eintraege, k.gruppen, wegId])
   // Häkchen je Gruppe: auf der Karte ein-/ausblenden (pro Gerät)
   const [gruppenAus, setGruppenAus] = useState<string[]>(() => { try { const x = JSON.parse(localStorage.getItem('wt-gruppen-aus') || '[]'); return Array.isArray(x) ? x.filter((v) => typeof v === 'string') : [] } catch { return [] } })
   useEffect(() => { localStorage.setItem('wt-gruppen-aus', JSON.stringify(gruppenAus)) }, [gruppenAus])
@@ -213,6 +216,10 @@ export default function App() {
     return () => { ro?.disconnect(); clearTimeout(t) }
   }, [k.karteId])
   const [kreisPop, setKreisPop] = useState<{ id: string; stehenId: string | null; x: number; y: number } | null>(null)
+  // 7l: angetippte Stelle (Fläche/Linie) für das Lösch-X, offene Lösch-Frage, Rückgängig für gelöschte Kreise
+  const [tippPunkt, setTippPunkt] = useState<LatLng | null>(null)
+  const [loeschFrage, setLoeschFrage] = useState<{ art: 'eintrag' | 'kreis'; id: string; stehenId: string | null; x: number; y: number } | null>(null)
+  const [kreisRueck, setKreisRueck] = useState<{ vorher: Pin; stehenId: string | null; bis: number } | null>(null)
   // Countdown abgelaufen -> vorläufige Kreise endgültig machen (mit dem aktuellen Stand der Nadel)
   const verschobenFertigRef = useRef<(v: NonNullable<typeof verschoben>) => void>(() => {})
   const verschobenRef = useRef(verschoben); verschobenRef.current = verschoben
@@ -341,6 +348,8 @@ export default function App() {
     if (modus === 'kreis' && pos) { setKreisEdit((x) => (x ? { ...x, mitte: pos, gebunden: false } : x)); return }
     if (modus !== 'ansicht' && modus !== 'pin') return
     setAusgewaehlt(id)
+    setTippPunkt(pos ?? null)
+    setLoeschFrage(null)
     setPanel(null)
     // Antippen zeigt nur die Details – eine Route gibt es nur über den Knopf „Route anzeigen“
     routeAus()
@@ -383,6 +392,7 @@ export default function App() {
   )
 
   const kartenKlick = (p: LatLng) => {
+    if (loeschFrage) { setLoeschFrage(null); return }
     if (kreisPop) { setKreisPop(null); return }
     if (formular) return
     if (modus === 'flaeche' || modus === 'linie') { setZeichenPunkte((l) => [...l, p]); return }
@@ -453,6 +463,68 @@ export default function App() {
     setFormular(null)
     setAusgewaehlt(fertig.id)
     setMeldung('Gespeichert')
+  }
+
+  // ---- 7l: Schnell-Löschen über das ✕ am Objekt ----
+  const darfLoeschen = (e: Eintrag) => k.darfBearbeiten && kannEintrag(e) // wie Löschen im Menü
+  const wegRef = useRef(wegGeplant)
+  wegRef.current = wegGeplant
+  const kLoeschen = k.loeschen
+  const wegAusfuehren = useCallback(() => { const w = wegRef.current; if (!w) return; wegRef.current = null; kLoeschen(w.e.id); setWegGeplant(null) }, [kLoeschen])
+  useEffect(() => { if (!wegGeplant) return; const t = setTimeout(wegAusfuehren, Math.max(0, wegGeplant.bis - Date.now())); return () => clearTimeout(t) }, [wegGeplant, wegAusfuehren])
+  // App wird geschlossen/versteckt: geplantes Löschen sofort ausführen (Warteschlange übersteht Neustart/Offline)
+  useEffect(() => {
+    const f = () => { if (document.visibilityState === 'hidden') wegAusfuehren() }
+    document.addEventListener('visibilitychange', f); window.addEventListener('pagehide', wegAusfuehren)
+    return () => { document.removeEventListener('visibilitychange', f); window.removeEventListener('pagehide', wegAusfuehren) }
+  }, [wegAusfuehren])
+  useEffect(() => { if (!kreisRueck) return; const t = setTimeout(() => setKreisRueck(null), Math.max(0, kreisRueck.bis - Date.now())); return () => clearTimeout(t) }, [kreisRueck])
+  const schnellWeg = (e: Eintrag) => {
+    wegAusfuehren() // ein noch laufendes Löschen zuerst endgültig machen
+    setWegGeplant({ e, bis: Date.now() + rueckS * 1000 })
+    setLoeschFrage(null); setKreisPop(null)
+    if (ausgewaehlt === e.id) abwaehlen()
+  }
+  const wegRueckgaengig = () => { wegRef.current = null; setWegGeplant(null); setMeldung('Wiederhergestellt ↩') }
+  const kreisSchnellWeg = (pe: Pin, stehenId: string | null) => {
+    k.speichern({ ...pe, ...kreisAendern(pe, stehenId, () => null), geaendert: new Date().toISOString() })
+    setKreisRueck({ vorher: pe, stehenId, bis: Date.now() + rueckS * 1000 })
+    setLoeschFrage(null); setKreisPop(null)
+  }
+  const kreisRueckgaengig = () => {
+    const r = kreisRueck; setKreisRueck(null)
+    const jetzt = r && k.eintraege.find((x) => x.id === r.vorher.id)
+    if (!r || !jetzt || jetzt.typ !== 'pin') return
+    k.speichern({ ...jetzt, kreis: r.vorher.kreis ?? null, kreiseStehen: r.vorher.kreiseStehen ?? [], geaendert: new Date().toISOString() } as Pin)
+    setMeldung('Kreis wiederhergestellt ↩')
+  }
+  const westRand = (m: LatLng, r: number): LatLng => ({ lat: m.lat, lng: m.lng - r / (111320 * Math.cos((m.lat * Math.PI) / 180)) }) // gegenüber dem Griff ↔ (Osten)
+  const linienMitte = (pts: LatLng[]): LatLng => {
+    if (pts.length < 2) return pts[0]
+    const seg = pts.slice(1).map((q, i) => FL.abstand(pts[i], q)), halb = seg.reduce((a, b) => a + b, 0) / 2
+    let s = 0
+    for (let i = 0; i < seg.length; i++) { if (s + seg[i] >= halb && seg[i] > 0) { const t = (halb - s) / seg[i]; return { lat: pts[i].lat + (pts[i + 1].lat - pts[i].lat) * t, lng: pts[i].lng + (pts[i + 1].lng - pts[i].lng) * t } } s += seg[i] }
+    return pts[0]
+  }
+  // Wo steht das ✕? Kreis (Palette offen bzw. freier Kreis): Westrand · Nadel: neben der Nadel · Fläche/Linie: angetippte Stelle, sonst Mitte
+  const loeschX: KartenProps['loeschX'] = (() => {
+    if (modus !== 'ansicht' || formular) return null
+    if (kreisPop) {
+      const pe = k.eintraege.find((x) => x.id === kreisPop.id)
+      const kr = pe?.typ === 'pin' ? (kreisPop.stehenId == null ? pe.kreis : pe.kreiseStehen?.find((x) => x.id === kreisPop.stehenId)) : null
+      return pe && kr && darfLoeschen(pe) ? { schluessel: `k-${pe.id}-${kreisPop.stehenId ?? ''}-${kr.radius}`, pos: westRand(kr.mitte, kr.radius), art: 'kreis' } : null
+    }
+    const e = auswahl
+    if (!e || e.id === wegId || !darfLoeschen(e)) return null
+    if (istFrei(e) && e.kreis) return { schluessel: `k-${e.id}--${e.kreis.radius}`, pos: westRand(e.kreis.mitte, e.kreis.radius), art: 'kreis' }
+    if (e.typ === 'pin') return { schluessel: `n-${e.id}`, pos: e.position, art: 'nadel' }
+    const pos = tippPunkt ?? (e.typ === 'linie' ? linienMitte(e.punkte) : mitte(e))
+    return { schluessel: `f-${e.id}-${pos.lat}-${pos.lng}`, pos, art: 'form' }
+  })()
+  const loeschXKlick = (x: number, y: number) => {
+    if (kreisPop) { setLoeschFrage({ art: 'kreis', id: kreisPop.id, stehenId: kreisPop.stehenId, x, y }); setKreisPop(null); return }
+    if (!auswahl) return
+    setLoeschFrage(istFrei(auswahl) ? { art: 'kreis', id: auswahl.id, stehenId: null, x, y } : { art: 'eintrag', id: auswahl.id, stehenId: null, x, y })
   }
 
   const loeschen = (e: Eintrag) => {
@@ -573,6 +645,8 @@ export default function App() {
           onKlick={kartenKlick}
           onAblegen={kartenAblage}
           onAuswahl={waehle}
+          loeschX={loeschFrage ? null : loeschX}
+          onLoeschX={loeschXKlick}
           onMitte={(p) => (mitteRef.current = p)}
         />
 
@@ -637,7 +711,7 @@ export default function App() {
 
         {/* 7i: EIN Stapel unten links – vorübergehende Hinweise oben, darunter die aktive Infokarte (nichts überlappt mehr) */}
         <div className="info-stapel" ref={stapelRef}>
-        {(meldung || neuGesetztDa || verschoben) && (
+        {(meldung || neuGesetztDa || verschoben || wegGeplant || kreisRueck) && (
           <div className="info-hinweise">
             {neuGesetztDa && neuGesetzt && (
               <InfoHinweis bis={neuGesetzt.n + rueckS * 1000} dauer={rueckS * 1000} knoepfe={<>
@@ -649,6 +723,16 @@ export default function App() {
               <InfoHinweis vorlaeufig={verschoben.vorlaeufig} bis={(verschoben.seit ?? Date.now()) + rueckS * 1000} dauer={rueckS * 1000}
                 knoepfe={<button onClick={verschiebenRueckgaengig}>Rückgängig <Rest bis={(verschoben.seit ?? Date.now()) + rueckS * 1000} /></button>}>
                 {verschoben.vorlaeufig ? <>Nadel verschoben · neuer Kreis <span className="strich-muster" aria-hidden="true" /> (gestrichelt) wird gesetzt, alter bleibt stehen</> : 'Nadel verschoben'}
+              </InfoHinweis>
+            )}
+            {wegGeplant && (
+              <InfoHinweis bis={wegGeplant.bis} dauer={rueckS * 1000} knoepfe={<button onClick={wegRueckgaengig}>Rückgängig <Rest bis={wegGeplant.bis} /></button>}>
+                🗑 {wegGeplant.e.titel ? `„${wegGeplant.e.titel}“` : artName(wegGeplant.e)} gelöscht
+              </InfoHinweis>
+            )}
+            {kreisRueck && (
+              <InfoHinweis bis={kreisRueck.bis} dauer={rueckS * 1000} knoepfe={<button onClick={kreisRueckgaengig}>Rückgängig <Rest bis={kreisRueck.bis} /></button>}>
+                🗑 Kreis gelöscht – Nadel bleibt
               </InfoHinweis>
             )}
             {meldung && <InfoHinweis onZu={() => setMeldung('')}>{meldung}</InfoHinweis>}
@@ -872,6 +956,16 @@ export default function App() {
         {neueVersion && (
           <div className="update-hinweis" role="status">Neue Version von FlockMap verfügbar<button className="primaer" onClick={() => location.reload()}>Jetzt neu laden</button><button className="x" aria-label="Später" onClick={() => setNeueVersion(false)}><Icon name="x" /></button></div>
         )}
+        {loeschFrage && (() => {
+          const e = k.eintraege.find((x) => x.id === loeschFrage.id)
+          if (!e) return null
+          const kr = loeschFrage.art === 'kreis' && e.typ === 'pin' ? (loeschFrage.stehenId == null ? e.kreis : e.kreiseStehen?.find((x) => x.id === loeschFrage.stehenId)) : null
+          const was = loeschFrage.art === 'kreis'
+            ? (istFrei(e) ? `Freier Kreis${e.titel ? ` „${e.titel}“` : ''}${kr ? ` · ${kr.radius} m` : ''}` : `Kreis${kr ? ` (${kr.radius} m)` : ''} – die Nadel „${e.titel || 'ohne Namen'}“ bleibt`)
+            : `${artName(e)}${e.titel ? ` „${e.titel}“` : ''}${e.typ === 'pin' && kreisAnzahl(e) > 0 ? ' mit Kreis' : ''}`
+          return <LoeschFrage x={loeschFrage.x} y={loeschFrage.y} was={was} onAbbrechen={() => setLoeschFrage(null)}
+            onLoeschen={() => { if (loeschFrage.art === 'kreis' && e.typ === 'pin' && !istFrei(e)) kreisSchnellWeg(e, loeschFrage.stehenId); else schnellWeg(e) }} />
+        })()}
         {kreisPop && modus === 'ansicht' && (() => {
           const pe = k.eintraege.find((x) => x.id === kreisPop.id)
           if (!pe || pe.typ !== 'pin') return null
@@ -1830,4 +1924,27 @@ function Rest(p: { bis: number }) {
   useEffect(() => { const i = setInterval(() => setT((x) => x + 1), 250); return () => clearInterval(i) }, [])
   const s = Math.max(0, Math.ceil((p.bis - Date.now()) / 1000))
   return <span className="rest">({s} s)</span>
+}
+
+// 7l: Art eines Eintrags für Texte („Nadel“, „Fläche“ …)
+function artName(e: Eintrag) {
+  return istInfra(e) ? 'Markierung' : istFrei(e) ? 'Freier Kreis' : e.typ === 'pin' ? 'Nadel' : e.typ === 'linie' ? 'Linie' : 'Fläche'
+}
+
+// 7l: kleine Bestätigung am ✕ – „Möchtest du das löschen?“ [Löschen] [Abbrechen]
+function LoeschFrage(p: { x: number; y: number; was: string; onLoeschen: () => void; onAbbrechen: () => void }) {
+  const w = Math.min(280, window.innerWidth - 16), h = 132
+  const left = Math.max(8, Math.min(window.innerWidth - w - 8, p.x - w / 2))
+  const top = p.y + 24 + h < window.innerHeight ? p.y + 24 : Math.max(8, p.y - h - 24)
+  useEffect(() => { const f = (ev: KeyboardEvent) => { if (ev.key === 'Escape') p.onAbbrechen() }; window.addEventListener('keydown', f); return () => window.removeEventListener('keydown', f) }, [p])
+  return <>
+    <div className="loesch-schleier" onClick={p.onAbbrechen} />
+    <div className="loesch-frage" role="alertdialog" aria-modal="true" aria-labelledby="loesch-frage-titel" style={{ left, top, width: w }}>
+      <p id="loesch-frage-titel"><strong>Möchtest du das löschen?</strong><br /><small>{p.was}</small></p>
+      <div className="knoepfe">
+        <button type="button" className="gefahr-voll" onClick={p.onLoeschen}>Löschen</button>
+        <button type="button" autoFocus onClick={p.onAbbrechen}>Abbrechen</button>
+      </div>
+    </div>
+  </>
 }

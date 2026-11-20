@@ -89,6 +89,15 @@ Code: `server/flaechen.js` (gemeinsam für Server **und** App: Messen, Steckbrie
 - **Übersicht**: Liste → Flächen → „📊 Übersicht, Pacht & Summen“ (Summen gesamt/Pacht/€ je Jahr/je Art, sortierbare Tabelle, Excel/PDF „Flächenverzeichnis“).
 - **Export/Import**: Excel-Blätter „Flächenverzeichnis“, „Flächen-Summen“, „Fristen“; PDF-Kapitel; KML-ExtendedData `flockmap_steckbrief` (+ `flockmap_pacht` nur mit Admin-Option); JSON-Sicherung inkl. Pacht (nur Admin). Import: KML/GeoJSON (FLIK/Schlag/Nutzung aus Attributen geraten, MultiPolygon → mehrere Flächen) und Shapefile-ZIP (.shp/.dbf/.prj; WGS84 oder ETRS89/UTM 32/33 – Gauß-Krüger nicht unterstützt; nur Außenringe).
 
+## Schnell-Löschen mit ✕ am Objekt (7l)
+
+- **Antippen → ✕ → Löschen:** Ist eine Nadel, Fläche, Linie/Zaun oder ein freier Kreis ausgewählt, steht direkt am Objekt ein rundes rotes ✕ (Trefferfläche 44 px): bei der Nadel rechts oben daneben, bei Flächen/Linien an der angetippten Stelle (aus der Liste gewählt: Flächenmitte bzw. Linienmitte). Tipp auf einen Kreis (Kreis-Palette) zeigt das ✕ am Westrand – gegenüber dem Griff ↔, der im Bearbeiten immer im Osten sitzt.
+- **Kleine Bestätigung:** „Möchtest du das löschen?“ mit Name/Art, [Löschen] (rot) und [Abbrechen]; Tippen daneben oder Esc bricht ab.
+- **Kreis:** löscht nur den Kreis, die Nadel bleibt. **Nadel:** wie bisher samt ihrem Kreis. Freier Kreis: der ganze Eintrag.
+- **Rückgängig:** Danach erscheint der bekannte Hinweis mit Countdown (Einstellung 5/10/20 s). Einträge werden erst nach Ablauf wirklich gelöscht (bis dahin nur ausgeblendet; wird die App vorher geschlossen/versteckt, wird sofort gelöscht). Ein gelöschter Kreis wird beim Rückgängig wieder gespeichert.
+- **Rechte wie beim Löschen im Menü:** Admin alles, Mitarbeiter nur eigene Einträge, „nur ansehen“ sieht kein ✕. Gelöscht wird über dieselbe Warteschlange wie bisher (offline-fähig, Server prüft das Recht).
+- Das ✕ verschwindet beim Abwählen, Schließen der Karte und Tipp auf die leere Karte; im Bearbeiten-/Zeichenmodus gibt es kein ✕.
+
 ## Kreis ohne Radius-Feld, Nadel ohne Datum/Herde, Gruppen mit einem Tipp (7k)
 
 - **Kreis-Blatt kürzer:** Kein Feld „Radius (m)“, keine 10/20/30/50/100-Knöpfe und keine lange ha/m²/Umfang-Zeile mehr (Kreis um Nadel und freier Kreis). Die Größe stellt man nur noch mit dem Griff ↔ am Kreisrand ein. Oben stehen Radius, Hektar und Netze als Chips; darunter Farbe, „Standard-Radius“ (aufklappbar: für neue Kreise merken, auf andere Kreise übernehmen) und die beiden Ein-Tipp-Speicherknöpfe bzw. Speichern/Abbrechen. In der Kreis-Palette auf der Karte heißt der Eintrag jetzt „↔ Größe ändern“ (öffnet das Blatt mit dem Griff).

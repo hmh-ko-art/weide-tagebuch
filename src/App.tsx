@@ -9,6 +9,7 @@ import { MeineDaten } from './recht/MeineDaten'
 // 7j: Weideplan in der Oberfläche ausgeblendet – Daten bleiben (Sicherung/Export/Import), Fristen stehen in der Flächen-Übersicht
 import { heute } from '../server/weideplan.js'
 import { GruppenChips } from './GruppenChips'
+import { InlineName } from './InlineName'
 import type { KartenAnsicht, KartenProps } from './map/props'
 import { FlaechenUebersicht, FristKarten, MessText, SteckbriefDetail, SteckbriefFormular, fristenListe, pachtAusForm, pachtFormAus } from './flaechen/Flaechen'
 import { nadelHtml } from './map/nadel'
@@ -266,6 +267,22 @@ export default function App() {
   }, [])
 
   const [standortSucht, setStandortSucht] = useState(false)
+  // 7m: Name direkt in der Infokarte (gleicher Speicherweg wie „Bearbeiten“: offline/Sync über die Warteschlange)
+  const [nameFokus, setNameFokus] = useState<{ id: string; n: number } | null>(null)
+  const nameSpeichern = (e: Eintrag, t: string) => {
+    const akt = k.eintraege.find((x) => x.id === e.id)
+    if (!akt || akt.titel === t) return
+    k.speichern({ ...akt, titel: t, geaendert: new Date().toISOString() })
+    setMeldung(t ? `Name gespeichert: „${t}“` : 'Name entfernt')
+  }
+  const kreisNameSpeichern = (pe: Pin, stehenId: string | null, t: string) => {
+    const akt = k.eintraege.find((x) => x.id === pe.id)
+    if (!akt || akt.typ !== 'pin') return
+    k.speichern({ ...akt, ...kreisAendern(akt, stehenId, (x) => { const n = { ...x }; if (t) n.name = t; else delete n.name; return n }), geaendert: new Date().toISOString() })
+    setMeldung(t ? `Kreis-Name gespeichert: „${t}“` : 'Kreis-Name entfernt')
+  }
+  const [standortLaedt, setStandortLaedt] = useState(false)
+  const standortKnopfTipp = async () => { setFabAuf(false); setStandortLaedt(true); await meinStandort(); setStandortLaedt(false) }
   const nadelAmStandort = async () => {
     setStandortSucht(true)
     const p = await meinStandort(false)
@@ -283,6 +300,8 @@ export default function App() {
     setAusgewaehlt(e.id)
     setNeuGesetzt({ id: e.id, n: Date.now() })
     setFokus({ ...e.position, n: Date.now(), nurSichtbar: true })
+    // 7m: am PC Namensfeld gleich fokussieren; am Handy nicht (Tastatur würde Karte und Nadel verdecken) – dort „Benennen“ bzw. Tipp auf „Name eingeben“
+    if (!istHandy()) setNameFokus({ id: e.id, n: Date.now() })
   }
 
   const routeZu = useCallback(async (e: Eintrag) => {
@@ -690,16 +709,18 @@ export default function App() {
         {!desktop && modus === 'ansicht' && !formular && fabAuf && k.darfBearbeiten && <div className="fab-schleier" aria-hidden="true" onClick={(x) => { x.stopPropagation(); setFabAuf(false) }} />}
         {!desktop && modus === 'ansicht' && !formular && (
           <div className={`fab-leiste${k.darfBearbeiten ? ' mit-menue' : ''}${fabAuf ? ' auf' : ''}`}>
-            <button className="fab" title="Mein Standort" onClick={() => { setFabAuf(false); meinStandort() }}>📍<span>Standort</span></button>
+            <button className="fab standort-alt" title="Mein Standort" onClick={() => { setFabAuf(false); meinStandort() }}>📍<span>Standort</span></button>
             {k.darfBearbeiten && (
               <>
                 <button className="fab" onClick={() => starteFlaeche()}>⬠<span>Fläche</span></button>
                 <button className="fab" title="Zaun, Weg oder Graben zeichnen" onClick={() => starteZaun()}>〰<span>Zaun</span></button>
                 <button className="fab" title="Freier Kreis (ohne Nadel)" onClick={() => starteKreis()}>◯<span>Kreis</span></button>
                 <button className="fab haupt-fab" onClick={starteNadel}>＋<span>Nadel</span></button>
+                <StandortFab laedt={standortLaedt} onTipp={standortKnopfTipp} />
                 <button className="fab fab-schalter" aria-expanded={fabAuf} aria-label={fabAuf ? 'Menü schließen' : 'Hinzufügen: Nadel, Standort, Fläche, Zaun'} onClick={() => setFabAuf(!fabAuf)}><span className="fab-plus" aria-hidden="true">＋</span></button>
               </>
             )}
+            {!k.darfBearbeiten && <StandortFab laedt={standortLaedt} onTipp={standortKnopfTipp} />}
           </div>
         )}
         {desktop && panel !== 'liste' && (
@@ -715,7 +736,7 @@ export default function App() {
           <div className="info-hinweise">
             {neuGesetztDa && neuGesetzt && (
               <InfoHinweis bis={neuGesetzt.n + rueckS * 1000} dauer={rueckS * 1000} knoepfe={<>
-                <button onClick={() => { const e = k.eintraege.find((x) => x.id === neuGesetzt.id); if (e) setFormular({ neu: false, e }); setNeuGesetzt(null) }}>Benennen</button>
+                <button onClick={() => { const e = k.eintraege.find((x) => x.id === neuGesetzt.id); if (e) { setAusgewaehlt(e.id); setNameFokus({ id: e.id, n: Date.now() }) } setNeuGesetzt(null) }}>Benennen</button>
                 <button onClick={() => { k.loeschen(neuGesetzt.id); if (ausgewaehlt === neuGesetzt.id) abwaehlen(); setNeuGesetzt(null) }}>Rückgängig <Rest bis={neuGesetzt.n + rueckS * 1000} /></button>
               </>}>📍 Nadel gesetzt</InfoHinweis>
             )}
@@ -879,6 +900,8 @@ export default function App() {
             kannNotiz={kannNotiz}
             onSchliessen={abwaehlen}
             onBearbeiten={() => setFormular({ e: auswahl, neu: false })}
+            onName={(t) => nameSpeichern(auswahl, t)}
+            nameFokus={nameFokus?.id === auswahl.id ? nameFokus.n : undefined}
             onLoeschen={() => loeschen(auswahl)}
             onRoute={() => routeZu(auswahl)}
             onRouteAus={routeAus}
@@ -972,10 +995,10 @@ export default function App() {
           const kr = kreisPop.stehenId == null ? pe.kreis : pe.kreiseStehen?.find((x) => x.id === kreisPop.stehenId)
           if (!kr) return null
           const zu = () => setKreisPop(null)
-          if (istFrei(pe)) return <KreisPop x={kreisPop.x} y={kreisPop.y} titel={`${pe.titel || 'Freier Kreis'} · ${kr.radius} m`} farbe={kr.farbe || pinFarbe(pe)} onZu={zu}
+          if (istFrei(pe)) return <KreisPop x={kreisPop.x} y={kreisPop.y} titel={`Freier Kreis · ${kr.radius} m`} name={{ wert: pe.titel, platzhalter: 'Name eingeben', onSpeichern: (t) => nameSpeichern(pe, t) }} farbe={kr.farbe || pinFarbe(pe)} onZu={zu}
             onFarbe={(f) => { k.speichern({ ...pe, farbe: f, ...kreisAendern(pe, null, (x) => ({ ...x, farbe: f })), geaendert: new Date().toISOString() }); kreisVorgabenSetzen(k.karteId || 'lokal', { farbe: f }); setMeldung('Kreisfarbe geändert') }}
             onAendern={() => freierKreisAendern(pe)} onAbgebaut={() => freierKreisWeg(pe)} />
-          return <KreisPop x={kreisPop.x} y={kreisPop.y} titel={`${pe.titel || 'Nadel'}${kreisPop.stehenId ? ' · alter Standort' : ''} · ${kr.radius} m`} farbe={kr.farbe || pinFarbe(pe)} onZu={zu}
+          return <KreisPop x={kreisPop.x} y={kreisPop.y} titel={`an ${pe.titel ? `„${pe.titel}“` : 'Nadel'}${kreisPop.stehenId ? ' · alter Standort' : ''} · ${kr.radius} m`} name={{ wert: kr.name ?? '', platzhalter: 'Kreis-Name eingeben', onSpeichern: (t) => kreisNameSpeichern(pe, kreisPop.stehenId, t) }} farbe={kr.farbe || pinFarbe(pe)} onZu={zu}
             onFarbe={(f) => { k.speichern({ ...pe, ...kreisAendern(pe, kreisPop.stehenId, (x) => ({ ...x, farbe: f })), geaendert: new Date().toISOString() }); kreisVorgabenSetzen(k.karteId || 'lokal', { farbe: f }); setMeldung(`Kreisfarbe: ${farbName(f)}`); zu() }}
             onAendern={kreisPop.stehenId == null ? () => { zu(); setKreisEdit(kreisStart(pe, k.karteId || 'lokal')); setModus('kreis') } : undefined}
             onAbgebaut={() => { k.speichern({ ...pe, ...kreisAendern(pe, kreisPop.stehenId, () => null), geaendert: new Date().toISOString() }); setMeldung('Kreis entfernt – abgebaut ✂️'); zu() }} />
@@ -994,7 +1017,7 @@ function TierAnzeige(p: { summen: { art: Tierart; n: number }[] }) {
   return <>{p.summen.map((x, i) => <Fragment key={x.art}>{i > 0 && ' · '}<span className="tierzahl"><TierSymbol art={x.art} /> {tierText(x.n, x.art)}</span></Fragment>)}</>
 }
 
-function Detail(p: { e: Eintrag; routeInfo: string; darfBearbeiten: boolean; kannBearbeiten: boolean; kannNotiz: (n: Notiz) => boolean; onSchliessen: () => void; onBearbeiten: () => void; onLoeschen: () => void; onRoute: () => void; onRouteAus: () => void; onNotizSpeichern: (n: Notiz) => void; onNotizLoeschen: (id: string) => void; tiereZu: boolean; onTiereUmschalten: () => void; gruppen: Gruppe[]; nummer?: number; kannGruppieren: boolean; onGruppe: (v: string) => void; planZeile?: React.ReactNode }) {
+function Detail(p: { e: Eintrag; routeInfo: string; darfBearbeiten: boolean; kannBearbeiten: boolean; kannNotiz: (n: Notiz) => boolean; onSchliessen: () => void; onBearbeiten: () => void; onLoeschen: () => void; onRoute: () => void; onRouteAus: () => void; onNotizSpeichern: (n: Notiz) => void; onNotizLoeschen: (id: string) => void; tiereZu: boolean; onTiereUmschalten: () => void; gruppen: Gruppe[]; nummer?: number; kannGruppieren: boolean; onGruppe: (v: string) => void; planZeile?: React.ReactNode; onName: (t: string) => void; nameFokus?: number }) {
   const { e } = p
   const gruppe = e.gruppe ? p.gruppen.find((g) => g.id === e.gruppe) : undefined
   const gf = gruppe ? gruppenFarbe(gruppe, p.gruppen) : null
@@ -1024,7 +1047,7 @@ function Detail(p: { e: Eintrag; routeInfo: string; darfBearbeiten: boolean; kan
   return (
     <InfoKarte art="detail" className="sheet detail-karte" klappbar label={`Infokarte: ${e.titel || 'ohne Namen'}`} onZu={p.onSchliessen}
       nach={<Notizen e={e} darfBearbeiten={p.darfBearbeiten} kannNotiz={p.kannNotiz} onSpeichern={p.onNotizSpeichern} onLoeschen={p.onNotizLoeschen} />}
-      titel={<>{symbol} {e.titel || <span className="ohne-name">ohne Namen</span>}</>}
+      titel={<>{symbol} <InlineName wert={e.titel} darf={p.darfBearbeiten && p.kannBearbeiten} onSpeichern={p.onName} fokus={p.nameFokus} label={`Name ${istFrei(e) ? 'des Kreises' : istLinie(e) ? 'der Linie' : e.typ === 'flaeche' ? 'der Fläche' : 'der Nadel'}`} /></>}
       zusammen={zusammen}
       mehr={<>
         <div className="meta">
@@ -1947,4 +1970,13 @@ function LoeschFrage(p: { x: number; y: number; was: string; onLoeschen: () => v
       </div>
     </div>
   </>
+}
+
+// 7m: Handy – runder Standort-Knopf direkt über dem ＋ (ein Tipp: Karte auf den eigenen Standort)
+function StandortFab(p: { laedt: boolean; onTipp: () => void }) {
+  return (
+    <button type="button" className={`fab standort-fab${p.laedt ? ' laedt' : ''}`} aria-label="Auf meinen Standort zentrieren" title="Mein Standort" aria-busy={p.laedt} disabled={p.laedt} onClick={p.onTipp}>
+      <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><circle cx="12" cy="12" r="7" /><circle cx="12" cy="12" r="2.5" fill="currentColor" /><path d="M12 1.5v3.5M12 19v3.5M1.5 12H5M19 12h3.5" /></svg>
+    </button>
+  )
 }

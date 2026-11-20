@@ -1,5 +1,6 @@
 // Kreis um Nadel: schnelle Einzäunung („Tiere/Nadel ist eingezäunt“) statt Fläche zeichnen
 import { FARBEN, FLAECHE_STANDARD, pinFarbe, type LatLng, type Pin } from '../types'
+import { InlineName } from '../InlineName'
 import type { Kreis } from '../../server/flaechen.js'
 import * as FL from '../../server/flaechen.js'
 import { InfoKarte, Tipp } from '../InfoKarte'
@@ -82,7 +83,7 @@ export function KreisDetail(p: { e: Pin; karte: string; darf: boolean; onEinkrei
   const weg = k.gebunden === false && p.e.position ? FL.abstand(k.mitte, p.e.position) : 0
   return (<>
     <div className="kreis-zeile" style={{ borderColor: k.farbe || pinFarbe(p.e) }}>
-      <p><strong>◯ Eingezäunt</strong> · Radius {zahl(k.radius)} m<br /><small>{kreisText(k.radius)}</small><br />
+      <p><strong>◯ {k.name ? `„${k.name}“` : 'Eingezäunt'}</strong> · Radius {zahl(k.radius)} m<br /><small>{kreisText(k.radius)}</small><br />
         <small>{k.gebunden === false ? `bleibt am Standort${weg > k.radius ? ` · Nadel steht ${zahl(weg)} m daneben` : ''}` : 'an Nadel gebunden (wandert mit)'}{k.seit ? ` · seit ${k.seit.split('-').reverse().join('.')}` : ''}</small></p>
       {p.darf && <div className="knoepfe">
         <button onClick={p.onEinkreisen}>◯ Kreis ändern</button>
@@ -132,13 +133,13 @@ export function KreisLeiste(p: { k: KreisEdit; name: string; standard: number; a
 }
 
 // Kleine Farb-Auswahl direkt am Kreis (Tipp auf den Kreis in der Karte)
-export function KreisPop(p: { x: number; y: number; titel: string; farbe: string; onFarbe: (f: string) => void; onAendern?: () => void; onAbgebaut: () => void; onZu: () => void }) {
+export function KreisPop(p: { x: number; y: number; titel: string; name?: { wert: string; onSpeichern: (t: string) => void; platzhalter: string }; farbe: string; onFarbe: (f: string) => void; onAendern?: () => void; onAbgebaut: () => void; onZu: () => void }) {
   const w = 250, h = 130
   const left = Math.max(6, Math.min(window.innerWidth - w - 6, p.x - w / 2))
   const top = p.y + 14 + h < window.innerHeight ? p.y + 14 : Math.max(6, p.y - h - 14)
   return (
     <div className="kreis-pop" role="dialog" aria-label="Farbe des Kreises" style={{ left, top, width: w }} onClick={(x) => x.stopPropagation()}>
-      <div className="kreis-pop-kopf"><span>◯ {p.titel}</span><button className="kreis-pop-zu" aria-label="Schließen" onClick={p.onZu}>✕</button></div>
+      <div className="kreis-pop-kopf"><span className="kreis-pop-titel">{p.name ? <><InlineName wert={p.name.wert} darf onSpeichern={p.name.onSpeichern} platzhalter={p.name.platzhalter} label="Name des Kreises" max={80} /><small>◯ {p.titel}</small></> : <>◯ {p.titel}</>}</span><button className="kreis-pop-zu" aria-label="Schließen" onClick={p.onZu}>✕</button></div>
       <FarbMenue label="Farbe des Kreises" wert={p.farbe} farben={KREIS_FARBEN} onWahl={p.onFarbe} eigene={false} klein />
       <div className="kreis-pop-knoepfe">
         {p.onAendern && <button onClick={p.onAendern} title="Kreis bearbeiten: Größe per Griff am Rand, Farbe, Verhalten">↔ Größe ändern</button>}

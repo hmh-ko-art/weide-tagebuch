@@ -9,7 +9,7 @@ export function kreisZeilen(eintraege: Eintrag[]): KreisZeile[] {
   return eintraege.filter((e): e is Pin => e.typ === 'pin').flatMap((e) => FL.alleKreise(e).map(({ kreis: k, mitte: mi, stehenId }) => {
     const m = FL.kreisMasse(k.radius)
     const farbe = k.farbe || pinFarbe(e)
-    return { e, name: e.titel || '', art: e.infra ? infraArt(e.infra)?.name ?? 'Technik' : e.frei ? 'Freier Kreis' : 'Nadel', radius: k.radius, ha: m.ha, m2: m.m2, umfang: m.umfang, netze: m.netze, bindung: e.frei ? 'freier Kreis (ohne Nadel)' : stehenId ? 'alter Standort (bleibt stehen)' : k.gebunden === false ? 'bleibt am Standort' : 'an Nadel gebunden', farbe, seit: k.seit ?? '', lat: mi.lat, lng: mi.lng }
+    return { e, name: k.name ? (e.titel && !e.frei ? `${k.name} (${e.titel})` : k.name) : e.titel || '', art: e.infra ? infraArt(e.infra)?.name ?? 'Technik' : e.frei ? 'Freier Kreis' : 'Nadel', radius: k.radius, ha: m.ha, m2: m.m2, umfang: m.umfang, netze: m.netze, bindung: e.frei ? 'freier Kreis (ohne Nadel)' : stehenId ? 'alter Standort (bleibt stehen)' : k.gebunden === false ? 'bleibt am Standort' : 'an Nadel gebunden', farbe, seit: k.seit ?? '', lat: mi.lat, lng: mi.lng }
   })).sort((a, b) => a.name.localeCompare(b.name, 'de'))
 }
 export function kreisBlatt(eintraege: Eintrag[]): Blatt[] {

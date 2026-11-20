@@ -89,6 +89,15 @@ Code: `server/flaechen.js` (gemeinsam für Server **und** App: Messen, Steckbrie
 - **Übersicht**: Liste → Flächen → „📊 Übersicht, Pacht & Summen“ (Summen gesamt/Pacht/€ je Jahr/je Art, sortierbare Tabelle, Excel/PDF „Flächenverzeichnis“).
 - **Export/Import**: Excel-Blätter „Flächenverzeichnis“, „Flächen-Summen“, „Fristen“; PDF-Kapitel; KML-ExtendedData `flockmap_steckbrief` (+ `flockmap_pacht` nur mit Admin-Option); JSON-Sicherung inkl. Pacht (nur Admin). Import: KML/GeoJSON (FLIK/Schlag/Nutzung aus Attributen geraten, MultiPolygon → mehrere Flächen) und Shapefile-ZIP (.shp/.dbf/.prj; WGS84 oder ETRS89/UTM 32/33 – Gauß-Krüger nicht unterstützt; nur Außenringe).
 
+## Name direkt bearbeiten, Standort-Knopf (7m)
+
+- **Name inline:** In der Infokarte (Nadel, Fläche, Zaun, freier Kreis) ist der Name oben links direkt ein Textfeld – ohne „Bearbeiten“. Leer steht dort „Name eingeben“. Enter oder Verlassen des Feldes speichert (über die normale Speicher-Warteschlange, also auch offline mit späterem Sync), Esc bricht ab.
+- **Kreise:** Ein freier Kreis nutzt den Namen seiner (unsichtbaren) Nadel. Ein Kreis an einer Nadel bekommt in der Kreis-Palette ein eigenes, optionales Feld „Kreis-Name eingeben“ (gespeichert als `kreis.name`, max. 80 Zeichen; wird in Backup/JSON/KML/CSV mitgeführt).
+- **Rechte:** wie beim Bearbeiten – „Ansehen“ sieht nur den Text, Mitarbeiter können nur eigene Einträge umbenennen.
+- **Autofokus:** Nach dem Setzen einer neuen Nadel springt der Cursor nur am PC direkt ins Namensfeld. Am Handy nicht, weil die Bildschirmtastatur sonst Karte, neue Nadel und den Rückgängig-Hinweis verdecken würde; dort fokussiert „Benennen“ im Hinweis oder ein Tipp auf „Name eingeben“ das Feld.
+- **Standort-Knopf (nur Handy, ≤ 600 px):** runder 📍-Knopf direkt über dem ＋. Ein Tipp zentriert auf den eigenen Standort (gleiche Logik wie bisher, inkl. Fehlermeldung bei verweigerter Ortung). Der doppelte Eintrag „Standort“ im ＋-Menü entfällt am Handy. Tablet/PC unverändert.
+- **Fahrplan (noch nicht gebaut):** Push-Nachrichten für Fristen und Einmalkauf.
+
 ## Schnell-Löschen mit ✕ am Objekt (7l)
 
 - **Antippen → ✕ → Löschen:** Ist eine Nadel, Fläche, Linie/Zaun oder ein freier Kreis ausgewählt, steht direkt am Objekt ein rundes rotes ✕ (Trefferfläche 44 px): bei der Nadel rechts oben daneben, bei Flächen/Linien an der angetippten Stelle (aus der Liste gewählt: Flächenmitte bzw. Linienmitte). Tipp auf einen Kreis (Kreis-Palette) zeigt das ✕ am Westrand – gegenüber dem Griff ↔, der im Bearbeiten immer im Osten sitzt.

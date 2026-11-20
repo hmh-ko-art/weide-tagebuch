@@ -909,3 +909,22 @@ button.chip.gruppe-chip.leer { border-style: dashed; }
 .loesch-frage small { color: #555; }
 .loesch-frage .knoepfe { display: flex; gap: 8px; }
 .loesch-frage .knoepfe button { flex: 1; min-height: 44px; }
+
+/* ---------- 7m: Name direkt bearbeiten, Standort-Knopf (Handy) ---------- */
+.inline-name { flex: 1 1 auto; min-width: 0; width: 100%; max-width: 100%; font: inherit; font-weight: 700; color: inherit; background: transparent; border: 1.5px solid transparent; border-radius: 8px; padding: 2px 6px; margin: -3px 0 -3px -4px; min-height: 34px; box-sizing: border-box; cursor: text; text-overflow: ellipsis; }
+.inline-name::placeholder { color: #889; font-style: italic; font-weight: 500; }
+.inline-name.leer { border: 1.5px dashed #c9c2b0; }
+.inline-name:hover { border-color: #d8d2c2; }
+.inline-name:focus { outline: none; border: 1.5px solid #1e4d2b; background: #fff; box-shadow: 0 0 0 3px rgba(30,77,43,.15); }
+.info-titel:has(.inline-name) { flex: 1 1 auto; }
+.kreis-pop-titel { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; flex: 1; }
+.kreis-pop-titel .inline-name { font-size: .95rem; min-height: 32px; margin: 0; }
+.kreis-pop-titel small { font-weight: 400; color: #5a6a57; font-size: .78rem; padding-left: 2px; }
+.standort-fab { display: none; }
+@media (max-width: 600px) {
+  .fab-leiste .standort-alt { display: none !important; }
+  .fab-leiste .standort-fab { display: flex !important; width: 48px; height: 48px; padding: 0; border-radius: 50%; justify-content: center; align-items: center; color: #1565c0; background: #fff; animation: none; min-width: 0; }
+  .fab-leiste.auf .standort-fab { display: none !important; }
+  .standort-fab.laedt svg { animation: standort-puls 1s ease-in-out infinite; }
+}
+@keyframes standort-puls { 50% { opacity: .35; } }

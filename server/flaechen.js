@@ -229,7 +229,8 @@ export function kreisSauber(k, position) {
   const gebunden = k.gebunden !== false
   const mitte = gebunden ? (pktOk(position) ? { lat: position.lat, lng: position.lng } : null) : (pktOk(k.mitte) ? { lat: k.mitte.lat, lng: k.mitte.lng } : pktOk(position) ? { lat: position.lat, lng: position.lng } : null)
   if (!mitte) return null
-  return ohneLeere({ radius, farbe: typeof k.farbe === 'string' && /^#[0-9a-f]{6}$/i.test(k.farbe) ? k.farbe.toLowerCase() : undefined, gebunden, mitte, seit: tagOk(k.seit) ? k.seit : undefined })
+  const name = typeof k.name === 'string' && k.name.replace(/\s+/g, ' ').trim() ? k.name.replace(/\s+/g, ' ').trim().slice(0, 80) : undefined // 7m: optionaler Kreis-Name
+  return ohneLeere({ radius, name, farbe: typeof k.farbe === 'string' && /^#[0-9a-f]{6}$/i.test(k.farbe) ? k.farbe.toLowerCase() : undefined, gebunden, mitte, seit: tagOk(k.seit) ? k.seit : undefined })
 }
 // Zurückgebliebene Kreise (Nadel wurde von einem festen Kreis weg versetzt): bleiben am alten Standort, jeder mit eigener ID
 export const KREISE_STEHEN_MAX = 50

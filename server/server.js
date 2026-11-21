@@ -1370,8 +1370,44 @@ if (fs.existsSync(DIST_DIR)) {
     ohneCache(res)
     res.set('X-Robots-Tag', 'noindex').type('application/manifest+json').send(JSON.stringify({ ...m, id: start, start_url: start, scope: '/' }, null, 2))
   })
-  app.use(express.static(DIST_DIR, { setHeaders: (res, p) => { if (/\.(html)$|[\\/]sw\.js$|manifest/.test(p)) ohneCache(res); else if (/[\\/]assets[\\/]/.test(p)) res.set('Cache-Control', 'public, max-age=31536000, immutable') } }))
-  app.get(/^\/(?!api\/|healthz).*/, (_req, res) => { ohneCache(res); res.sendFile(path.join(DIST_DIR, 'index.html')) })
+  // 7p: index.html serverseitig ausliefern – bei ?karte=…&zugang=… (bzw. alt &schluessel=…) zeigt <link rel="manifest"> schon im
+  // HTML auf das Manifest DIESER Karte (iOS liest beim „Zum Home-Bildschirm“ das Manifest aus dem ursprünglichen HTML, nicht das per JS
+  // geänderte). Zusätzlich merkt sich ein Cookie Karte+Zugang (iOS ab 17 übernimmt Safari-Cookies in die Home-Bildschirm-App),
+  // damit „/“ ohne Parameter direkt auf die Karte weiterleitet.
+  const KARTE_RE = /^[\w-]{4,40}$/, ZUGANG_RE = /^[\w-]{8,80}$/
+  const KARTE_COOKIE = 'fm_karte'
+  let htmlRoh = null
+  const indexHtml = () => (htmlRoh ??= fs.readFileSync(path.join(DIST_DIR, 'index.html'), 'utf8'))
+  const qs = (v) => (typeof v === 'string' ? v : '')
+  const cookieLesen = (req) => {
+    const m = new RegExp(`(?:^|;\\s*)${KARTE_COOKIE}=([\\w-]{4,40})~([\\w-]{8,80})(?:;|$)`).exec(req.headers.cookie || '')
+    return m ? { id: m[1], zugang: m[2] } : null
+  }
+  const cookieSetzen = (req, res, id, zugang) => res.append('Set-Cookie', `${KARTE_COOKIE}=${id}~${zugang}; Max-Age=${400 * 24 * 3600}; Path=/; HttpOnly; SameSite=Lax${req.secure ? '; Secure' : ''}`)
+  const seiteSenden = (req, res) => {
+    ohneCache(res)
+    let html = indexHtml()
+    const id = qs(req.query.karte), zugang = qs(req.query.zugang) || qs(req.query.schluessel)
+    if (KARTE_RE.test(id)) {
+      const mitZugang = ZUGANG_RE.test(zugang)
+      html = html.replace('href="/manifest.webmanifest"', `href="/manifest.webmanifest?karte=${id}${mitZugang ? `&amp;zugang=${zugang}` : ''}"`)
+      if (mitZugang) cookieSetzen(req, res, id, zugang)
+    }
+    res.type('html').send(html)
+  }
+  app.get('/', (req, res) => {
+    const q = req.query
+    if (!('karte' in q) && !('hof' in q) && !('betreiber' in q) && !('lokal' in q)) {
+      const c = cookieLesen(req)
+      if (c) { res.set('Cache-Control', 'no-store'); return res.redirect(302, `/?karte=${c.id}&zugang=${c.zugang}`) }
+    }
+    seiteSenden(req, res)
+  })
+  app.get('/index.html', seiteSenden)
+  // Gerät vergessen (Zugang gelöscht / Gerätedaten gelöscht / Handy-Karte gewählt): Cookie entfernen
+  app.post('/api/geraet/vergessen', (req, res) => { res.append('Set-Cookie', `${KARTE_COOKIE}=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax${req.secure ? '; Secure' : ''}`); res.json({ ok: true }) })
+  app.use(express.static(DIST_DIR, { index: false, setHeaders: (res, p) => { if (/\.(html)$|[\\/]sw\.js$|manifest/.test(p)) ohneCache(res); else if (/[\\/]assets[\\/]/.test(p)) res.set('Cache-Control', 'public, max-age=31536000, immutable') } }))
+  app.get(/^\/(?!api\/|healthz).*/, seiteSenden)
 }
 
 app.get('/healthz', (_req, res) => res.json({ ok: true, ablage: pg ? 'postgres' : 'datei' }))

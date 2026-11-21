@@ -936,3 +936,17 @@ button.chip.gruppe-chip.leer { border-style: dashed; }
 .uebernahme-frage .knoepfe { display: flex; gap: 8px; }
 .uebernahme-frage .knoepfe button { flex: 1; min-height: 44px; }
 .lokal-link { white-space: nowrap; }
+
+/* 7p: Karte verbinden (Home-Bildschirm-App ohne gemerkte Karte) */
+.verbinden { min-height: 100dvh; display: flex; align-items: center; justify-content: center; padding: calc(env(safe-area-inset-top, 0px) + 16px) 14px calc(env(safe-area-inset-bottom, 0px) + 16px); box-sizing: border-box; background: linear-gradient(160deg, #1e4d2b, #16324a); }
+.verbinden-karte { background: #fff; border-radius: 18px; padding: 20px 18px; width: min(440px, 100%); box-sizing: border-box; display: flex; flex-direction: column; gap: 10px; box-shadow: 0 10px 40px rgba(0,0,0,.35); }
+.verbinden-karte img { border-radius: 14px; align-self: center; }
+.verbinden-karte h1 { margin: 0; text-align: center; font-size: 1.45rem; color: #1e4d2b; }
+.verbinden-karte p { margin: 0; line-height: 1.4; }
+.verbinden-karte label { display: flex; flex-direction: column; gap: 6px; font-weight: 600; }
+.verbinden-karte input { font-size: 16px; padding: 12px; border: 1.5px solid #c9c2b0; border-radius: 10px; min-height: 48px; box-sizing: border-box; width: 100%; }
+.verbinden-karte .knoepfe { display: flex; gap: 8px; }
+.verbinden-karte .knoepfe button { flex: 1; min-height: 48px; }
+.verbinden-karte .fehler { color: #c62828; font-size: .92rem; }
+.verbinden-karte hr { width: 100%; border: none; border-top: 1px solid #e3ded2; margin: 4px 0; }
+.verbinden-lokal { min-height: 46px; }

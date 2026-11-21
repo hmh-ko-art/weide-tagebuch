@@ -18,7 +18,8 @@ self.addEventListener('install', (e) => {
   e.waitUntil((async () => {
     const c = await caches.open(SHELL)
     // einzeln laden: eine fehlende Datei soll nicht die ganze Installation verhindern
-    await Promise.allSettled(PRECACHE.map((u) => fetch(u, { cache: 'reload' }).then((r) => { if (r.ok) return c.put(u === '/' ? '/index.html' : u, r) })))
+    // „/“ kann per Cookie auf eine Karte weiterleiten -> App-Hülle aus /index.html (neutral) laden
+    await Promise.allSettled(PRECACHE.map((u) => fetch(u === '/' ? '/index.html' : u, { cache: 'reload' }).then((r) => { if (r.ok && !r.redirected) return c.put(u === '/' ? '/index.html' : u, r) })))
     await self.skipWaiting()
   })())
 })
@@ -60,8 +61,11 @@ async function kachel(e) {
 }
 async function seite(e) {
   try {
-    const r = await mitZeitlimit(fetch(e.request.url, { cache: 'no-store', credentials: 'same-origin' }), 5000)
-    if (r.ok) { const c = r.clone(); e.waitUntil(caches.open(SHELL).then((s) => s.put('/index.html', c))) }
+    // 7p: Weiterleitungen (z. B. „/“ -> gemerkte Karte per Cookie) unverändert an den Browser geben; nicht als App-Hülle speichern
+    const r = await mitZeitlimit(fetch(e.request.url, { cache: 'no-store', credentials: 'same-origin', redirect: 'manual' }), 5000)
+    if (r.type === 'opaqueredirect') return r
+    // App-Hülle nur aus der neutralen Seite (ohne Karte/Zugang im Manifest-Link) speichern
+    if (r.ok && !new URL(e.request.url).search) { const c = r.clone(); e.waitUntil(caches.open(SHELL).then((s) => s.put('/index.html', c))) }
     return r
   } catch {
     return (await caches.match('/index.html')) || (await caches.match('/')) || Response.error()

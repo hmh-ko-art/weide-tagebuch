@@ -253,7 +253,9 @@ export async function lokaleUebernommeneEntfernen(ids: string[]) {
   await schreibenJetzt()
 }
 const lesenLs = <T,>(k: string, f: T): T => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : f } catch { return f } }
-export const zurHandyKarte = () => { localStorage.removeItem(LETZTE_KARTE); location.href = location.pathname }
+// 7p: auch das Cookie (Karte+Zugang) vergessen, sonst leitet „/“ wieder auf die Karte
+export const geraetCookieVergessen = () => fetch('/api/geraet/vergessen', { method: 'POST' }).catch(() => null)
+export const zurHandyKarte = async () => { localStorage.removeItem(LETZTE_KARTE); await geraetCookieVergessen(); location.href = location.pathname }
 
 // Alles, was dieses Gerät zu einer Karte gespeichert hat, entfernen (Zugang, Kopie, Postausgang)
 export async function geraetVergessen(id: string) {

@@ -1,7 +1,7 @@
 // „Meine Daten“: Auskunft (was ist über mich gespeichert – Server und Gerät), Export als Datei,
 // Daten auf diesem Gerät löschen, eigenen Zugang löschen.
 import { useEffect, useState } from 'react'
-import { zurHandyKarte, type useKarte } from '../daten'
+import { zurHandyKarte, geraetCookieVergessen, type useKarte } from '../daten'
 import { geraetLeeren, geraetUebersicht } from '../speicher'
 import { herunterladen, dateiName } from '../austausch/zeilen'
 
@@ -72,6 +72,7 @@ export function MeineDaten(p: { k: K; onSchliessen: () => void; meldung: (s: str
         const warnung = geraet?.ausgang ? `\n\nAchtung: ${geraet.ausgang} Änderung(en) sind noch nicht gesendet und gehen verloren!` : ''
         if (!confirm(`Alle FlockMap-Daten auf diesem Gerät löschen (Zugänge, Offline-Kopien, Einstellungen, Kartenbilder)? Auf dem Server bleibt alles erhalten – du brauchst danach deinen persönlichen Link wieder.${warnung}`)) return
         await geraetLeeren()
+        await geraetCookieVergessen()
         location.href = location.pathname
       }}>🧹 Daten auf diesem Gerät löschen</button>
 

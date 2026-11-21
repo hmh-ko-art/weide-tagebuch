@@ -7,6 +7,8 @@ import { speicherStarten } from './speicher.ts'
 import { RechtOverlay } from './recht/Recht.tsx'
 import { ErsterStart } from './recht/ErsterStart.tsx'
 import { LETZTE_KARTE, KARTEN_ID } from './daten.ts'
+import { Verbinden } from './Verbinden.tsx'
+import { istStandalone, NUR_HANDY } from './verbindenHilfe.ts'
 
 // Einstieg: ?betreiber (Höfe anlegen), ?hof=ID[&einladung=CODE] (Hof beitreten / mit PIN anmelden), sonst die Karte
 const p = new URLSearchParams(location.search)
@@ -18,11 +20,13 @@ if (!p.has('karte') && !p.has('hof') && !p.has('betreiber') && !p.has('lokal') &
   location.replace(`${location.pathname}?karte=${encodeURIComponent(letzte)}${location.hash}`)
   await new Promise(() => {}) // nichts rendern, die Weiterleitung läuft
 }
+// 7p: Home-Bildschirm-App ohne Karte und ohne gemerkte Karte (iOS: eigener Speicher) -> „Karte verbinden“ statt leerer Handy-Karte
+const verbinden = istStandalone() && !p.has('karte') && !hofId && !p.has('betreiber') && !p.has('lokal') && !localStorage.getItem(NUR_HANDY)
 // Gerätespeicher (IndexedDB) zuerst laden, damit die Karte auch ohne Netz sofort mit dem letzten Stand erscheint
 await speicherStarten()
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    {p.has('betreiber') ? <Betreiber /> : hofId ? <HofEinstieg hofId={hofId} einladung={p.get('einladung')} /> : <App />}
+    {p.has('betreiber') ? <Betreiber /> : verbinden ? <Verbinden /> : hofId ? <HofEinstieg hofId={hofId} einladung={p.get('einladung')} /> : <App />}
     {!p.has('betreiber') && <ErsterStart />}
     <RechtOverlay />
   </StrictMode>,

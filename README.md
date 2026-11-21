@@ -89,6 +89,16 @@ Code: `server/flaechen.js` (gemeinsam für Server **und** App: Messen, Steckbrie
 - **Übersicht**: Liste → Flächen → „📊 Übersicht, Pacht & Summen“ (Summen gesamt/Pacht/€ je Jahr/je Art, sortierbare Tabelle, Excel/PDF „Flächenverzeichnis“).
 - **Export/Import**: Excel-Blätter „Flächenverzeichnis“, „Flächen-Summen“, „Fristen“; PDF-Kapitel; KML-ExtendedData `flockmap_steckbrief` (+ `flockmap_pacht` nur mit Admin-Option); JSON-Sicherung inkl. Pacht (nur Admin). Import: KML/GeoJSON (FLIK/Schlag/Nutzung aus Attributen geraten, MultiPolygon → mehrere Flächen) und Shapefile-ZIP (.shp/.dbf/.prj; WGS84 oder ETRS89/UTM 32/33 – Gauß-Krüger nicht unterstützt; nur Außenringe).
 
+## iPhone-Home-Bildschirm robust: Manifest im HTML, Cookie, „Karte verbinden“ (7p)
+
+- **Ursache (vermutlich):** iOS liest beim „Zum Home-Bildschirm“ das Manifest aus dem ursprünglich geladenen HTML (statisch `/manifest.webmanifest`, `start_url` „/“). Der per JavaScript geänderte Manifest-Link (7o) kommt zu spät; die Home-Bildschirm-App hat zudem einen eigenen, leeren Speicher -> leere Handy-Karte.
+- **Manifest im HTML:** Der Server liefert `index.html` selbst aus. Bei `?karte=…&zugang=…` (oder alt `&schluessel=…`) steht der Manifest-Link schon im HTML auf `/manifest.webmanifest?karte=…&zugang=…` (kein JavaScript nötig).
+- **Cookie:** Beim Aufruf mit Karte + Zugang setzt der Server `fm_karte` (HttpOnly, SameSite=Lax, Secure über https, 400 Tage; WebKit begrenzt auf 1 Jahr). `/` ohne Parameter (und ohne `?lokal`) leitet mit Cookie per 302 auf die Karte inkl. Zugang (iOS ab 17 übernimmt Safari-Cookies in die Home-Bildschirm-App). „Zugang löschen“, „Daten auf diesem Gerät löschen“ und „Karte löschen“ entfernen das Cookie (`POST /api/geraet/vergessen`).
+- **Service Worker:** Seitenaufrufe weiterhin Netz zuerst; Weiterleitungen werden unverändert durchgereicht, als Offline-App-Hülle wird nur die neutrale Seite gespeichert (ohne Karte/Zugang).
+- **Letzter Fallback „Karte verbinden“:** Startet die Home-Bildschirm-App ohne Karte und ohne gemerkte Karte, erscheint statt der leeren Handy-Karte „Karte verbinden“: persönlichen Link einfügen (📋 Einfügen aus der Zwischenablage, falls erlaubt) -> Karte wird gemerkt und geöffnet. Oder „📱 Handy-Karte ohne Konto“ (wird gemerkt, danach keine Nachfrage mehr).
+- **Übernahme:** Nach allen Wegen (Cookie, eingefügter Link, gemerkte Karte) kommt die Frage aus 7o, wenn die Handy-Karte des Symbols Einträge hat.
+- `apple-mobile-web-app-capable`/`apple-touch-icon` bleiben (Vollbild + Symbol); sie bestimmen nicht, welche Adresse startet.
+
 ## Beim Start zum Standort springen (7n)
 
 - **Handy** (schmales Layout ≤ 600 px oder Touch-Gerät unterhalb des PC-Layouts, auch als Home-Bildschirm-App): Beim Öffnen startet die Ortung automatisch. Die Karte lädt sofort wie bisher; sobald die Position da ist, erscheint der blaue Punkt und die Karte springt hin (Zoom 15 wie beim Standort-Knopf, bei sehr ungenauem erstem Wert Zoom 13).

@@ -89,6 +89,9 @@ export default function LeafletKarte(p: KartenProps) {
       cb.current.onLangDruck?.({ lat: q.lat, lng: q.lng }, x, y)
     }
     const c0 = m.getContainer()
+    // 7n: echte Nutzer-Eingaben (nicht programmatische Kamerafahrten) melden
+    const aktion = () => cb.current.onNutzerAktion?.()
+    for (const t of ['pointerdown', 'touchstart', 'wheel', 'keydown'] as const) c0.addEventListener(t, aktion, { passive: true })
     const abbruch = () => { if (langT) clearTimeout(langT); langT = null; start = null }
     c0.addEventListener('pointerdown', (ev) => {
       if (!ev.isPrimary) { abbruch(); return } // zweiter Finger (Zoomen)

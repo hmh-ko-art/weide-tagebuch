@@ -13,17 +13,30 @@ import type { Weideplan, Herde, Belegung, UmtriebOp } from '../server/weideplan.
 // Geteilte Karte: ?karte=ID (ansehen) bzw. ?karte=ID&zugang=KEY (persönlicher Zugang; alt: &schluessel=KEY).
 // Der Zugang wird am Gerät gespeichert und aus der Adresszeile entfernt.
 export const zugangKey = (id: string) => `wt-zugang-${id}`
+// 7o: zuletzt geöffnete Karte (Start über das Home-Bildschirm-Symbol bzw. „/“ springt dorthin, siehe main.tsx)
+export const LETZTE_KARTE = 'wt-letzte-karte'
+export const KARTEN_ID = /^[\w-]{4,40}$/
+// iPhone/iPad im Browser (nicht als Home-Bildschirm-App): iOS übernimmt beim „Zum Home-Bildschirm“ die Adresse der Seite
+// und gibt der App einen eigenen, leeren Speicher -> dort muss der Zugang in der Adresse stehen bleiben
+export function iosBrowser() {
+  const ios = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+  return ios && (navigator as Navigator & { standalone?: boolean }).standalone !== true && !window.matchMedia?.('(display-mode: standalone)').matches
+}
 export function linkParameter() {
   const p = new URLSearchParams(location.search)
   const karteId = p.get('karte')
   const ausLink = p.get('zugang') || p.get('schluessel')
   const einladungLink = p.get('einladung')
   if (karteId && ausLink) localStorage.setItem(zugangKey(karteId), ausLink)
-  if (karteId && (ausLink || einladungLink)) {
-    p.delete('zugang'); p.delete('schluessel'); p.delete('einladung')
-    history.replaceState(null, '', `${location.pathname}?${p.toString()}`)
-  }
   const zugang = karteId ? localStorage.getItem(zugangKey(karteId)) : null
+  if (karteId && KARTEN_ID.test(karteId)) try { localStorage.setItem(LETZTE_KARTE, karteId) } catch { /* egal */ }
+  const zugangInAdresse = !!karteId && !!zugang && iosBrowser()
+  if (karteId) {
+    const q = new URLSearchParams(p)
+    q.delete('zugang'); q.delete('schluessel'); q.delete('einladung')
+    if (zugangInAdresse) q.set('zugang', zugang!)
+    if (q.toString() !== p.toString()) history.replaceState(null, '', `${location.pathname}?${q.toString()}${location.hash}`)
+  }
   // Einladungslink: nur relevant, wenn auf diesem Gerät noch kein Zugang gespeichert ist
   return { karteId, zugang, einladung: karteId && !zugang ? einladungLink : null }
 }
@@ -215,9 +228,37 @@ export function konfliktText(k: Konflikt): string {
 
 export interface Geloescht { am: string; bis: string; hof?: boolean }
 
+// 7o: Handy-Karte (lokal, ohne Server) – Einträge, die noch nicht auf eine geteilte Karte übernommen wurden
+const UEBERNOMMEN = 'wt-lokal-uebernommen'
+export function lokaleKarteOffen(ziel: Eintrag[]): { eintraege: Eintrag[]; gruppen: Gruppe[]; schonDa: string[] } {
+  const fertig = new Set(lesenLs<string[]>(UEBERNOMMEN, []))
+  const da = new Map(ziel.map((e) => [e.id, e]))
+  // gleiche ID mit gleichem Stand liegt schon auf der Karte (z. B. per „Geteilte Karte erstellen“) -> nicht erneut anbieten
+  const gleich = (e: Eintrag) => { const z = da.get(e.id); return !!z && z.typ === e.typ && z.geaendert === e.geaendert && (z.titel || '') === (e.titel || '') }
+  const offen = lesen<Eintrag[]>(cacheKey(null), []).map(migrieren).filter((e) => !fertig.has(e.id))
+  return { eintraege: offen.filter((e) => !gleich(e)), schonDa: offen.filter(gleich).map((e) => e.id), gruppen: lesen<Gruppe[]>(gruppenKey(null), []) }
+}
+export function lokaleMarkieren(ids: string[], an: boolean) {
+  const l = new Set(lesenLs<string[]>(UEBERNOMMEN, []))
+  for (const id of ids) if (an) l.add(id); else l.delete(id)
+  if (l.size) localStorage.setItem(UEBERNOMMEN, JSON.stringify([...l])); else localStorage.removeItem(UEBERNOMMEN)
+}
+// Erst NACH bestätigter Übernahme (alle Einträge auf dem Server) aufrufen: entfernt nur die übernommenen Einträge
+export async function lokaleUebernommeneEntfernen(ids: string[]) {
+  const weg = new Set(ids)
+  const rest = lesen<Eintrag[]>(cacheKey(null), []).filter((e) => !weg.has(e.id))
+  if (rest.length) schreiben(cacheKey(null), rest)
+  else { entfernen(cacheKey(null)); entfernen(gruppenKey(null)) }
+  lokaleMarkieren(ids, false)
+  await schreibenJetzt()
+}
+const lesenLs = <T,>(k: string, f: T): T => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : f } catch { return f } }
+export const zurHandyKarte = () => { localStorage.removeItem(LETZTE_KARTE); location.href = location.pathname }
+
 // Alles, was dieses Gerät zu einer Karte gespeichert hat, entfernen (Zugang, Kopie, Postausgang)
 export async function geraetVergessen(id: string) {
   for (const key of [zugangKey(id), queueKey(id)]) localStorage.removeItem(key)
+  if (localStorage.getItem(LETZTE_KARTE) === id) localStorage.removeItem(LETZTE_KARTE)
   for (const key of [cacheKey(id), gruppenKey(id), metaKey(id), ausgangKey(id), planKey(id), pachtKey(id)]) entfernen(key)
   await schreibenJetzt()
 }

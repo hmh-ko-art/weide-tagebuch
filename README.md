@@ -89,6 +89,20 @@ Code: `server/flaechen.js` (gemeinsam für Server **und** App: Messen, Steckbrie
 - **Übersicht**: Liste → Flächen → „📊 Übersicht, Pacht & Summen“ (Summen gesamt/Pacht/€ je Jahr/je Art, sortierbare Tabelle, Excel/PDF „Flächenverzeichnis“).
 - **Export/Import**: Excel-Blätter „Flächenverzeichnis“, „Flächen-Summen“, „Fristen“; PDF-Kapitel; KML-ExtendedData `flockmap_steckbrief` (+ `flockmap_pacht` nur mit Admin-Option); JSON-Sicherung inkl. Pacht (nur Admin). Import: KML/GeoJSON (FLIK/Schlag/Nutzung aus Attributen geraten, MultiPolygon → mehrere Flächen) und Shapefile-ZIP (.shp/.dbf/.prj; WGS84 oder ETRS89/UTM 32/33 – Gauß-Krüger nicht unterstützt; nur Außenringe).
 
+## Beim Start zum Standort springen (7n)
+
+- **Handy** (schmales Layout ≤ 600 px oder Touch-Gerät unterhalb des PC-Layouts, auch als Home-Bildschirm-App): Beim Öffnen startet die Ortung automatisch. Die Karte lädt sofort wie bisher; sobald die Position da ist, erscheint der blaue Punkt und die Karte springt hin (Zoom 15 wie beim Standort-Knopf, bei sehr ungenauem erstem Wert Zoom 13).
+- **Schnell und genau:** Zuerst `getCurrentPosition` ohne GPS mit `maximumAge` 10 min (schneller erster Wert), parallel `watchPosition` mit GPS zum Verfeinern; die Ortung endet bei ≤ 25 m Genauigkeit, nach 45 s oder sobald man selbst die Karte bedient (Akku).
+- **Kein Wegspringen,** wenn man die Karte vorher berührt/verschiebt/zoomt, ein Objekt öffnet (Liste, Deep-Link), eine Route startet oder den Standort-Knopf benutzt.
+- **Verweigert/nicht verfügbar:** Die Karte bleibt still bei der bisherigen Ansicht; nur bei verweigerter Freigabe einmalig ein dezenter Hinweis.
+- **Einstellung:** Einstellungen → Darstellung → „Beim Start zum Standort springen“ (Standard: an am Handy, aus am PC; pro Gerät). PC unverändert.
+
+## Home-Bildschirm-Symbol öffnet die richtige Karte, Handy-Karte übernehmen (7o)
+
+- **Letzte Karte:** Wer einen Karten-Link öffnet, dessen Gerät merkt sich die Karte (`wt-letzte-karte`, Zugang wie bisher unter `wt-zugang-…`). Ein Start ohne Link („/“, z. B. altes Home-Bildschirm-Symbol) springt sofort dorthin. Die Handy-Karte (nur dieses Gerät) bleibt über Einstellungen → „📱 Handy-Karte öffnen“ bzw. `/?lokal` erreichbar, von dort führt „↩ Zurück zur zuletzt geöffneten geteilten Karte“ zurück.
+- **Manifest pro Karte:** Auf einer Karten-Seite zeigt `<link rel="manifest">` auf `/manifest.webmanifest?karte=ID&zugang=…`; der Server liefert dann `start_url`/`id` = diese Karte inkl. Zugang, `scope` „/“. Ein neu angelegtes Symbol startet direkt auf der Karte – auch auf dem iPhone, wo die Home-Bildschirm-App einen eigenen, leeren Speicher hat. Auf dem iPhone bleibt der Zugang im Safari-Browser zusätzlich in der Adresszeile stehen, weil iOS beim „Zum Home-Bildschirm“ die Seitenadresse übernimmt. (Der Zugang steht damit im Symbol – so wie im persönlichen Link.)
+- **Handy-Karte übernehmen:** Liegen auf der Handy-Karte Einträge, fragt die geteilte Karte (nur mit Bearbeiten-Recht) „X Einträge von der Handy-Karte gefunden – auf diese Karte übernehmen?“ [Übernehmen]/[Später]. Übernehmen speichert über den normalen Weg (Postausgang, offline-fest), neue IDs bei Kollision, Gruppen (gleicher Name = vorhandene Gruppe) werden mitgenommen. Die Handy-Karte wird erst geleert, wenn alle Einträge nachweislich auf dem Server liegen; nicht angekommene bleiben und werden wieder angeboten. „Später“ fragt beim nächsten Start erneut.
+
 ## Name direkt bearbeiten, Standort-Knopf (7m)
 
 - **Name inline:** In der Infokarte (Nadel, Fläche, Zaun, freier Kreis) ist der Name oben links direkt ein Textfeld – ohne „Bearbeiten“. Leer steht dort „Name eingeben“. Enter oder Verlassen des Feldes speichert (über die normale Speicher-Warteschlange, also auch offline mit späterem Sync), Esc bricht ab.

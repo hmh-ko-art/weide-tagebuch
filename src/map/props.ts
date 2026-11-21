@@ -34,6 +34,7 @@ export interface KartenProps {
   onAblegen?: (art: string, p: LatLng) => void // Ziehen & Ablegen aus der Seitenleiste (Desktop): Nadel/Fläche/Zaun an dieser Stelle
   onAuswahl: (id: string, p?: LatLng) => void // p: angetippte Stelle (Linien/Tore)
   onMitte: (p: LatLng) => void
+  onNutzerAktion?: () => void // 7n: Nutzer berührt/scrollt/zieht die Karte (bricht den automatischen Start-Sprung zum Standort ab)
   loeschX?: { schluessel: string; pos: LatLng; art: 'nadel' | 'kreis' | 'form' } | null // 7l: rundes ✕ am ausgewählten Objekt
   onLoeschX?: (x: number, y: number) => void // Bildschirmposition des Tipps (für die Bestätigung)
 }

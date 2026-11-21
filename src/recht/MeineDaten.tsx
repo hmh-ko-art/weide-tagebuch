@@ -1,7 +1,7 @@
 // „Meine Daten“: Auskunft (was ist über mich gespeichert – Server und Gerät), Export als Datei,
 // Daten auf diesem Gerät löschen, eigenen Zugang löschen.
 import { useEffect, useState } from 'react'
-import type { useKarte } from '../daten'
+import { zurHandyKarte, type useKarte } from '../daten'
 import { geraetLeeren, geraetUebersicht } from '../speicher'
 import { herunterladen, dateiName } from '../austausch/zeilen'
 
@@ -91,7 +91,7 @@ export function MeineDaten(p: { k: K; onSchliessen: () => void; meldung: (s: str
                 <button onClick={() => { setLoeschenOffen(false); setVerstanden(false) }}>Abbrechen</button>
                 <button className="gefahr-voll" disabled={!verstanden || laeuft} onClick={async () => {
                   setLaeuft(true)
-                  try { await k.datenschutz.zugangLoeschen(); location.href = location.pathname }
+                  try { await k.datenschutz.zugangLoeschen(); zurHandyKarte() }
                   catch (e) { p.meldung((e as Error).message); setLaeuft(false) }
                 }}>{laeuft ? 'Lösche …' : 'Zugang endgültig löschen'}</button>
               </div>

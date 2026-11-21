@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Karte, { HAT_GOOGLE_KEY } from './map/Karte'
-import { useKarte, zugangsLink, einladungsLink, NAME_MAX, type Ich, type Nutzer } from './daten'
+import { useKarte, zugangsLink, einladungsLink, NAME_MAX, lokaleKarteOffen, lokaleMarkieren, lokaleUebernommeneEntfernen, LETZTE_KARTE, type Ich, type Nutzer } from './daten'
 import { HofPanel, HofEinrichten, ROLLEN } from './Hof'
 import { OfflineAbschnitt } from './OfflineAbschnitt'
 import { Austausch, type ExportFilter } from './Austausch'
@@ -52,6 +52,14 @@ function istHandy() {
 
 // Desktop/PC (≥ 900 px): Werkzeuge (Nadel/Standort/Fläche/Zaun) in der rechten Seitenleiste statt über der Karte
 const DESKTOP_MQ = '(min-width: 900px)'
+// 7n: Beim Start zum eigenen Standort springen – Standard „an“ auf dem Handy (schmales Layout ≤ 600 px oder Touch-Gerät
+// unterhalb des PC-Layouts, auch als Home-Bildschirm-App/PWA); PC/Tablet im Desktop-Layout bleibt wie bisher (Standard „aus“).
+const START_STANDORT_KEY = 'wt-start-standort'
+function startStandortStandard() {
+  const mq = (q: string) => !!window.matchMedia?.(q).matches
+  return mq('(max-width: 600px)') || (mq('(pointer: coarse)') && !mq(DESKTOP_MQ))
+}
+function startStandortAn() { const v = localStorage.getItem(START_STANDORT_KEY); return v === '1' ? true : v === '0' ? false : startStandortStandard() }
 function useDesktop() {
   const [d, setD] = useState(() => !!window.matchMedia?.(DESKTOP_MQ).matches)
   useEffect(() => {
@@ -266,7 +274,122 @@ export default function App() {
     }
   }, [])
 
+  // 7n: beim Start automatisch orten und hinspringen – blockiert nichts (Karte ist sofort da), springt nur,
+  // solange der Nutzer die Karte nicht selbst bewegt/angetippt, nichts geöffnet und keine andere Ansicht angesteuert hat
+  const [startStandort, setStartStandortRoh] = useState(startStandortAn)
+  const setStartStandort = (v: boolean) => { setStartStandortRoh(v); localStorage.setItem(START_STANDORT_KEY, v ? '1' : '0') }
+  const startAbbruch = useRef(false)
+  const startFokusN = useRef(0)
+  useEffect(() => {
+    if (!startStandortAn() || !navigator.geolocation || !window.isSecureContext) return
+    let aus = false, watchId: number | null = null, stopT = 0, gesprungen = false, letzte: LatLng | null = null, letzterZoom = 0, beste = Infinity
+    const fertig = () => { if (watchId != null) navigator.geolocation.clearWatch(watchId); watchId = null; clearTimeout(stopT) }
+    const hinweis = () => {
+      if (localStorage.getItem('wt-start-standort-hinweis')) return
+      localStorage.setItem('wt-start-standort-hinweis', '1')
+      setMeldung('Standort nicht freigegeben – die Karte bleibt bei der bisherigen Ansicht. (Abschalten: Einstellungen → Darstellung)')
+    }
+    const pos = (g: GeolocationPosition) => {
+      if (aus) return
+      const gen = g.coords.accuracy || 9999
+      if (gesprungen && gen > beste) return // späterer ungenauer (z. B. zwischengespeicherter) Wert überschreibt keinen genaueren
+      beste = Math.min(beste, gen)
+      const q = { lat: g.coords.latitude, lng: g.coords.longitude }
+      setStandort(q)
+      const zoom = gen > 1500 ? 13 : 15
+      if (!startAbbruch.current && (!gesprungen || zoom > letzterZoom || (letzte && FL.abstand(letzte, q) > 25))) {
+        startFokusN.current = Date.now()
+        setFokus({ ...q, zoom: Math.max(zoom, letzterZoom), n: startFokusN.current })
+        gesprungen = true; letzte = q; letzterZoom = Math.max(zoom, letzterZoom)
+      }
+      if (gen <= 25 || startAbbruch.current) fertig() // genau genug bzw. Nutzer hat übernommen: Ortung beenden (Akku)
+    }
+    const fehler = (err: GeolocationPositionError) => { if (aus) return; if (err.code === 1) { fertig(); hinweis() } } // sonst still
+    const los = () => {
+      if (aus) return
+      // 1) schneller erster Fix (Netz/WLAN, darf bis 10 min alt sein), 2) parallel genauer verfeinern (GPS), max. 45 s
+      navigator.geolocation.getCurrentPosition(pos, fehler, { enableHighAccuracy: false, maximumAge: 600000, timeout: 8000 })
+      watchId = navigator.geolocation.watchPosition(pos, fehler, { enableHighAccuracy: true, maximumAge: 0, timeout: 30000 })
+      stopT = window.setTimeout(fertig, 45000)
+    }
+    const perm = navigator.permissions?.query?.({ name: 'geolocation' as PermissionName })
+    if (perm) perm.then((st) => { if (st.state === 'denied') hinweis(); else los() }, los)
+    else los()
+    return () => { aus = true; fertig() }
+  }, [])
+  // Abbruch des Start-Sprungs: Objekt/Formular/Modus geöffnet, Route, oder eine andere Ansicht (Liste, Deep-Link, Standort-Knopf) angesteuert
+  useEffect(() => { if (ausgewaehlt || formular || modus !== 'ansicht' || route || (fokus && fokus.n !== startFokusN.current)) startAbbruch.current = true }, [ausgewaehlt, formular, modus, route, fokus])
   const [standortSucht, setStandortSucht] = useState(false)
+  // 7o: Manifest dieser Karte (start_url = diese Karte inkl. Zugang) -> neu angelegtes Home-Bildschirm-Symbol öffnet direkt diese Karte
+  useEffect(() => {
+    const l = document.querySelector<HTMLLinkElement>('link[rel=manifest]')
+    if (!l) return
+    l.href = k.karteId ? `/manifest.webmanifest?karte=${encodeURIComponent(k.karteId)}${k.zugang ? `&zugang=${encodeURIComponent(k.zugang)}` : ''}` : '/manifest.webmanifest'
+  }, [k.karteId, k.zugang])
+  // 7o: Einträge der Handy-Karte (lokal) auf diese Karte übernehmen – nur mit Bearbeiten-Recht, erst wenn der Serverstand da ist
+  const [lokalAngebot, setLokalAngebot] = useState<{ eintraege: Eintrag[]; gruppen: Gruppe[]; schonDa: string[] } | null>(null)
+  const uebernahmeKey = 'wt-lokal-uebernahme'
+  const [uebernahmeCheck, setUebernahmeCheck] = useState(0)
+  useEffect(() => {
+    if (!k.karteId || !k.darfBearbeiten || k.status !== 'verbunden' || localStorage.getItem(uebernahmeKey)) { setLokalAngebot(null); return }
+    try { if (sessionStorage.getItem('wt-lokal-spaeter')) return } catch { /* egal */ }
+    const l = lokaleKarteOffen(k.eintraege)
+    setLokalAngebot(l.eintraege.length ? l : null)
+  }, [k.karteId, k.darfBearbeiten, k.status, k.eintraege])
+  const lokalUebernehmen = () => {
+    const l = lokalAngebot
+    if (!l) return
+    setLokalAngebot(null)
+    const jetzt = new Date().toISOString()
+    const ids = new Set(k.eintraege.map((e) => e.id))
+    // Gruppen: gleiche ID+Name oder gleicher Name -> vorhandene Gruppe; sonst neu anlegen (neue ID bei Kollision)
+    const gMap = new Map<string, string>()
+    for (const g of l.gruppen) {
+      if (!l.eintraege.some((e) => e.gruppe === g.id)) continue
+      const gleich = k.gruppen.find((x) => (x.id === g.id && x.name === g.name)) ?? k.gruppen.find((x) => x.name.trim().toLowerCase() === g.name.trim().toLowerCase())
+      if (gleich) { gMap.set(g.id, gleich.id); continue }
+      const gid = k.gruppen.some((x) => x.id === g.id) || !/^[\w-]{4,40}$/.test(g.id) ? neueId() : g.id
+      k.gruppeSpeichern({ ...g, id: gid }); gMap.set(g.id, gid)
+    }
+    const paare: [string, string][] = []
+    const zuord = new Map<string, string[]>()
+    for (const e of l.eintraege) {
+      const nid = ids.has(e.id) ? neueId() : e.id
+      ids.add(nid)
+      const { gruppe, erstelltVon: _v, ...rest } = e as Eintrag & { erstelltVon?: string }
+      k.speichern({ ...rest, id: nid, geaendert: jetzt, ...(k.ich ? { erstelltVon: k.ich.id } : {}) } as Eintrag)
+      const gz = gruppe ? gMap.get(gruppe) : undefined
+      if (gz) zuord.set(gz, [...(zuord.get(gz) ?? []), nid])
+      paare.push([e.id, nid])
+    }
+    for (const [g, liste] of zuord) k.zuordnen(g, liste)
+    for (const id of l.schonDa) paare.push([id, id]) // liegen schon auf dieser Karte -> nach der Prüfung ebenfalls von der Handy-Karte entfernen
+    lokaleMarkieren(paare.map((x) => x[0]), true)
+    localStorage.setItem(uebernahmeKey, JSON.stringify({ karte: k.karteId, paare, zeit: Date.now(), anzahl: l.eintraege.length }))
+    setMeldung(`${l.eintraege.length} ${l.eintraege.length === 1 ? 'Eintrag wird' : 'Einträge werden'} übernommen …`)
+  }
+  // Handy-Karte erst leeren, wenn ALLE übernommenen Einträge nachweislich auf dem Server liegen
+  useEffect(() => {
+    if (!k.karteId || k.wartend > 0 || k.status !== 'verbunden') return
+    let u: { karte: string; paare: [string, string][]; zeit?: number; anzahl?: number } | null = null
+    try { u = JSON.parse(localStorage.getItem(uebernahmeKey) || 'null') } catch { u = null }
+    if (!u || u.karte !== k.karteId) return
+    let aus = false
+    const pr = u
+    fetch(`/api/karten/${k.karteId}`, { headers: k.zugang ? { 'x-zugang': k.zugang } : {} }).then((r) => (r.ok ? r.json() : null)).then(async (j) => {
+      if (aus || !j) return
+      const da = new Set((j.eintraege as Eintrag[]).map((e) => e.id))
+      const ok = pr.paare.filter((x) => da.has(x[1])), fehlt = pr.paare.filter((x) => !da.has(x[1]))
+      // noch nicht alles da (z. B. gerade erst gesendet): nichts anfassen, in 5 s erneut prüfen; erst nach 20 s gelten fehlende als abgelehnt
+      if (fehlt.length && Date.now() - (pr.zeit ?? 0) < 20000) { setTimeout(() => setUebernahmeCheck((n) => n + 1), 5000); return }
+      if (ok.length) await lokaleUebernommeneEntfernen(ok.map((x) => x[0]))
+      if (fehlt.length) lokaleMarkieren(fehlt.map((x) => x[0]), false) // nicht angekommen -> bleibt auf der Handy-Karte und wird wieder angeboten
+      localStorage.removeItem(uebernahmeKey)
+      const n = pr.anzahl ?? ok.length
+      setMeldung(fehlt.length ? `${Math.max(0, n - fehlt.length)} übernommen, ${fehlt.length} nicht – sie bleiben auf der Handy-Karte.` : `${n} ${n === 1 ? 'Eintrag' : 'Einträge'} von der Handy-Karte übernommen ✓`)
+    }).catch(() => { /* offline: später erneut */ })
+    return () => { aus = true }
+  }, [k.karteId, k.wartend, k.status, k.zugang, k.eintraege.length, uebernahmeCheck])
   // 7m: Name direkt in der Infokarte (gleicher Speicherweg wie „Bearbeiten“: offline/Sync über die Warteschlange)
   const [nameFokus, setNameFokus] = useState<{ id: string; n: number } | null>(null)
   const nameSpeichern = (e: Eintrag, t: string) => {
@@ -667,6 +790,7 @@ export default function App() {
           loeschX={loeschFrage ? null : loeschX}
           onLoeschX={loeschXKlick}
           onMitte={(p) => (mitteRef.current = p)}
+          onNutzerAktion={() => { startAbbruch.current = true }}
         />
 
 
@@ -968,7 +1092,7 @@ export default function App() {
           </section>
         )}
         {panel === 'austausch' && <Austausch k={k} eintraege={anzeige.eintraege} filter={exportFilter} meldung={setMeldung} onSchliessen={() => setPanel(null)} />}
-        {panel === 'einstellungen' && <Einstellungen k={k} onMeineDaten={() => setPanel('meinedaten')} onAustausch={() => { setExportFilter(null); setPanel('austausch') }} onSchliessen={() => setPanel(null)} meldung={setMeldung} onNutzer={() => setPanel(k.hof?.rolle ? 'hof' : 'nutzer')} onHof={() => setPanel('hof')} onProfil={() => setPanel('profil')} kopfFarbe={kopfFarbe} setKopfFarbe={setKopfFarbe} kartenAnsicht={kartenAnsicht} setKartenAnsicht={setKartenAnsicht} rueckS={rueckS} setRueckS={setRueckS} schwelle={schwelle} setSchwelle={setSchwelle} />}
+        {panel === 'einstellungen' && <Einstellungen k={k} onMeineDaten={() => setPanel('meinedaten')} onAustausch={() => { setExportFilter(null); setPanel('austausch') }} onSchliessen={() => setPanel(null)} meldung={setMeldung} onNutzer={() => setPanel(k.hof?.rolle ? 'hof' : 'nutzer')} onHof={() => setPanel('hof')} onProfil={() => setPanel('profil')} kopfFarbe={kopfFarbe} setKopfFarbe={setKopfFarbe} kartenAnsicht={kartenAnsicht} setKartenAnsicht={setKartenAnsicht} startStandort={startStandort} setStartStandort={setStartStandort} rueckS={rueckS} setRueckS={setRueckS} schwelle={schwelle} setSchwelle={setSchwelle} />}
         {panel === 'meinedaten' && <MeineDaten k={k} meldung={setMeldung} onSchliessen={() => setPanel(null)} />}
         {k.geloescht && panel !== 'austausch' && <GeloeschtHinweis k={k} meldung={setMeldung} onExport={() => { setExportFilter(null); setPanel('austausch') }} />}
         {k.einladung && !k.ich && k.status !== 'verbinde' && <Beitreten k={k} />}
@@ -978,6 +1102,15 @@ export default function App() {
 
         {neueVersion && (
           <div className="update-hinweis" role="status">Neue Version von FlockMap verfügbar<button className="primaer" onClick={() => location.reload()}>Jetzt neu laden</button><button className="x" aria-label="Später" onClick={() => setNeueVersion(false)}><Icon name="x" /></button></div>
+        )}
+        {lokalAngebot && (
+          <div className="uebernahme-frage" role="dialog" aria-label="Einträge der Handy-Karte übernehmen">
+            <p><strong>{lokalAngebot.eintraege.length} {lokalAngebot.eintraege.length === 1 ? 'Eintrag' : 'Einträge'} von der Handy-Karte gefunden</strong> – auf diese Karte übernehmen?<br /><small>Die Handy-Karte liegt nur auf diesem Gerät. Sie wird erst geleert, wenn alles sicher auf dem Server ist.</small></p>
+            <div className="knoepfe">
+              <button onClick={() => { try { sessionStorage.setItem('wt-lokal-spaeter', '1') } catch { /* egal */ } setLokalAngebot(null) }}>Später</button>
+              <button className="primaer" onClick={lokalUebernehmen}>Übernehmen</button>
+            </div>
+          </div>
         )}
         {loeschFrage && (() => {
           const e = k.eintraege.find((x) => x.id === loeschFrage.id)
@@ -1654,7 +1787,7 @@ function Liste(p: ListeProps) {
   )
 }
 
-function Einstellungen(p: { k: ReturnType<typeof useKarte>; onMeineDaten: () => void; onAustausch: () => void; onSchliessen: () => void; meldung: (s: string) => void; onNutzer: () => void; onHof: () => void; onProfil: () => void; kopfFarbe: string | null; setKopfFarbe: (f: string | null) => void; kartenAnsicht: KartenAnsicht; setKartenAnsicht: (v: KartenAnsicht) => void; rueckS: number; setRueckS: (n: number) => void; schwelle: number; setSchwelle: (n: number) => void }) {
+function Einstellungen(p: { k: ReturnType<typeof useKarte>; onMeineDaten: () => void; onAustausch: () => void; onSchliessen: () => void; meldung: (s: string) => void; onNutzer: () => void; onHof: () => void; onProfil: () => void; kopfFarbe: string | null; setKopfFarbe: (f: string | null) => void; kartenAnsicht: KartenAnsicht; setKartenAnsicht: (v: KartenAnsicht) => void; startStandort: boolean; setStartStandort: (v: boolean) => void; rueckS: number; setRueckS: (n: number) => void; schwelle: number; setSchwelle: (n: number) => void }) {
   const { k } = p
   const [name, setName] = useState('Weidekarte Deichschäferei')
   const [kartenName, setKartenName] = useState(k.kartenName)
@@ -1677,12 +1810,14 @@ function Einstellungen(p: { k: ReturnType<typeof useKarte>; onMeineDaten: () => 
           <p className="hinweis">Diese Karte liegt nur auf diesem Gerät. Teile sie, damit Mitarbeiter, Familie oder Deichverband Nadeln sehen und bearbeiten können.</p>
           <label>Name der Karte<input value={name} onChange={(e) => setName(e.target.value)} /></label>
           <button className="primaer" onClick={() => k.teilen(name).catch((e) => p.meldung(e.message))}>Geteilte Karte erstellen</button>
+          {localStorage.getItem(LETZTE_KARTE) && <button onClick={() => { location.href = `${location.pathname}?karte=${encodeURIComponent(localStorage.getItem(LETZTE_KARTE)!)}` }}>↩ Zurück zur zuletzt geöffneten geteilten Karte</button>}
         </>
       ) : (
         <>
           <p className="hinweis">Status: {k.status === 'verbunden' ? 'live verbunden' : k.status}. Änderungen erscheinen sofort bei allen, die den Link offen haben.</p>
           <button onClick={() => kopieren(basis)}>🔗 Link zum Ansehen kopieren</button>
           <p className="hinweis klein">Der Ansehen-Link ist nur zum Lesen. Zum Mitarbeiten bekommt jede Person einen eigenen Zugangs-Link vom Admin.</p>
+          <p className="hinweis klein">Das Home-Bildschirm-Symbol und der Start über die Adresse ohne Link öffnen diese Karte. <a href="?lokal" className="lokal-link">📱 Handy-Karte (nur dieses Gerät) öffnen</a></p>
           {k.istAdmin && <button className="primaer" onClick={p.onNutzer}>👥 {k.hof ? 'Leute einladen / Personen verwalten' : 'Nutzer verwalten / Leute einladen'}</button>}
 
           <h3>Hof</h3>
@@ -1742,6 +1877,8 @@ function Einstellungen(p: { k: ReturnType<typeof useKarte>; onMeineDaten: () => 
           <option value="karte">🗺 Karte (OpenStreetMap)</option>
         </select>
       </label>
+      <label className="haken start-standort"><input type="checkbox" checked={p.startStandort} onChange={(e) => p.setStartStandort(e.target.checked)} />Beim Start zum Standort springen</label>
+      <p className="hinweis klein">Beim Öffnen der App wird der eigene Standort gesucht und die Karte dorthin zentriert – nur, solange du die Karte nicht selbst bewegst. Standard: an auf dem Handy, aus am PC. Nur auf diesem Gerät, wirkt ab dem nächsten Start.</p>
       <div className="kopf-farbe">
         <label className="frei">Farbe der Kopfleiste<input type="color" value={p.kopfFarbe || KOPF_STANDARD} onChange={(e) => p.setKopfFarbe(e.target.value)} /></label>
         <button onClick={() => p.setKopfFarbe(null)} disabled={!p.kopfFarbe}>Standard</button>

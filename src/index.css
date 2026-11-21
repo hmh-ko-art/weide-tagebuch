@@ -928,3 +928,11 @@ button.chip.gruppe-chip.leer { border-style: dashed; }
   .standort-fab.laedt svg { animation: standort-puls 1s ease-in-out infinite; }
 }
 @keyframes standort-puls { 50% { opacity: .35; } }
+
+/* 7o: Einträge der Handy-Karte übernehmen */
+.uebernahme-frage { position: fixed; z-index: 1500; left: 50%; transform: translateX(-50%); top: calc(env(safe-area-inset-top, 0px) + 66px); width: min(420px, calc(100vw - 20px)); background: #fff; border-radius: 14px; padding: 12px 14px; box-shadow: 0 6px 24px rgba(0,0,0,.3); box-sizing: border-box; border-left: 5px solid var(--gruen); }
+.uebernahme-frage p { margin: 0 0 10px; line-height: 1.35; }
+.uebernahme-frage small { color: #555; }
+.uebernahme-frage .knoepfe { display: flex; gap: 8px; }
+.uebernahme-frage .knoepfe button { flex: 1; min-height: 44px; }
+.lokal-link { white-space: nowrap; }

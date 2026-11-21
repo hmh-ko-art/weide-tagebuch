@@ -1358,6 +1358,18 @@ app.get('/api/karten/:id/live', (req, res) => {
 if (fs.existsSync(DIST_DIR)) {
   // index.html und sw.js nie aus dem Browser-Cache ohne Rückfrage (neue Versionen sofort); Assets haben Hash im Namen
   const ohneCache = (res) => res.set('Cache-Control', 'no-cache')
+  // 7o: Manifest pro Karte – ein neu angelegtes Home-Bildschirm-Symbol startet direkt auf dieser Karte (inkl. persönlichem Zugang,
+  // nötig für iOS: dort hat die Home-Bildschirm-App einen eigenen, leeren Speicher). Ohne ?karte= das normale Manifest.
+  app.get('/manifest.webmanifest', (req, res, next) => {
+    const id = typeof req.query.karte === 'string' ? req.query.karte : ''
+    const zugang = typeof req.query.zugang === 'string' ? req.query.zugang : ''
+    if (!/^[\w-]{4,40}$/.test(id)) return next()
+    let m
+    try { m = JSON.parse(fs.readFileSync(path.join(DIST_DIR, 'manifest.webmanifest'), 'utf8')) } catch { return next() }
+    const start = `/?karte=${id}${/^[\w-]{8,80}$/.test(zugang) ? `&zugang=${zugang}` : ''}`
+    ohneCache(res)
+    res.set('X-Robots-Tag', 'noindex').type('application/manifest+json').send(JSON.stringify({ ...m, id: start, start_url: start, scope: '/' }, null, 2))
+  })
   app.use(express.static(DIST_DIR, { setHeaders: (res, p) => { if (/\.(html)$|[\\/]sw\.js$|manifest/.test(p)) ohneCache(res); else if (/[\\/]assets[\\/]/.test(p)) res.set('Cache-Control', 'public, max-age=31536000, immutable') } }))
   app.get(/^\/(?!api\/|healthz).*/, (_req, res) => { ohneCache(res); res.sendFile(path.join(DIST_DIR, 'index.html')) })
 }

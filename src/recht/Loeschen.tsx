@@ -1,6 +1,6 @@
 // Karte / Hof löschen mit starker Bestätigung (Namen eintippen + Sicherungs-Häkchen), 30 Tage Papierkorb.
 import { useState } from 'react'
-import type { useKarte } from '../daten'
+import { zurHandyKarte, type useKarte } from '../daten'
 
 type K = ReturnType<typeof useKarte>
 export const datumText = (iso: string) => (iso ? new Date(iso).toLocaleDateString('de-DE', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Europe/Berlin' }) : '–')
@@ -79,7 +79,7 @@ export function GeloeschtHinweis(p: { k: K; onExport: () => void; meldung: (s: s
       ) : (
         <LoeschBestaetigung name={name} was={g.hof ? 'Hof' : 'Karte'} knopf="Endgültig löschen" endgueltig eingabe={eingabe} setName={setEingabe}
           onAbbrechen={() => { setEndgueltig(false); setEingabe('') }} onFehler={p.meldung}
-          onLoeschen={async () => { await k.datenschutz.endgueltig(eingabe); location.href = location.pathname }} />
+          onLoeschen={async () => { await k.datenschutz.endgueltig(eingabe); zurHandyKarte() }} />
       )}
     </div>
   )

@@ -5,6 +5,8 @@ export function kvWert(x: unknown): number | undefined
 export function spannungSauber(l: unknown): Messung[]
 export function spannungEintragen<T>(e: T, m: Partial<Messung>): T
 export function spannungLetzte(e: unknown): Messung | null
+export const ZAUN_ARTEN: string[]
+export function mitSpannung(e: unknown): boolean
 export function kvText(kv: number): string
 export function spannungFeld(e: Record<string, unknown>): void
 export function heute(d?: Date): string

@@ -84,7 +84,7 @@ export function steckbriefSauber(s) {
 }
 // Eintrag: Steckbrief nur an Flächen; Fehlertext oder null
 export function flaecheSauber(e) {
-  spannungFeld(e) // Zaunspannung: nur an normalen Nadeln
+  spannungFeld(e) // Zaunspannung: an normalen Nadeln, Flächen, Zäunen (7q)
   // Kreis um Nadel („eingezäunt“): nur an Nadeln
   if (e.typ === 'pin' && e.frei === true) {
     // freier Kreis: Mitte = Position, ohne Kreis gibt es ihn nicht

@@ -32,6 +32,8 @@ export const infraArt = (w) => INFRA_ARTEN.find((a) => a.wert === w) ?? null
 export const INFRA_ALT = ['tor', 'unterstand', 'salz']
 export const infraWaehlbar = (aktuell) => INFRA_ARTEN.filter((a) => !INFRA_ALT.includes(a.wert) || a.wert === aktuell)
 export const istLinie = (e) => e?.typ === 'linie'
+// 7q: Zaun = Linie, die kein Weg/Graben ist (Tiere + Spannung wie am Kreis)
+export const istZaun = (e) => e?.typ === 'linie' && !['weg', 'graben'].includes(e.linienArt ?? 'sonstiges')
 export const istInfra = (e) => e?.typ === 'pin' && !!infraArt(e.infra)
 // „normale“ Einträge (Nadeln mit Tieren/Notizen, Flächen) – ohne Zäune/Technik
 // Freier Kreis (7h): eigener Kreis ohne Nadel – intern eine Nadel mit frei: true, Mitte = Position
@@ -162,7 +164,8 @@ export function eintragSauber(e) {
       if (!e.tore.length) delete e.tore
     } else delete e.tore
     delete e.infra; delete e.geraet; delete e.frei; delete e.position; delete e.herde; delete e.gruppe; delete e.tierlisteModus
-    e.einheiten = [] // Linien haben keine Tiere
+    if (!['weg', 'graben'].includes(e.linienArt) && Array.isArray(e.einheiten)) e.einheiten = e.einheiten.filter((x) => x && typeof x.art === 'string' && Number.isFinite(x.anzahl) && x.anzahl >= 0).slice(0, 50) // 7q: Zäune dürfen Tiere haben (wie Kreise)
+    else e.einheiten = [] // Wege/Gräben haben keine Tiere
     return null
   }
   delete e.linienArt; delete e.geschlossen; delete e.tore
@@ -188,6 +191,22 @@ export function eintragSauber(e) {
 // Zaun um eine Fläche: geschlossene Linie entlang des Umrisses, mit der Fläche verknüpft
 export function zaunUmFlaeche(f, art, id, jetzt) {
   return { id, typ: 'linie', titel: `Zaun ${f.titel || 'Fläche'}`.slice(0, 200), punkte: f.punkte.map((p) => ({ lat: p.lat, lng: p.lng })), geschlossen: true, flaeche: f.id, linienArt: linienArt(art).wert, notizen: [], erstellt: jetzt, geaendert: jetzt }
+}
+
+// 7q: pro Fläche nur EIN Zaun. Liefert den schon vorhandenen Zaun einer Fläche (ohne den Eintrag selbst), sonst null
+export function zaunVonFlaeche(liste, flaecheId, ohneId) {
+  if (!flaecheId) return null
+  return liste.find((x) => x && x.typ === 'linie' && x.flaeche === flaecheId && x.id !== ohneId) ?? null
+}
+// Import/Wiederherstellen: bei einem zweiten Zaun für dieselbe Fläche nur die Verknüpfung lösen (Linie bleibt, nichts geht verloren)
+export function zaeuneEinzeln(neue, vorhandene = []) {
+  const belegt = new Set(vorhandene.filter((x) => x && x.typ === 'linie' && x.flaeche).map((x) => x.flaeche))
+  for (const e of neue) {
+    if (!e || e.typ !== 'linie' || !e.flaeche) continue
+    if (belegt.has(e.flaeche)) delete e.flaeche
+    else belegt.add(e.flaeche)
+  }
+  return neue
 }
 
 // Import (My Maps/GeoJSON): Linien- und Symbolart am Namen erkennen

@@ -35,6 +35,8 @@ const labelHtml = (e: Eintrag, zu: boolean, schwelle: number, mitName = true) =>
     : liste
   return name || tiere || volt ? `<div class="pin-label">${name}${tiere}${volt}</div>` : ''
 }
+// 7q: Flächen und Zäune zeigen Tiere + Spannung wie Nadel/Kreis (Name · 🐑 n · ⚡ kV)
+const zusatzHtml = (e: Eintrag, schwelle: number) => `${tierSummen([e]).map((x) => `<span class="label-tiere">${tierSymbolHtml(x.art)}${x.n}</span>`).join('')}${voltHtml(e, schwelle)}`
 const pinIcon = (aktiv: boolean, label: string, farbe: string, hervor: boolean, nr?: number) =>
   L.divIcon({
     className: `pin-icon${nr ? ' mit-nummer' : ''}`,
@@ -197,7 +199,7 @@ export default function LeafletKarte(p: KartenProps) {
           L.circleMarker(ll(punktBei(e, t.pos)), { radius: 11, opacity: 0, fillOpacity: 0 }).on('click', (ev) => { L.DomEvent.stopPropagation(ev); cb.current.onAuswahl(e.id, punktBei(e, t.pos)) }).addTo(g)
         }
         if (p.beschriftung || aktiv) {
-          const txt = `${e.titel.trim().replace(/[<>&"]/g, '')}${e.titel.trim() ? ' · ' : ''}${laengeText(linienLaenge(e))}`
+          const txt = `${e.titel.trim().replace(/[<>&"]/g, '')}${e.titel.trim() ? ' · ' : ''}${laengeText(linienLaenge(e))}${zusatzHtml(e, p.spannungSchwelle ?? 4)}`
           L.tooltip({ permanent: true, direction: 'center', className: 'linie-label', interactive: false }).setLatLng(ll(punktBei(e, gesamtLaenge(e) / 2))).setContent(txt).addTo(g)
         }
       } else if (e.typ === 'pin' && e.frei) {
@@ -227,7 +229,9 @@ export default function LeafletKarte(p: KartenProps) {
         const f = pinFarbe(e), h = hervor.has(f) && !aktiv
         const poly = L.polygon(e.punkte.map((q) => [q.lat, q.lng] as [number, number]), { color: aktiv ? '#fff' : f, fillColor: f, weight: aktiv ? 4 : h ? 3.5 : 2, opacity: 1, fillOpacity: aktiv ? 0.35 : h ? 0.38 : 0.25 })
         // Nur beschriften, wenn die Fläche einen Namen hat
-        if (p.beschriftung && e.titel.trim()) poly.bindTooltip(e.titel, { permanent: true, direction: 'center', className: 'flaeche-label' })
+        const zusatz = zusatzHtml(e, p.spannungSchwelle ?? 4), fname = e.titel.trim().replace(/[<>&"]/g, '')
+        if (p.beschriftung && (fname || zusatz)) poly.bindTooltip(`${fname}${zusatz}`, { permanent: true, direction: 'center', className: 'flaeche-label' })
+        else if (voltHtml(e, p.spannungSchwelle ?? 4)) poly.bindTooltip(voltHtml(e, p.spannungSchwelle ?? 4), { permanent: true, direction: 'center', className: 'flaeche-label nur-volt' })
         // Tipp auf eine Fläche: Stelle mitgeben (im Setz-Modus kommt die Nadel genau dorthin, z. B. eine Tränke in der Weide)
         poly.on('click', (ev: L.LeafletMouseEvent) => { L.DomEvent.stopPropagation(ev); cb.current.onAuswahl(e.id, { lat: ev.latlng.lat, lng: ev.latlng.lng }) }).addTo(g)
       }
@@ -264,7 +268,7 @@ export default function LeafletKarte(p: KartenProps) {
     b.punkte.forEach((q, i) => {
       const m = L.marker(ll(q), { icon: punktIcon(b.sel === i), draggable: true, zIndexOffset: 1000, autoPan: true })
       m.on('click', (ev) => { L.DomEvent.stopPropagation(ev); cb.current.onPunktWahl?.(i) })
-      m.on('dragstart', () => cb.current.onPunktWahl?.(i))
+      // 7q: kein Auswählen beim Ziehbeginn – das zeichnete die Marker neu und brach das Ziehen ab (Auswahl kommt mit dem Ablegen)
       m.on('dragend', () => { const z = m.getLatLng(); cb.current.onPunktZiehen?.(i, { lat: z.lat, lng: z.lng }) })
       m.addTo(g)
     })

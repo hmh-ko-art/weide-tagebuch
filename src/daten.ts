@@ -206,7 +206,7 @@ async function mitZeitlimit(url: string, init: RequestInit, ms = 15000) {
   const t = setTimeout(() => ac.abort(), ms)
   try { return await fetch(url, { ...init, signal: ac.signal }) } finally { clearTimeout(t) }
 }
-export interface Konflikt { art: 'geaendert' | 'wiederhergestellt' | 'nicht-geloescht' | 'plan-geaendert' | 'umtrieb-doppelt' | 'umtrieb-weg' | 'umtrieb-zurueck' | 'geprueft-weg' | 'spannung-weg' | 'frist-weg' | 'pacht-weg' | 'pacht-geaendert'; titel: string; mit?: string; gewonnen?: boolean }
+export interface Konflikt { art: 'geaendert' | 'wiederhergestellt' | 'nicht-geloescht' | 'plan-geaendert' | 'umtrieb-doppelt' | 'umtrieb-weg' | 'umtrieb-zurueck' | 'geprueft-weg' | 'spannung-weg' | 'frist-weg' | 'pacht-weg' | 'pacht-geaendert' | 'zaun-doppelt'; titel: string; mit?: string; gewonnen?: boolean }
 export function konfliktText(k: Konflikt): string {
   const wer = k.mit ? k.mit : 'jemand anderes'
   const t = k.titel ? `„${k.titel}“` : 'Ein Eintrag'
@@ -217,7 +217,8 @@ export function konfliktText(k: Konflikt): string {
   if (k.art === 'frist-weg') return `Eine Frist${k.titel ? ` an „${k.titel}“` : ''} wurde nicht als erledigt gespeichert, weil es sie inzwischen nicht mehr gibt.`
   if (k.art === 'pacht-weg') return 'Pachtdaten wurden nicht gespeichert, weil die Fläche inzwischen gelöscht wurde.'
   if (k.art === 'pacht-geaendert') return k.gewonnen ? `Pacht „${k.titel}“: wurde gleichzeitig auf einem anderen Gerät geändert – deine Fassung ist neuer und gilt.` : `Pacht „${k.titel}“: wurde auf einem anderen Gerät später geändert – diese Fassung gilt, deine Änderung wurde verworfen.`
-  if (k.art === 'spannung-weg') return 'Eine Spannungsmessung wurde nicht gespeichert, weil die Nadel inzwischen gelöscht wurde.'
+  if (k.art === 'spannung-weg') return 'Eine Spannungsmessung wurde nicht gespeichert, weil der Eintrag inzwischen gelöscht wurde.'
+  if (k.art === 'zaun-doppelt') return `Zaun nicht gespeichert: ${k.titel ? `die Fläche „${k.titel}“` : 'Diese Fläche'} hat schon einen Zaun${k.mit ? ` (von ${k.mit})` : ''}. Pro Fläche gibt es nur einen Zaun – bitte den vorhandenen bearbeiten oder entfernen.`
   if (k.art === 'geprueft-weg') return 'Eine Geräte-Prüfung wurde nicht gespeichert, weil das Weidezaungerät inzwischen gelöscht wurde.'
   if (k.art === 'nicht-geloescht') return `${t} wurde nicht gelöscht, weil ${wer} den Eintrag inzwischen geändert hat.`
   if (k.art === 'wiederhergestellt') return `${t} war inzwischen gelöscht worden – deine Änderung hat den Eintrag wiederhergestellt.`

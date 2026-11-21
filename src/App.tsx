@@ -14,6 +14,7 @@ import type { KartenAnsicht, KartenProps } from './map/props'
 import { FlaechenUebersicht, FristKarten, MessText, SteckbriefDetail, SteckbriefFormular, fristenListe, pachtAusForm, pachtFormAus } from './flaechen/Flaechen'
 import { nadelHtml } from './map/nadel'
 import { SpannungZeile } from './spannung/Spannung'
+import { ueberlappung } from './geo/ueberlapp'
 import { InfoKarte, InfoHinweis, Tipp } from './InfoKarte'
 import { FarbMenue } from './FarbMenue'
 import { schwelleLesen, schwelleSetzen } from './spannung/schwelle'
@@ -22,7 +23,7 @@ import { FreiKreisDetail, KreisDetail, KreisLeiste, KreisPop, kreisAendern, krei
 import * as FL from '../server/flaechen.js'
 import type { Pacht } from '../server/flaechen.js'
 import { InfraDetail, InfraFormular, InfraListe, InfraSymbol, LinienSymbol, useInfraAus, type PruefNeu } from './infra/Infra'
-import { geraeteFaellig, istFrei, istInfra, istLinie, istNormal, laengeText, linienArt, linienLaenge, naechsteStelle, netzAnzahl, pruefungEintragen, zaunUmFlaeche, TOR_BREITE, gesamtLaenge } from '../server/infrastruktur.js'
+import { geraeteFaellig, istFrei, istInfra, istLinie, istNormal, istZaun, zaunVonFlaeche, laengeText, linienArt, linienLaenge, naechsteStelle, netzAnzahl, pruefungEintragen, zaunUmFlaeche, TOR_BREITE, gesamtLaenge } from '../server/infrastruktur.js'
 import { KarteLoeschenAbschnitt, GeloeschtHinweis } from './recht/Loeschen'
 import { googleNaviLink, routeBerechnen, routeText } from './route'
 import { eintragDatum, tagText, monatText, istAusblendbar, TIERARTEN, tierText, tierSymbolHtml, tierSummen, type Einheit, type Tierart, FARBEN, FLAECHEN_FARBEN, FLAECHE_STANDARD, START, STANDARD_FARBE, datum, farbName, hektar, mitte, neueId, notizenSortiert, pinFarbe, gruppenVorschlag, gruppenFarbe, gruppenOrdnung, naechsteGruppenFarbe, tierKurz, GRUPPEN_FARBEN, type Gruppe, type Eintrag, type Notiz, type Fokus, type LatLng, type Route, type Pin } from './types'
@@ -566,6 +567,22 @@ export default function App() {
   }
   // Eckpunkte bearbeiten
   const punkteStart = (e: Eintrag) => { if (e.typ === 'pin') return; setBearbeiten({ id: e.id, punkte: e.punkte, sel: null }); setModus('punkte') }
+  // 7q: Ecke ziehen/einfügen – nicht in eine Nachbarfläche hinein: der Punkt bleibt an der Grenze stehen (kurzer Hinweis)
+  const punktSetzen = (i: number, q: LatLng, einfuegen: boolean) => {
+    const b = bearbeiten, e = b && k.eintraege.find((x) => x.id === b.id)
+    if (!b || !e) return
+    const n = b.punkte.length
+    const von = einfuegen ? { lat: (b.punkte[(i - 1 + n) % n].lat + b.punkte[i % n].lat) / 2, lng: (b.punkte[(i - 1 + n) % n].lng + b.punkte[i % n].lng) / 2 } : b.punkte[i]
+    const stand = (p: LatLng) => (einfuegen ? [...b.punkte.slice(0, i), p, ...b.punkte.slice(i)] : b.punkte.map((x, j) => (j === i ? p : x)))
+    const nb = ueberlappung(e, b.punkte, stand(q), k.eintraege)
+    if (!nb) { setBearbeiten({ ...b, punkte: stand(q), sel: i }); return }
+    // weitestes erlaubtes Stück auf dem Weg alt -> neu suchen (Halbierung)
+    let lo = 0, hi = 1
+    for (let s = 0; s < 14; s++) { const t = (lo + hi) / 2; if (ueberlappung(e, b.punkte, stand({ lat: von.lat + (q.lat - von.lat) * t, lng: von.lng + (q.lng - von.lng) * t }), k.eintraege)) hi = t; else lo = t }
+    const p = { lat: von.lat + (q.lat - von.lat) * lo, lng: von.lng + (q.lng - von.lng) * lo }
+    setBearbeiten({ ...b, punkte: lo > 0 || einfuegen ? stand(p) : [...b.punkte], sel: i }) // immer neues Objekt -> Marker springt an die erlaubte Stelle
+    setMeldung(`Nicht in die Fläche „${nb.titel || 'ohne Namen'}“ – ${e.typ === 'flaeche' ? 'Flächen' : 'Zaun und Nachbarfläche'} dürfen sich nicht überlappen. Punkt bleibt an der Grenze.`)
+  }
   const punkteFertig = () => {
     const e = k.eintraege.find((x) => x.id === bearbeiten?.id)
     if (e && bearbeiten && e.typ !== 'pin') {
@@ -590,14 +607,25 @@ export default function App() {
     k.speichern({ ...e, tore: neu.length ? neu : undefined, geaendert: new Date().toISOString() })
     setMeldung(alt ? 'Tor entfernt' : `Tor gesetzt (${TOR_BREITE} m Lücke)`)
   }
-  const zaunUm = (f: Eintrag) => {
+  const [zaunErsetzen, setZaunErsetzen] = useState<{ f: string; z: string } | null>(null)
+  const zaunUm = (f: Eintrag, ersetzen = false) => {
     if (f.typ !== 'flaeche') return
+    // 7q: pro Fläche nur EIN Zaun – hat sie schon einen, wird er (nach Nachfrage) auf den Flächenrand neu gelegt statt verdoppelt
+    const da = zaunVonFlaeche(k.eintraege, f.id)
+    if (da && da.typ === 'linie') {
+      if (!ersetzen) { setZaunErsetzen({ f: f.id, z: da.id }); return }
+      setZaunErsetzen(null)
+      setFormular({ neu: false, e: { ...da, punkte: f.punkte.map((q) => ({ lat: q.lat, lng: q.lng })), geschlossen: true, tore: undefined } })
+      return
+    }
     const z = zaunUmFlaeche({ id: f.id, titel: f.titel, punkte: f.punkte }, 'elektronetz', neueId(), new Date().toISOString())
     setFormular({ neu: true, e: { ...z, ...(k.ich ? { erstelltVon: k.ich.id } : {}) } })
   }
 
   const speichern = (e: Eintrag, basis?: Einheit[], gruppe?: string | null) => {
     const fertig = { ...e, titel: e.titel.trim(), geaendert: new Date().toISOString() }
+    // 7q: kein zweiter Zaun an derselben Fläche (z. B. Formular offen gelassen, inzwischen anderswo gesetzt)
+    if (fertig.typ === 'linie' && fertig.flaeche && zaunVonFlaeche(k.eintraege, fertig.flaeche, fertig.id)) { setMeldung('Diese Fläche hat schon einen Zaun – bitte den vorhandenen bearbeiten oder entfernen.'); return }
     if (fertig.typ === 'linie') localStorage.setItem('wt-letzte-linienart', fertig.linienArt)
     if (fertig.farbe && istNormal(fertig)) localStorage.setItem(fertig.typ === 'pin' ? 'wt-letzte-farbe' : 'wt-letzte-flaechenfarbe', fertig.farbe)
     k.speichern(fertig, basis)
@@ -757,9 +785,9 @@ export default function App() {
           zeichenPunkte={zeichenPunkte}
           zeichenLinie={modus === 'linie'}
           bearbeiten={modus === 'punkte' && bearbeiten ? { punkte: bearbeiten.punkte, sel: bearbeiten.sel, linie: k.eintraege.find((x) => x.id === bearbeiten.id)?.typ === 'linie', geschlossen: !!(k.eintraege.find((x) => x.id === bearbeiten.id) as { geschlossen?: boolean } | undefined)?.geschlossen } : null}
-          onPunktZiehen={(i, q) => setBearbeiten((b) => (b ? { ...b, punkte: b.punkte.map((x, j) => (j === i ? q : x)), sel: i } : b))}
+          onPunktZiehen={(i, q) => punktSetzen(i, q, false)}
           onPunktWahl={(i) => setBearbeiten((b) => (b ? { ...b, sel: i } : b))}
-          onPunktEinfuegen={(i, q) => setBearbeiten((b) => (b ? { ...b, punkte: [...b.punkte.slice(0, i), q, ...b.punkte.slice(i)], sel: i } : b))}
+          onPunktEinfuegen={(i, q) => punktSetzen(i, q, true)}
           kreisBearbeiten={modus === 'kreis' && kreisEdit ? (() => { const pe = k.eintraege.find((x) => x.id === kreisEdit.id); return { id: kreisEdit.id, mitte: kreisEdit.gebunden && pe?.typ === 'pin' ? pe.position : kreisEdit.mitte, radius: kreisEdit.radius, farbe: kreisEdit.farbe } })() : null}
           onKreisKlick={modus === 'ansicht' && !formular ? (id, sid, x, y) => { setAusgewaehlt(id); const e = k.eintraege.find((q) => q.id === id); if (e && k.darfBearbeiten && kannEintrag(e)) setKreisPop({ id, stehenId: sid, x, y }) } : undefined}
           onLangDruck={modus === 'ansicht' && !formular ? (q, x, y) => {
@@ -1040,9 +1068,9 @@ export default function App() {
             planZeile={<>
               <InfraDetail e={auswahl} alle={k.eintraege} darfBearbeiten={k.darfBearbeiten} kannBearbeiten={k.darfBearbeiten && kannEintrag(auswahl)}
                 onGeprueft={(x) => { k.geprueft(auswahl.id, x); setMeldung('Prüfung eingetragen ✓') }}
-                onPunkte={() => punkteStart(auswahl)} onTore={() => { setTorId(auswahl.id); setModus('tor') }} onZaun={() => zaunUm(auswahl)}
+                onPunkte={() => punkteStart(auswahl)} onTore={() => { setTorId(auswahl.id); setModus('tor') }} onZaun={() => zaunUm(auswahl)} kannEintrag={kannEintrag} onZaunWeg={(z, ev) => setLoeschFrage({ art: 'eintrag', id: z.id, stehenId: null, x: ev.clientX, y: ev.clientY })}
                 onWahl={(id) => { const e = k.eintraege.find((x) => x.id === id); if (e) { fliege(mitte(e)); waehle(id) } }} />
-              {auswahl.typ === 'pin' && !auswahl.infra && !auswahl.frei && <SpannungZeile e={auswahl} darf={k.darfBearbeiten} schwelle={schwelle} onMessen={(kv) => { k.spannungMessen(auswahl.id, kv); setMeldung(`⚡ ${SP.kvText(kv)} gespeichert${kv < schwelle ? ' – unter der Warnschwelle!' : ''}`) }} />}
+              {SP.mitSpannung(auswahl) && <SpannungZeile e={auswahl} darf={k.darfBearbeiten} schwelle={schwelle} onMessen={(kv) => { k.spannungMessen(auswahl.id, kv); setMeldung(`⚡ ${SP.kvText(kv)} gespeichert${kv < schwelle ? ' – unter der Warnschwelle!' : ''}`) }} />}
               {istFrei(auswahl) && <FreiKreisDetail e={auswahl} darf={k.darfBearbeiten && kannEintrag(auswahl)} onAendern={() => freierKreisAendern(auswahl)} onAbgebaut={() => freierKreisWeg(auswahl)} />}
               {auswahl.typ === 'pin' && !auswahl.frei && <KreisDetail e={auswahl} karte={k.karteId || 'lokal'} darf={k.darfBearbeiten && kannEintrag(auswahl)}
                 onEinkreisen={() => { const ke = kreisStart(auswahl, k.karteId || 'lokal'); setKreisEdit(ke); setModus('kreis'); setFokus({ ...(auswahl.kreis && auswahl.kreis.gebunden === false ? auswahl.kreis.mitte : auswahl.position), n: Date.now(), nurSichtbar: true }) }}
@@ -1118,9 +1146,16 @@ export default function App() {
           const kr = loeschFrage.art === 'kreis' && e.typ === 'pin' ? (loeschFrage.stehenId == null ? e.kreis : e.kreiseStehen?.find((x) => x.id === loeschFrage.stehenId)) : null
           const was = loeschFrage.art === 'kreis'
             ? (istFrei(e) ? `Freier Kreis${e.titel ? ` „${e.titel}“` : ''}${kr ? ` · ${kr.radius} m` : ''}` : `Kreis${kr ? ` (${kr.radius} m)` : ''} – die Nadel „${e.titel || 'ohne Namen'}“ bleibt`)
-            : `${artName(e)}${e.titel ? ` „${e.titel}“` : ''}${e.typ === 'pin' && kreisAnzahl(e) > 0 ? ' mit Kreis' : ''}`
+            : `${artName(e)}${e.titel ? ` „${e.titel}“` : ''}${e.typ === 'pin' && kreisAnzahl(e) > 0 ? ' mit Kreis' : ''}${e.typ === 'linie' && e.flaeche ? ' – die Fläche bleibt' : ''}`
           return <LoeschFrage x={loeschFrage.x} y={loeschFrage.y} was={was} onAbbrechen={() => setLoeschFrage(null)}
             onLoeschen={() => { if (loeschFrage.art === 'kreis' && e.typ === 'pin' && !istFrei(e)) kreisSchnellWeg(e, loeschFrage.stehenId); else schnellWeg(e) }} />
+        })()}
+        {zaunErsetzen && (() => {
+          const f = k.eintraege.find((x) => x.id === zaunErsetzen.f), z = k.eintraege.find((x) => x.id === zaunErsetzen.z)
+          if (!f || !z) return null
+          return <LoeschFrage x={window.innerWidth / 2} y={Math.round(window.innerHeight / 3)} titel="Zaun ersetzen?" knopf="Ersetzen" knopfKlasse="primaer"
+            was={`„${f.titel || 'Fläche'}“ hat schon den Zaun „${z.titel || 'ohne Namen'}“. Er wird neu auf den Flächenrand gelegt (Tore werden zurückgesetzt) – kein zweiter Zaun.`}
+            onAbbrechen={() => setZaunErsetzen(null)} onLoeschen={() => zaunUm(f, true)} />
         })()}
         {kreisPop && modus === 'ansicht' && (() => {
           const pe = k.eintraege.find((x) => x.id === kreisPop.id)
@@ -1274,6 +1309,7 @@ function Formular(p: { gruppen: Gruppe[]; kannGruppieren: boolean; onNeueGruppe:
   const [pruef, setPruef] = useState<PruefNeu>({ an: true, kv: '', stand: '' })
   const [pachtForm, setPachtForm] = useState(() => pachtFormAus(p.pacht))
   const normal = istNormal(e)
+  const mitTieren = normal || istZaun(e) // 7q: Zäune haben Tiere wie Kreise
   const art = istInfra(e) ? 'Markierung' : istFrei(e) ? 'Freier Kreis' : e.typ === 'pin' ? 'Nadel' : e.typ === 'linie' ? 'Linie' : 'Fläche'
   return (
     <section className="sheet formular">
@@ -1281,7 +1317,7 @@ function Formular(p: { gruppen: Gruppe[]; kannGruppieren: boolean; onNeueGruppe:
         ev.preventDefault()
         const notizen = p.neu && ersteNotiz.trim() ? [{ id: neueId(), text: ersteNotiz.trim(), zeitpunkt: new Date().toISOString(), ...autorFelder() }] : e.notizen
         // leere/ungültige Zeilen fallen weg
-        const einheiten: Einheit[] = normal ? zeilen.filter((z) => z.anzahl.trim() !== '' && Number(z.anzahl) >= 0).map((z) => ({ id: z.id, art: z.art, anzahl: Math.round(Number(z.anzahl)) })) : []
+        const einheiten: Einheit[] = mitTieren ? zeilen.filter((z) => z.anzahl.trim() !== '' && Number(z.anzahl) >= 0).map((z) => ({ id: z.id, art: z.art, anzahl: Math.round(Number(z.anzahl)) })) : []
         let fertig: Eintrag = { ...e, notizen, einheiten }
         // Weide-Technik und Linien: keine Tiere, keine Herde, keine Gruppe; alte App-Versionen erkennen „keine Technik“ an infra: null
         if (!normal) fertig = { ...fertig, herde: undefined, gruppe: undefined, tierlisteModus: undefined }
@@ -1316,7 +1352,7 @@ function Formular(p: { gruppen: Gruppe[]; kannGruppieren: boolean; onNeueGruppe:
               farben={e.typ === 'pin' ? FARBEN : e.typ === 'linie' ? [{ wert: linienArt(e.linienArt).farbe, name: `Standard (${linienArt(e.linienArt).name})` }, ...FLAECHEN_FARBEN.filter((f) => f.wert !== linienArt(e.linienArt).farbe)] : FLAECHEN_FARBEN} />
           </div>
         )}
-        {normal && <div className="einheiten">
+        {mitTieren && <div className="einheiten">
           <span className="feldname">Tiere</span>
           {zeilen.map((z, i) => (
             <div className="einheit-zeile" key={z.id}>
@@ -1328,10 +1364,10 @@ function Formular(p: { gruppen: Gruppe[]; kannGruppieren: boolean; onNeueGruppe:
             </div>
           ))}
           <button type="button" className="tiere-plus" onClick={() => setZeilen((l) => [...l, { id: neueId(), art: l.length ? l[l.length - 1].art : 'schaf', anzahl: '' }])}>＋ Tiere hinzufügen</button>
-          <label className="tierliste-modus">Tierliste<select value={e.tierlisteModus ?? 'fest'} onChange={(x) => setE({ ...e, tierlisteModus: x.target.value as 'fest' | 'ausblendbar' })}>
+          {normal && <label className="tierliste-modus">Tierliste<select value={e.tierlisteModus ?? 'fest'} onChange={(x) => setE({ ...e, tierlisteModus: x.target.value as 'fest' | 'ausblendbar' })}>
             <option value="fest">fest anzeigen (immer sichtbar)</option>
             <option value="ausblendbar">ausblendbar (Betrachter kann sie einklappen)</option>
-          </select></label>
+          </select></label>}
         </div>}
         {e.typ === 'flaeche' && <SteckbriefFormular e={e} setE={(x) => setE(x)} istAdmin={p.istAdmin} pacht={pachtForm} setPacht={setPachtForm} />}
         {/* 7k: Nadeln ohne Datum/Herde-Felder – vorhandene Werte bleiben unverändert erhalten, neue Nadeln haben ihr Anlegedatum (erstellt) */}
@@ -1578,7 +1614,7 @@ function Liste(p: ListeProps) {
     return (
       <li key={e.id} data-id={e.id} className={zieh?.id === e.id ? 'wird-gezogen' : undefined} onClick={() => p.onWahl(e)}>
         <div className="zeile-oben">
-          <strong>{e.typ === 'pin' ? <span className="farbpunkt" style={{ background: pinFarbe(e) }} /> : <span className="flaechen-symbol" style={{ color: pinFarbe(e) }}>⬠</span>} {e.titel || <span className="ohne-name">ohne Namen</span>}{e.typ === 'pin' && SP.spannungLetzte(e) && <span className={`spannung-marke klein${SP.spannungLetzte(e)!.kv < p.schwelle ? ' tief' : ''}`} title={`Zaunspannung ${SP.spannungLetzte(e)!.datum.split('-').reverse().join('.')}`}>⚡ {SP.kvText(SP.spannungLetzte(e)!.kv)}</span>}{e.typ === 'pin' && kreisAnzahl(e) > 0 && <span className="kreis-marke" title={e.kreis ? `Eingezäunt: Kreis ${e.kreis.radius} m` : 'Kreise am alten Standort'} style={{ borderColor: e.kreis?.farbe || e.kreiseStehen?.[0]?.farbe || pinFarbe(e) }}>◯ {e.kreis ? `${e.kreis.radius} m` : ''}{(e.kreiseStehen?.length ?? 0) > 0 ? `${e.kreis ? ' ' : ''}+${e.kreiseStehen!.length} alt` : ''}</span>}</strong>
+          <strong>{e.typ === 'pin' ? <span className="farbpunkt" style={{ background: pinFarbe(e) }} /> : <span className="flaechen-symbol" style={{ color: pinFarbe(e) }}>⬠</span>} {e.titel || <span className="ohne-name">ohne Namen</span>}{SP.spannungLetzte(e) && <span className={`spannung-marke klein${SP.spannungLetzte(e)!.kv < p.schwelle ? ' tief' : ''}`} title={`Zaunspannung ${SP.spannungLetzte(e)!.datum.split('-').reverse().join('.')}`}>⚡ {SP.kvText(SP.spannungLetzte(e)!.kv)}</span>}{e.typ === 'pin' && kreisAnzahl(e) > 0 && <span className="kreis-marke" title={e.kreis ? `Eingezäunt: Kreis ${e.kreis.radius} m` : 'Kreise am alten Standort'} style={{ borderColor: e.kreis?.farbe || e.kreiseStehen?.[0]?.farbe || pinFarbe(e) }}>◯ {e.kreis ? `${e.kreis.radius} m` : ''}{(e.kreiseStehen?.length ?? 0) > 0 ? `${e.kreis ? ' ' : ''}+${e.kreiseStehen!.length} alt` : ''}</span>}</strong>
           {griff && griffFuer(e)}
         </div>
         {e.notizen.length > 0 && <span className="notiz-kurz">{notizenSortiert(e)[0].text}</span>}
@@ -2092,7 +2128,7 @@ function artName(e: Eintrag) {
 }
 
 // 7l: kleine Bestätigung am ✕ – „Möchtest du das löschen?“ [Löschen] [Abbrechen]
-function LoeschFrage(p: { x: number; y: number; was: string; onLoeschen: () => void; onAbbrechen: () => void }) {
+function LoeschFrage(p: { x: number; y: number; was: string; onLoeschen: () => void; onAbbrechen: () => void; titel?: string; knopf?: string; knopfKlasse?: string }) {
   const w = Math.min(280, window.innerWidth - 16), h = 132
   const left = Math.max(8, Math.min(window.innerWidth - w - 8, p.x - w / 2))
   const top = p.y + 24 + h < window.innerHeight ? p.y + 24 : Math.max(8, p.y - h - 24)
@@ -2100,9 +2136,9 @@ function LoeschFrage(p: { x: number; y: number; was: string; onLoeschen: () => v
   return <>
     <div className="loesch-schleier" onClick={p.onAbbrechen} />
     <div className="loesch-frage" role="alertdialog" aria-modal="true" aria-labelledby="loesch-frage-titel" style={{ left, top, width: w }}>
-      <p id="loesch-frage-titel"><strong>Möchtest du das löschen?</strong><br /><small>{p.was}</small></p>
+      <p id="loesch-frage-titel"><strong>{p.titel ?? 'Möchtest du das löschen?'}</strong><br /><small>{p.was}</small></p>
       <div className="knoepfe">
-        <button type="button" className="gefahr-voll" onClick={p.onLoeschen}>Löschen</button>
+        <button type="button" className={p.knopfKlasse ?? 'gefahr-voll'} onClick={p.onLoeschen}>{p.knopf ?? 'Löschen'}</button>
         <button type="button" autoFocus onClick={p.onAbbrechen}>Abbrechen</button>
       </div>
     </div>

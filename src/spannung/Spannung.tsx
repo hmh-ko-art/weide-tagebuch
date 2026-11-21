@@ -2,12 +2,12 @@
 import { useState } from 'react'
 import * as SP from '../../server/spannung.js'
 import { tagPlus } from '../../server/weideplan.js'
-import type { Pin } from '../types'
+import type { Eintrag } from '../types'
 import { tagKurz } from './schwelle'
 
 const uhr = (z?: string) => (z ? new Date(z).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) : '')
 
-export function SpannungZeile(p: { e: Pin; darf: boolean; schwelle: number; onMessen: (kv: number) => void }) {
+export function SpannungZeile(p: { e: Eintrag; darf: boolean; schwelle: number; onMessen: (kv: number) => void }) {
   const [wert, setWert] = useState('')
   const [fehler, setFehler] = useState('')
   const l = p.e.spannung ?? []
@@ -23,7 +23,7 @@ export function SpannungZeile(p: { e: Pin; darf: boolean; schwelle: number; onMe
   return (
     <div className={`spannung${letzte && letzte.kv < p.schwelle ? ' tief' : ''}`}>
       <div className="spannung-kopf">
-        <strong>⚡ Weidezaungerät</strong>
+        <strong>⚡ {p.e.typ === 'pin' ? 'Weidezaungerät' : 'Strom / Spannung'}</strong>
         {letzte
           ? <span><span className={`spannung-marke${letzte.kv < p.schwelle ? ' tief' : ''}`}>{SP.kvText(letzte.kv)}</span> <small>{tagKurz(letzte.datum, heute, gestern)}{letzte.zeitpunkt && letzte.datum === heute ? ` ${uhr(letzte.zeitpunkt)}` : ''}{letzte.autor ? ` · ${letzte.autor}` : ''}</small></span>
           : <small>noch keine Messung</small>}

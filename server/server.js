@@ -234,7 +234,7 @@ app.post('/api/karten', (req, res) => {
     version: 0,
     nutzerVersion: 1,
     nutzer: [admin],
-    eintraege: Array.isArray(req.body?.eintraege) ? req.body.eintraege.map((e) => ({ ...migrieren(e), erstelltVon: admin.id })) : [],
+    eintraege: Array.isArray(req.body?.eintraege) ? IS.zaeuneEinzeln(req.body.eintraege.map((e) => ({ ...migrieren(e), erstelltVon: admin.id }))) : [],
     // Gruppen einer bisher lokalen Karte mitnehmen
     gruppen: gruppenPruefen(req.body?.gruppen).map((g) => ({ id: g.id, name: gruppenNamePruefen(g.name).name ?? 'Gruppe', ...(g.farbe ? { farbe: g.farbe } : {}), reihenfolge: g.reihenfolge, von: admin.id, erstellt: jetzt })),
     erstellt: jetzt,
@@ -320,6 +320,14 @@ app.put('/api/karten/:id/eintraege/:eid', mitKarte('nutzer'), (req, res) => {
   // Alte (noch gecachte) App-Versionen schicken keine Einheiten -> bestehende Einheiten nicht anfassen
   const ohneEinheiten = !Array.isArray(body.einheiten)
   const i = k.eintraege.findIndex((x) => x.id === e.id)
+  // 7q: pro Fläche nur ein Zaun – ein zweiter (z. B. offline auf zwei Geräten erzeugt) wird abgelehnt; bestehende Doppel bleiben bearbeitbar
+  if (e.typ === 'linie' && e.flaeche && !(i >= 0 && k.eintraege[i].flaeche === e.flaeche)) {
+    const da = IS.zaunVonFlaeche(k.eintraege, e.flaeche, e.id)
+    if (da) {
+      const f = k.eintraege.find((x) => x.id === e.flaeche)
+      return res.status(409).json({ fehler: 'Diese Fläche hat schon einen Zaun', konflikt: { art: 'zaun-doppelt', titel: f?.titel || '', mit: nutzerName(k, da.erstelltVon) } })
+    }
+  }
   // Notizen eines bestehenden Eintrags werden nur über die Notiz-Endpunkte geändert,
   // damit ein Bearbeiten (Name/Farbe …) nie gleichzeitig hinzugefügte Notizen überschreibt.
   const basisG = typeof body.basisGeaendert === 'string' ? body.basisGeaendert : null
@@ -378,7 +386,7 @@ app.delete('/api/karten/:id/eintraege/:eid', mitKarte('nutzer'), (req, res) => {
 app.put('/api/karten/:id/eintraege', mitKarte('admin'), (req, res) => {
   const k = req.karte
   if (!Array.isArray(req.body)) return res.status(400).json({ fehler: 'Liste erwartet' })
-  k.eintraege = req.body.map((e) => gruppeGueltig(k, { erstelltVon: req.nutzer.id, ...migrieren(e) })).filter((e) => !IS.eintragSauber(e) && !FL.flaecheSauber(e))
+  k.eintraege = IS.zaeuneEinzeln(req.body.map((e) => gruppeGueltig(k, { erstelltVon: req.nutzer.id, ...migrieren(e) })).filter((e) => !IS.eintragSauber(e) && !FL.flaecheSauber(e)))
   for (const id of Object.keys(k.pacht ?? {})) if (!k.eintraege.some((e) => e.id === id && e.typ === 'flaeche')) pachtEntfernen(k, id)
   speichern(k)
   res.json({ ok: true, version: k.version })
@@ -406,6 +414,7 @@ app.post('/api/karten/:id/stapel', mitKarte('admin'), (req, res) => {
   }
   const nutzerIds = new Set(k.nutzer.map((n) => n.id))
   const vorhanden = new Set(k.eintraege.map((e) => e.id))
+  IS.zaeuneEinzeln(roh.filter((r) => r && !vorhanden.has(r.id)), k.eintraege) // 7q: kein zweiter Zaun pro Fläche
   let neu = 0, schon = 0, ungueltig = 0
   const neueIds = []
   for (const r of roh) {
@@ -504,9 +513,9 @@ app.put('/api/karten/:id/weideplan/einstellungen', mitKarte('nutzer'), (req, res
 app.post('/api/karten/:id/eintraege/:eid/spannung', mitKarte('nutzer'), (req, res) => {
   const k = req.karte, ich = req.nutzer
   const i = k.eintraege.findIndex((x) => x.id === req.params.eid)
-  if (i < 0) return res.status(409).json({ fehler: 'Nadel gibt es nicht mehr', konflikt: { art: 'spannung-weg', titel: '' } })
+  if (i < 0) return res.status(409).json({ fehler: 'Eintrag gibt es nicht mehr', konflikt: { art: 'spannung-weg', titel: '' } })
   const alt = k.eintraege[i]
-  if (alt.typ !== 'pin' || alt.infra || alt.frei) return res.status(400).json({ fehler: 'Spannung nur an Nadeln' })
+  if (!SP.mitSpannung(alt)) return res.status(400).json({ fehler: 'Spannung nur an Nadeln, Flächen und Zäunen' })
   const b = req.body ?? {}
   const kv = SP.kvWert(b.kv)
   if (kv === undefined || !WP.tagOk(b.datum) || b.datum > WP.tagPlus(WP.heute(), 1) || b.datum < WP.tagPlus(WP.heute(), -400)) return res.status(400).json({ fehler: 'Ungültige Spannung (0–20 kV)' })

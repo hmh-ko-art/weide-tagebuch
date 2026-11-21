@@ -92,7 +92,7 @@ export function PruefKnopf(p: { e: Pin; onGeprueft: (x: { datum: string; kv?: nu
 }
 
 // Zusatz in der Detailansicht: Linie (Länge, Netze, Punkte/Tore), Gerät (Status, Prüfen), Fläche (Zäune darum)
-export function InfraDetail(p: { e: Eintrag; alle: Eintrag[]; darfBearbeiten: boolean; kannBearbeiten: boolean; onGeprueft: (x: { datum: string; kv?: number; stand?: 'voll' | 'halb' | 'leer' }) => void; onPunkte: () => void; onTore: () => void; onZaun: () => void; onWahl: (id: string) => void }) {
+export function InfraDetail(p: { e: Eintrag; alle: Eintrag[]; darfBearbeiten: boolean; kannBearbeiten: boolean; onGeprueft: (x: { datum: string; kv?: number; stand?: 'voll' | 'halb' | 'leer' }) => void; onPunkte: () => void; onTore: () => void; onZaun: () => void; onWahl: (id: string) => void; onZaunWeg?: (z: Linie, ev: { clientX: number; clientY: number }) => void; kannEintrag?: (e: Eintrag) => boolean }) {
   const { e } = p
   if (istLinie(e)) {
     const a = linienArt(e.linienArt), m = linienLaenge(e)
@@ -107,6 +107,7 @@ export function InfraDetail(p: { e: Eintrag; alle: Eintrag[]; darfBearbeiten: bo
         {p.kannBearbeiten && <div className="knoepfe">
           <button onClick={p.onPunkte}>✏️ Punkte bearbeiten</button>
           {e.linienArt !== 'weg' && e.linienArt !== 'graben' && <button onClick={p.onTore}>🚪 Tore setzen</button>}
+          {e.linienArt !== 'weg' && e.linienArt !== 'graben' && p.onZaunWeg && <button className="gefahr zaun-weg" onClick={(ev) => p.onZaunWeg!(e, ev)}>🗑 Zaun entfernen</button>}
         </div>}
       </div>
     )
@@ -130,8 +131,17 @@ export function InfraDetail(p: { e: Eintrag; alle: Eintrag[]; darfBearbeiten: bo
     if (!zaeune.length && !p.darfBearbeiten) return null
     return (
       <div className="infra-detail">
-        {zaeune.map((z) => <p key={z.id} className="infra-werte"><LinienSymbol e={z} /> <button className="link-knopf" onClick={() => p.onWahl(z.id)}>{z.titel || linienArt(z.linienArt).name}</button> · {laengeText(linienLaenge(z))}{z.linienArt === 'elektronetz' && <> · ≈ {netzText(linienLaenge(z))}</>}</p>)}
-        {p.darfBearbeiten && <button onClick={p.onZaun}>〰 Zaun um Fläche erzeugen</button>}
+        {zaeune.map((z) => <div key={z.id} className="zaun-zeile">
+          <p className="infra-werte"><LinienSymbol e={z} /> <button className="link-knopf" onClick={() => p.onWahl(z.id)}>{z.titel || linienArt(z.linienArt).name}</button> · {laengeText(linienLaenge(z))}{z.linienArt === 'elektronetz' && <> · ≈ {netzText(linienLaenge(z))}</>}</p>
+          {p.darfBearbeiten && (p.kannEintrag?.(z) ?? true) && <div className="knoepfe">
+            <button onClick={() => p.onWahl(z.id)}>✏️ Zaun bearbeiten</button>
+            {p.onZaunWeg && <button className="gefahr zaun-weg" onClick={(ev) => p.onZaunWeg!(z, ev)}>🗑 Zaun entfernen</button>}
+          </div>}
+        </div>)}
+        {zaeune.length > 1 && <p className="hinweis klein">⚠️ Diese Fläche hat {zaeune.length} Zäune – pro Fläche gilt nur einer. Überzählige bitte entfernen.</p>}
+        {p.darfBearbeiten && (zaeune.length
+          ? (p.kannEintrag?.(zaeune[0]) ?? true) && <button className="zaun-neu" onClick={p.onZaun}>↻ Zaun neu um Fläche legen (ersetzt)</button>
+          : <button className="zaun-setzen" onClick={p.onZaun}>〰 Zaun setzen</button>)}
       </div>
     )
   }
@@ -214,7 +224,7 @@ export function InfraListe(p: { eintraege: Eintrag[]; aus: string[]; onUmschalte
         <p className="hinweis">Noch keine Zäune, Wege oder Wasserstellen eingetragen.</p>
         <ul className="hinweis-liste">
           <li><strong>Zaun, Weg oder Graben:</strong> unten auf „〰 Zaun“ tippen und die Punkte entlang der Linie antippen.</li>
-          <li><strong>Zaun um eine Fläche:</strong> Fläche antippen → „Zaun um Fläche erzeugen“.</li>
+          <li><strong>Zaun um eine Fläche:</strong> Fläche antippen → „Zaun setzen“. Pro Fläche gibt es einen Zaun; „Zaun entfernen“ nimmt ihn wieder weg (die Fläche bleibt).</li>
           <li><strong>Tränke oder Weidezaungerät:</strong> eine Nadel setzen und oben im Formular die Art wählen.</li>
         </ul>
       </div>

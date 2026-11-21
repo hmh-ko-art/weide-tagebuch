@@ -106,8 +106,8 @@ export async function pdfErzeugen(zeilen: Zeile[], gruppen: Gruppe[], o: Bericht
       ty = nachY()
       autoTable(doc, {
         startY: ty, margin: { left: rand, right: rand, bottom: 16 }, headStyles: gruen, styles: st,
-        head: [['Linie', 'Art', 'Länge', 'Netze', 'Tore', 'Notizen']],
-        body: linien.map((z) => [pdfText(z.name || '(ohne Namen)'), pdfText(z.art + (z.geschlossen ? ' (Ring)' : '')), pdfText(laengeText(z.laenge ?? 0)), z.netze != null ? zahl(z.netze) : '', z.tore ? zahl(z.tore) : '', pdfText(z.notizen.slice(0, 300))]),
+        head: [['Linie', 'Art', 'Länge', 'Netze', 'Tore', 'Tiere / Spannung', 'Notizen'].map(pdfText)],
+        body: linien.map((z) => [pdfText(z.name || '(ohne Namen)'), pdfText(z.art + (z.geschlossen ? ' (Ring)' : '')), pdfText(laengeText(z.laenge ?? 0)), z.netze != null ? zahl(z.netze) : '', z.tore ? zahl(z.tore) : '', pdfText([z.tiere, z.kv != null ? `${zahl(z.kv, 1)} kV` : ''].filter(Boolean).join(' · ')), pdfText(z.notizen.slice(0, 300))]),
         columnStyles: { 0: { cellWidth: 40 }, 1: { cellWidth: 28 }, 2: { cellWidth: 18, halign: 'right' }, 3: { cellWidth: 12, halign: 'right' }, 4: { cellWidth: 10, halign: 'right' } },
         didDrawCell: (d) => { if (d.section === 'body' && d.column.index === 0) { doc.setFillColor(...rgb(linien[d.row.index].farbe)); doc.rect(d.cell.x, d.cell.y, 1.2, d.cell.height, 'F') } },
       })
@@ -219,7 +219,7 @@ export async function pdfErzeugen(zeilen: Zeile[], gruppen: Gruppe[], o: Bericht
       doc.addPage()
       doc.setTextColor(30, 40, 30); doc.setFontSize(13); doc.setFont('helvetica', 'bold'); doc.text(pdfText('Zaunspannung (Weidezaungeräte)'), rand, 16); doc.setFont('helvetica', 'normal')
       const nadeln = new Set(sz.map((r) => r.e.id)).size, tief = sz.filter((r) => r.unter).length
-      doc.setFontSize(9); doc.setTextColor(60); doc.text(pdfText(`${sz.length} ${sz.length === 1 ? 'Messung' : 'Messungen'} an ${nadeln} ${nadeln === 1 ? 'Nadel' : 'Nadeln'} · Warnschwelle ${zahl(sw, 1)} kV${tief ? ` · ${tief} darunter` : ''}`), rand, 22)
+      doc.setFontSize(9); doc.setTextColor(60); doc.text(pdfText(`${sz.length} ${sz.length === 1 ? 'Messung' : 'Messungen'} an ${nadeln} ${nadeln === 1 ? 'Stelle' : 'Stellen'} · Warnschwelle ${zahl(sw, 1)} kV${tief ? ` · ${tief} darunter` : ''}`), rand, 22)
       autoTable(doc, {
         startY: 26, margin: { left: rand, right: rand, bottom: 16 }, headStyles: { fillColor: GRUEN }, styles: { fontSize: 8, cellPadding: 1.3, overflow: 'linebreak' as const },
         head: [['Nadel', 'Datum', 'Uhrzeit', 'Spannung', 'Eingetragen von'].map(pdfText)],

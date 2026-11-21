@@ -107,10 +107,10 @@ export function Austausch(p: { k: K; eintraege: Eintrag[]; filter: ExportFilter;
       ...spannungBlatt(auswahl, schwelleLesen(k.karteId || 'lokal')),
       ...(technik.length ? [{
         name: 'Zäune & Wasser',
-        kopf: ['Art', 'Name', 'Länge (m)', 'Netze à 50 m', 'Tore', 'Zuletzt geprüft', 'Nächste Prüfung', 'Spannung (kV)', 'Strom', 'Ladestand', 'Prüfen alle (Tage)', 'Breite', 'Länge', 'Notizen', 'ID'],
-        breiten: [16, 26, 10, 10, 6, 13, 13, 11, 14, 10, 10, 12, 12, 50, 16],
-        zeilen: technik.map((t) => [t.art + (t.geschlossen ? ' (Ring)' : ''), t.name, t.laenge != null ? Math.round(t.laenge) : null, t.netze, t.tore || null, t.geprueft ? { datum: t.geprueft } : t.artWert === 'geraet' ? 'nie' : null, /^\d{4}/.test(t.faelligAb) ? { datum: t.faelligAb } : t.faelligAb || null, t.kv, t.strom, t.stand, t.intervall, { zahl: t.lat, format: 'koord' as const }, { zahl: t.lng, format: 'koord' as const }, t.notizen, t.e.id]),
-        summenZeile: [null, 'Summe Zäune (ohne Wege/Gräben)', Math.round(technik.filter((t) => t.gattung === 'Linie' && !['weg', 'graben'].includes(t.artWert)).reduce((x, t) => x + (t.laenge ?? 0), 0)), technik.reduce((x, t) => x + (t.netze ?? 0), 0) || null],
+        kopf: ['Art', 'Name', 'Tiere', 'Länge (m)', 'Netze à 50 m', 'Tore', 'Zuletzt geprüft', 'Nächste Prüfung', 'Spannung (kV)', 'Strom', 'Ladestand', 'Prüfen alle (Tage)', 'Breite', 'Länge', 'Notizen', 'ID'],
+        breiten: [16, 26, 14, 10, 10, 6, 13, 13, 11, 14, 10, 10, 12, 12, 50, 16],
+        zeilen: technik.map((t) => [t.art + (t.geschlossen ? ' (Ring)' : ''), t.name, t.tiere || null, t.laenge != null ? Math.round(t.laenge) : null, t.netze, t.tore || null, t.geprueft ? { datum: t.geprueft } : t.artWert === 'geraet' ? 'nie' : null, /^\d{4}/.test(t.faelligAb) ? { datum: t.faelligAb } : t.faelligAb || null, t.kv, t.strom, t.stand, t.intervall, { zahl: t.lat, format: 'koord' as const }, { zahl: t.lng, format: 'koord' as const }, t.notizen, t.e.id]),
+        summenZeile: [null, 'Summe Zäune (ohne Wege/Gräben)', null, Math.round(technik.filter((t) => t.gattung === 'Linie' && !['weg', 'graben'].includes(t.artWert)).reduce((x, t) => x + (t.laenge ?? 0), 0)), technik.reduce((x, t) => x + (t.netze ?? 0), 0) || null],
       } satisfies Blatt] : []),
       ...(technik.some((t) => t.e.typ === 'pin' && t.e.geraet?.pruefungen?.length) ? [{
         name: 'Geräte-Prüfungen',

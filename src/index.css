@@ -950,3 +950,13 @@ button.chip.gruppe-chip.leer { border-style: dashed; }
 .verbinden-karte .fehler { color: #c62828; font-size: .92rem; }
 .verbinden-karte hr { width: 100%; border: none; border-top: 1px solid #e3ded2; margin: 4px 0; }
 .verbinden-lokal { min-height: 46px; }
+/* 7q: Tiere + Spannung auch an Flächen und Zäunen (wie am Kreis) */
+.flaeche-label .label-volt, .linie-label .label-volt { margin-left: 5px; padding: 0 4px; border-radius: 5px; background: #fff3c4; color: #5d4300; font-weight: 700; font-size: 11px; }
+.flaeche-label .label-volt:first-child { margin-left: 0; }
+.flaeche-label .label-volt.tief, .linie-label .label-volt.tief { background: #d32f2f; color: #fff; }
+.flaeche-label .label-tiere:first-child { margin-left: 0; }
+.flaeche-label.nur-volt { background: none; padding: 0; }
+.flaeche-label.nur-volt::before { display: none; }
+.zaun-zeile { display: flex; flex-direction: column; gap: 4px; margin-bottom: 6px; }
+.zaun-zeile .knoepfe { display: flex; flex-wrap: wrap; gap: 6px; }
+.infra-detail .gefahr.zaun-weg { color: #b71c1c; border-color: #e57373; }

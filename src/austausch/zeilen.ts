@@ -1,7 +1,8 @@
 // Gemeinsames Zeilenmodell für alle Exporte (Excel, PDF, KML): eine Zeile je Nadel/Fläche
 import { INFRA_ARTEN, LINIEN_ARTEN, STAENDE, STROM_ARTEN, PRUEF_STANDARD, istInfra, istLinie, istNormal, linienArt, linienLaenge, netzAnzahl } from '../../server/infrastruktur.js'
 import { tagPlus } from '../../server/weideplan.js'
-import { eintragDatum, farbName, gruppenFarbe, gruppenOrdnung, hektar, mitte, notizenSortiert, pinFarbe, tagText, tierKurz, type Eintrag, type Gruppe } from '../types'
+import { spannungLetzte } from '../../server/spannung.js'
+import { eintragDatum, farbName, gruppenFarbe, gruppenOrdnung, hektar, mitte, notizenSortiert, pinFarbe, tagText, tierKurz, tierSummen, tierText, type Eintrag, type Gruppe } from '../types'
 
 export interface Zeile {
   e: Eintrag
@@ -90,7 +91,8 @@ export interface TechnikZeile {
   netze: number | null // nur Elektronetz
   tore: number
   geschlossen: boolean
-  // nur Weidezaungerät
+  tiere: string // 7q: Zäune haben Tiere wie Kreise (z. B. „25 Schafe“)
+  // nur Weidezaungerät (bei Zäunen 7q: letzte Spannungsmessung)
   strom: string; stand: string; kv: number | null; geprueft: string; faelligAb: string; intervall: number | null
   lat: number; lng: number
   notizen: string
@@ -104,13 +106,13 @@ export function technikBauen(eintraege: Eintrag[]): TechnikZeile[] {
   return [
     ...linien.map((e): TechnikZeile => {
       const a = linienArt(e.linienArt), m = linienLaenge(e), c = mitte(e)
-      return { e, gattung: 'Linie', art: a.name, artWert: a.wert, name: e.titel || '', farbe: pinFarbe(e), laenge: m, netze: a.wert === 'elektronetz' ? netzAnzahl(m) : null, tore: e.tore?.length ?? 0, geschlossen: !!e.geschlossen, ...leer, lat: c.lat, lng: c.lng, notizen: notizenSortiert(e).map(notizText).join('\n') }
+      return { e, gattung: 'Linie', art: a.name, artWert: a.wert, name: e.titel || '', farbe: pinFarbe(e), laenge: m, netze: a.wert === 'elektronetz' ? netzAnzahl(m) : null, tore: e.tore?.length ?? 0, geschlossen: !!e.geschlossen, ...leer, tiere: tierSummen([e]).map((x) => tierText(x.n, x.art)).join(', '), kv: spannungLetzte(e)?.kv ?? null, lat: c.lat, lng: c.lng, notizen: notizenSortiert(e).map(notizText).join('\n') }
     }),
     ...punkte.map((e): TechnikZeile => {
       const a = INFRA_ARTEN.find((x) => x.wert === e.infra)!, g = e.geraet
       const intervall = e.infra === 'geraet' ? g?.intervall ?? PRUEF_STANDARD : null
       return {
-        e, gattung: 'Punkt', art: a.name, artWert: a.wert, name: e.titel || '', farbe: a.farbe, laenge: null, netze: null, tore: 0, geschlossen: false,
+        e, gattung: 'Punkt', art: a.name, artWert: a.wert, name: e.titel || '', farbe: a.farbe, laenge: null, netze: null, tore: 0, geschlossen: false, tiere: '',
         strom: STROM_ARTEN.find((x) => x.wert === g?.strom)?.name ?? '', stand: STAENDE.find((x) => x.wert === g?.stand)?.name ?? '', kv: g?.kv ?? null,
         geprueft: g?.geprueft ?? '', faelligAb: intervall ? (g?.geprueft ? tagPlus(g.geprueft, intervall) : 'sofort') : '', intervall,
         lat: e.position.lat, lng: e.position.lng, notizen: notizenSortiert(e).map(notizText).join('\n'),

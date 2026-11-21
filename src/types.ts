@@ -50,6 +50,7 @@ export interface Linie extends Basis {
   geschlossen?: boolean // Ring (z. B. „Zaun um Fläche“)
   flaeche?: string // verknüpfte Fläche
   tore?: Tor[] // Lücken für Tore (Position in Metern ab Anfang)
+  spannung?: Messung[] // 7q: Zaunspannung wie am Kreis (nur Zaun-Arten, nicht Weg/Graben)
 }
 
 // Gut auf Satellitenbild sichtbare Vorschlagsfarben
@@ -73,6 +74,7 @@ export const farbName = (f: string) => FLAECHEN_FARBEN.find((x) => x.wert === f.
 export interface Flaeche extends Basis {
   typ: 'flaeche'
   punkte: LatLng[]
+  spannung?: Messung[] // 7q: Zaunspannung wie am Kreis
   steckbrief?: Steckbrief // Flächenart, Eigentum/Pacht, FLIK/Schlag, Förderprogramme + Fristen (Pacht-Details: vertraulich, getrennt)
 }
 export type Eintrag = Pin | Flaeche | Linie

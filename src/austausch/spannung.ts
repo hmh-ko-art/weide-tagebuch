@@ -1,11 +1,12 @@
 // Zaunspannung je Nadel (Weidezaungerät, 7f) für Excel-Blatt „Zaunspannung“ und PDF-Kapitel
-import type { Eintrag, Pin } from '../types'
+import type { Eintrag } from '../types'
+import { mitSpannung } from '../../server/spannung.js'
 import type { Blatt } from './xlsx'
 
-export interface SpannungZeile { e: Pin; name: string; datum: string; kv: number; unter: boolean; zeit: string; autor: string }
+export interface SpannungZeile { e: Eintrag; name: string; datum: string; kv: number; unter: boolean; zeit: string; autor: string }
 export function spannungZeilen(eintraege: Eintrag[], schwelle: number): SpannungZeile[] {
-  return eintraege.filter((e): e is Pin => e.typ === 'pin' && !e.infra && !!e.spannung?.length)
-    .flatMap((e) => (e.spannung ?? []).map((m) => ({ e, name: e.titel || '', datum: m.datum, kv: m.kv, unter: m.kv < schwelle, zeit: m.zeitpunkt ? new Date(m.zeitpunkt).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) : '', autor: m.autor ?? '' })))
+  return eintraege.filter((e) => mitSpannung(e) && !!e.spannung?.length)
+    .flatMap((e) => (e.spannung ?? []).map((m) => ({ e, name: (e.titel || '') + (e.typ === 'flaeche' ? ' (Fläche)' : e.typ === 'linie' ? ' (Zaun)' : ''), datum: m.datum, kv: m.kv, unter: m.kv < schwelle, zeit: m.zeitpunkt ? new Date(m.zeitpunkt).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) : '', autor: m.autor ?? '' })))
     .sort((a, b) => a.name.localeCompare(b.name, 'de') || b.datum.localeCompare(a.datum))
 }
 export function spannungBlatt(eintraege: Eintrag[], schwelle: number): Blatt[] {

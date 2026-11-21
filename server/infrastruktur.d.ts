@@ -33,6 +33,9 @@ export function geraetFaellig(e: Eintrag, tag?: string): GeraetFaellig | null
 export function geraeteFaellig(eintraege: Eintrag[] | null | undefined, tag?: string): GeraetFaellig[]
 export function pruefungEintragen<T extends Eintrag>(e: T, p: Pruefung): T
 export function eintragSauber(e: Record<string, unknown>): string | null
+export function istZaun(e: unknown): e is Linie
+export function zaunVonFlaeche(liste: Eintrag[], flaecheId: string | undefined, ohneId?: string): Linie | null
+export function zaeuneEinzeln<T>(neue: T[], vorhandene?: Eintrag[]): T[]
 export function zaunUmFlaeche(f: { id: string; titel: string; punkte: LatLng[] }, art: LinienArt, id: string, jetzt: string): Linie
 export function linienArtRaten(name?: string): LinienArt
 export function infraRaten(name?: string): InfraArt | null

@@ -6,7 +6,7 @@ import type { Blatt } from './xlsx'
 export interface SpannungZeile { e: Eintrag; name: string; datum: string; kv: number; unter: boolean; zeit: string; autor: string }
 export function spannungZeilen(eintraege: Eintrag[], schwelle: number): SpannungZeile[] {
   return eintraege.filter((e) => mitSpannung(e) && !!e.spannung?.length)
-    .flatMap((e) => (e.spannung ?? []).map((m) => ({ e, name: (e.titel || '') + (e.typ === 'flaeche' ? ' (Fläche)' : e.typ === 'linie' ? ' (Zaun)' : ''), datum: m.datum, kv: m.kv, unter: m.kv < schwelle, zeit: m.zeitpunkt ? new Date(m.zeitpunkt).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) : '', autor: m.autor ?? '' })))
+    .flatMap((e) => (e.spannung ?? []).map((m) => ({ e, name: (e.titel || '') + (e.typ === 'flaeche' ? ' (Fläche)' : e.typ === 'linie' ? ' (Zaun)' : e.typ === 'pin' && e.frei ? ' (freier Kreis)' : ''), datum: m.datum, kv: m.kv, unter: m.kv < schwelle, zeit: m.zeitpunkt ? new Date(m.zeitpunkt).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) : '', autor: m.autor ?? '' })))
     .sort((a, b) => a.name.localeCompare(b.name, 'de') || b.datum.localeCompare(a.datum))
 }
 export function spannungBlatt(eintraege: Eintrag[], schwelle: number): Blatt[] {

@@ -960,3 +960,13 @@ button.chip.gruppe-chip.leer { border-style: dashed; }
 .zaun-zeile { display: flex; flex-direction: column; gap: 4px; margin-bottom: 6px; }
 .zaun-zeile .knoepfe { display: flex; flex-wrap: wrap; gap: 6px; }
 .infra-detail .gefahr.zaun-weg { color: #b71c1c; border-color: #e57373; }
+/* 7r: Spannung am Kreis (Kreis-Info, Kreis-Pop, Label am Kreisrand) */
+.spannung-kurz { margin: 6px 0; padding: 6px 8px; border: 1.5px solid #fbc02d; border-radius: 10px; background: #fffdf2; display: flex; flex-direction: column; gap: 4px; }
+.spannung-kurz.tief { border-color: #d32f2f; background: #fff5f5; }
+.spannung-kurz-zeile { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 8px; }
+.spannung-kurz .spannung-schwelle { color: #666; }
+.spannung-kurz .spannung-warn { color: #c62828; font-weight: 700; margin: 0; }
+.spannung-kurz .spannung-form.klein { display: flex; gap: 6px; }
+.spannung-kurz .spannung-form.klein input { flex: 1; min-width: 0; padding: 6px 8px; font-size: 16px; }
+.spannung-kurz .spannung-form.klein button { padding: 6px 10px; white-space: nowrap; }
+.kreis-volt { font-size: 11px; }

@@ -49,3 +49,33 @@ export function SpannungZeile(p: { e: Eintrag; darf: boolean; schwelle: number; 
     </div>
   )
 }
+
+// 7r: Spannung am Kreis – kommt immer von der Nadel (bzw. vom freien Kreis selbst): letzter Wert, Warnschwelle, optional schnelle Eingabe
+export function SpannungKurz(p: { e: Eintrag; schwelle: number; darf?: boolean; onMessen?: (kv: number) => void; quelle?: string }) {
+  const [wert, setWert] = useState('')
+  const [fehler, setFehler] = useState('')
+  const m = SP.spannungLetzte(p.e)
+  const heute = SP.heute(), gestern = tagPlus(heute, -1)
+  const tief = !!m && m.kv < p.schwelle
+  const speichern = () => {
+    const kv = SP.kvWert(wert)
+    if (kv === undefined) { setFehler('0–20 kV, z. B. 6,2'); return }
+    p.onMessen?.(kv); setWert(''); setFehler('')
+  }
+  return (
+    <div className={`spannung-kurz${tief ? ' tief' : ''}`}>
+      <div className="spannung-kurz-zeile">
+        <span>⚡ {m ? <><span className={`spannung-marke klein${tief ? ' tief' : ''}`}>{SP.kvText(m.kv)}</span> <small>{tagKurz(m.datum, heute, gestern)}</small></> : <small>noch keine Messung</small>}</span>
+        <small className="spannung-schwelle">Warnschwelle {SP.kvText(p.schwelle)}{p.quelle ? ` · ${p.quelle}` : ''}</small>
+      </div>
+      {tief && <small className="spannung-warn">Unter der Warnschwelle – Zaun prüfen!</small>}
+      {p.darf && p.onMessen && (
+        <form className="spannung-form klein" onSubmit={(x) => { x.preventDefault(); speichern() }}>
+          <input type="text" inputMode="decimal" enterKeyHint="done" autoComplete="off" aria-label="Spannung in kV" placeholder={m ? String(m.kv).replace('.', ',') : 'kV'} value={wert} onChange={(x) => { setWert(x.target.value); setFehler('') }} />
+          <button className="primaer" type="submit" disabled={!wert.trim()}>⚡ {m?.datum === heute ? 'Ersetzen' : 'Speichern'}</button>
+        </form>
+      )}
+      {fehler && <small className="fehler">{fehler}</small>}
+    </div>
+  )
+}

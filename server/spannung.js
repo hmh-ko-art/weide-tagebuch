@@ -38,9 +38,10 @@ export function spannungEintragen(e, m) {
   return { ...e, spannung: spannungSauber([neu, ...(e.spannung ?? []).filter((x) => x.datum !== neu.datum)]) }
 }
 export const spannungLetzte = (e) => (mitSpannung(e) && e.spannung?.length ? e.spannung[0] : null)
-// 7q: Spannung/Tiere wie am Kreis auch an Flächen und Zäunen (nicht an Wegen/Gräben, Technik, freien Kreisen)
+// 7q: Spannung/Tiere wie am Kreis auch an Flächen und Zäunen (nicht an Wegen/Gräben, Technik)
+// 7r: Kreis um eine Nadel zeigt die Spannung DER NADEL (eine Datenquelle); freie Kreise (ohne Nadel) haben ihre eigene
 export const ZAUN_ARTEN = ['elektronetz', 'festzaun', 'litze', 'sonstiges']
-export const mitSpannung = (e) => !!e && ((e.typ === 'pin' && !e.infra && !e.frei) || e.typ === 'flaeche' || (e.typ === 'linie' && ZAUN_ARTEN.includes(e.linienArt ?? 'sonstiges')))
+export const mitSpannung = (e) => !!e && ((e.typ === 'pin' && !e.infra) || e.typ === 'flaeche' || (e.typ === 'linie' && ZAUN_ARTEN.includes(e.linienArt ?? 'sonstiges')))
 export const kvText = (kv) => `${kv.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} kV`
 // Eintrag bereinigen (Server bei jedem Speichern/Import): an normalen Nadeln, Flächen und Zäunen
 export function spannungFeld(e) {

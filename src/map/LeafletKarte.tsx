@@ -168,6 +168,9 @@ export default function LeafletKarte(p: KartenProps) {
             if (cb.current.onKreisKlick) cb.current.onKreisKlick(e.id, ak.stehenId, ev.originalEvent?.clientX ?? 0, ev.originalEvent?.clientY ?? 0)
             else cb.current.onAuswahl(e.id, { lat: ev.latlng.lat, lng: ev.latlng.lng }) // im Setz-Modus: Nadel genau hier
           }).addTo(g)
+        // 7r: Spannung der Nadel auch am Kreis (unten am Rand) – nur am aktuellen Kreis, auch wenn die Beschriftung aus ist
+        const kvHtml = alt ? '' : voltHtml(e, p.spannungSchwelle ?? 4)
+        if (kvHtml) L.tooltip({ permanent: true, direction: 'center', className: 'flaeche-label nur-volt kreis-volt', interactive: false }).setLatLng([mi.lat - kr.radius / 111320, mi.lng]).setContent(kvHtml).addTo(g)
         // Fester Kreis und Nadel woanders: dünne Verbindungslinie, damit man sieht, wozu er gehört
         if (!alt && kr.gebunden === false && abstand(mi, e.position) > 2) L.polyline([ll(e.position), ll(mi)], { color: f, weight: 1.5, dashArray: '2 6', opacity: 0.9, interactive: false }).addTo(g)
       }

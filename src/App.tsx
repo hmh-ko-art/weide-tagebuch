@@ -13,7 +13,7 @@ import { InlineName } from './InlineName'
 import type { KartenAnsicht, KartenProps } from './map/props'
 import { FlaechenUebersicht, FristKarten, MessText, SteckbriefDetail, SteckbriefFormular, fristenListe, pachtAusForm, pachtFormAus } from './flaechen/Flaechen'
 import { nadelHtml } from './map/nadel'
-import { SpannungZeile } from './spannung/Spannung'
+import { SpannungKurz, SpannungZeile } from './spannung/Spannung'
 import { ueberlappung } from './geo/ueberlapp'
 import { InfoKarte, InfoHinweis, Tipp } from './InfoKarte'
 import { FarbMenue } from './FarbMenue'
@@ -1072,7 +1072,7 @@ export default function App() {
                 onWahl={(id) => { const e = k.eintraege.find((x) => x.id === id); if (e) { fliege(mitte(e)); waehle(id) } }} />
               {SP.mitSpannung(auswahl) && <SpannungZeile e={auswahl} darf={k.darfBearbeiten} schwelle={schwelle} onMessen={(kv) => { k.spannungMessen(auswahl.id, kv); setMeldung(`⚡ ${SP.kvText(kv)} gespeichert${kv < schwelle ? ' – unter der Warnschwelle!' : ''}`) }} />}
               {istFrei(auswahl) && <FreiKreisDetail e={auswahl} darf={k.darfBearbeiten && kannEintrag(auswahl)} onAendern={() => freierKreisAendern(auswahl)} onAbgebaut={() => freierKreisWeg(auswahl)} />}
-              {auswahl.typ === 'pin' && !auswahl.frei && <KreisDetail e={auswahl} karte={k.karteId || 'lokal'} darf={k.darfBearbeiten && kannEintrag(auswahl)}
+              {auswahl.typ === 'pin' && !auswahl.frei && <KreisDetail e={auswahl} schwelle={schwelle} karte={k.karteId || 'lokal'} darf={k.darfBearbeiten && kannEintrag(auswahl)}
                 onEinkreisen={() => { const ke = kreisStart(auswahl, k.karteId || 'lokal'); setKreisEdit(ke); setModus('kreis'); setFokus({ ...(auswahl.kreis && auswahl.kreis.gebunden === false ? auswahl.kreis.mitte : auswahl.position), n: Date.now(), nurSichtbar: true }) }}
                 onAbgebaut={(sid) => { k.speichern({ ...auswahl, ...kreisAendern(auswahl, sid ?? null, () => null), geaendert: new Date().toISOString() }); setMeldung('Kreis entfernt – abgebaut ✂️') }} />}
               {auswahl.typ === 'flaeche' && <SteckbriefDetail e={auswahl} pacht={k.pacht[auswahl.id]} istAdmin={k.istAdmin} darfBearbeiten={k.darfBearbeiten} onErledigt={(fid, d) => { k.fristErledigt(auswahl.id, fid, d); setMeldung(d ? 'Frist erledigt ✓' : 'Wieder offen') }} />}
@@ -1163,10 +1163,13 @@ export default function App() {
           const kr = kreisPop.stehenId == null ? pe.kreis : pe.kreiseStehen?.find((x) => x.id === kreisPop.stehenId)
           if (!kr) return null
           const zu = () => setKreisPop(null)
-          if (istFrei(pe)) return <KreisPop x={kreisPop.x} y={kreisPop.y} titel={`Freier Kreis · ${kr.radius} m`} name={{ wert: pe.titel, platzhalter: 'Name eingeben', onSpeichern: (t) => nameSpeichern(pe, t) }} farbe={kr.farbe || pinFarbe(pe)} onZu={zu}
+          // 7r: Spannung am Kreis = Spannung der Nadel (bzw. des freien Kreises) – Eingabe landet bei derselben Quelle; alte Standorte ohne (Gerät ist mitgewandert)
+          const spannung = kreisPop.stehenId == null ? <SpannungKurz e={pe} schwelle={schwelle} darf={k.darfBearbeiten} quelle={istFrei(pe) ? undefined : 'von der Nadel'}
+            onMessen={(kv) => { k.spannungMessen(pe.id, kv); setMeldung(`⚡ ${SP.kvText(kv)} gespeichert${kv < schwelle ? ' – unter der Warnschwelle!' : ''}`) }} /> : undefined
+          if (istFrei(pe)) return <KreisPop spannung={spannung} x={kreisPop.x} y={kreisPop.y} titel={`Freier Kreis · ${kr.radius} m`} name={{ wert: pe.titel, platzhalter: 'Name eingeben', onSpeichern: (t) => nameSpeichern(pe, t) }} farbe={kr.farbe || pinFarbe(pe)} onZu={zu}
             onFarbe={(f) => { k.speichern({ ...pe, farbe: f, ...kreisAendern(pe, null, (x) => ({ ...x, farbe: f })), geaendert: new Date().toISOString() }); kreisVorgabenSetzen(k.karteId || 'lokal', { farbe: f }); setMeldung('Kreisfarbe geändert') }}
             onAendern={() => freierKreisAendern(pe)} onAbgebaut={() => freierKreisWeg(pe)} />
-          return <KreisPop x={kreisPop.x} y={kreisPop.y} titel={`an ${pe.titel ? `„${pe.titel}“` : 'Nadel'}${kreisPop.stehenId ? ' · alter Standort' : ''} · ${kr.radius} m`} name={{ wert: kr.name ?? '', platzhalter: 'Kreis-Name eingeben', onSpeichern: (t) => kreisNameSpeichern(pe, kreisPop.stehenId, t) }} farbe={kr.farbe || pinFarbe(pe)} onZu={zu}
+          return <KreisPop spannung={spannung} x={kreisPop.x} y={kreisPop.y} titel={`an ${pe.titel ? `„${pe.titel}“` : 'Nadel'}${kreisPop.stehenId ? ' · alter Standort' : ''} · ${kr.radius} m`} name={{ wert: kr.name ?? '', platzhalter: 'Kreis-Name eingeben', onSpeichern: (t) => kreisNameSpeichern(pe, kreisPop.stehenId, t) }} farbe={kr.farbe || pinFarbe(pe)} onZu={zu}
             onFarbe={(f) => { k.speichern({ ...pe, ...kreisAendern(pe, kreisPop.stehenId, (x) => ({ ...x, farbe: f })), geaendert: new Date().toISOString() }); kreisVorgabenSetzen(k.karteId || 'lokal', { farbe: f }); setMeldung(`Kreisfarbe: ${farbName(f)}`); zu() }}
             onAendern={kreisPop.stehenId == null ? () => { zu(); setKreisEdit(kreisStart(pe, k.karteId || 'lokal')); setModus('kreis') } : undefined}
             onAbgebaut={() => { k.speichern({ ...pe, ...kreisAendern(pe, kreisPop.stehenId, () => null), geaendert: new Date().toISOString() }); setMeldung('Kreis entfernt – abgebaut ✂️'); zu() }} />

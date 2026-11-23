@@ -755,7 +755,7 @@ export default function App() {
     : k.geloescht ? 'Im Papierkorb (gelöscht)'
     : k.status === 'offline' ? (k.wartend ? `Offline · ${aend(k.wartend)}` : 'Offline · alles gespeichert')
     : k.wartend ? `Sende ${aend(k.wartend).replace(' wartet', '').replace(' warten', '')} …`
-    : k.status === 'verbinde' ? 'Verbinde …' : 'Live · synchronisiert'
+    : k.status === 'verbinde' ? (k.serverStartet ? 'Verbinde … Server startet, Karte vom Gerät' : 'Verbinde …') : 'Live · synchronisiert'
 
   return (
     <div className={`app${panel === 'liste' ? ' liste-offen' : ''}${panel ? ' panel-offen' : ''}${desktop ? ' desktop-leiste' : ''}${(auswahl && !formular && modus === 'ansicht') || formular || modus !== 'ansicht' ? ' info-offen' : ''}`}>

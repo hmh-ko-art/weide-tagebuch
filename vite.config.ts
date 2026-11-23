@@ -20,6 +20,7 @@ function swPrecache(): Plugin {
       const liste = dateien.filter((f) => f !== '/sw.js' && !/\.map$/.test(f) && !/^\/(icon-512|icon-maskable-512)\.png$/.test(f)).sort()
       const hash = crypto.createHash('sha256')
       for (const f of liste) hash.update(f).update(fs.readFileSync(path.join(dist, f)))
+      hash.update(fs.readFileSync(swDatei)) // 7s: auch eine reine Service-Worker-Änderung ergibt eine neue Version
       const version = hash.digest('hex').slice(0, 12)
       const sw = fs.readFileSync(swDatei, 'utf8').replace("'__VERSION__'", JSON.stringify(version))
       fs.writeFileSync(swDatei, `self.__PRECACHE__ = ${JSON.stringify(['/', ...liste])}\n` + sw)

@@ -1416,6 +1416,8 @@ if (fs.existsSync(DIST_DIR)) {
   // Gerät vergessen (Zugang gelöscht / Gerätedaten gelöscht / Handy-Karte gewählt): Cookie entfernen
   app.post('/api/geraet/vergessen', (req, res) => { res.append('Set-Cookie', `${KARTE_COOKIE}=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax${req.secure ? '; Secure' : ''}`); res.json({ ok: true }) })
   app.use(express.static(DIST_DIR, { index: false, setHeaders: (res, p) => { if (/\.(html)$|[\\/]sw\.js$|manifest/.test(p)) ohneCache(res); else if (/[\\/]assets[\\/]/.test(p)) res.set('Cache-Control', 'public, max-age=31536000, immutable') } }))
+  // 7s: fehlende gehashte Dateien (alter Stand nach einem Deploy) ehrlich mit 404 beantworten – nie die HTML-Seite als JS/CSS ausliefern
+  app.get(/^\/assets\//, (_req, res) => { ohneCache(res); res.status(404).type('text').send('Nicht gefunden') })
   app.get(/^\/(?!api\/|healthz).*/, seiteSenden)
 }
 

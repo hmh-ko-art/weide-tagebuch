@@ -4,6 +4,7 @@ import './index.css'
 import App from './App.tsx'
 import { HofEinstieg, Betreiber } from './Hof.tsx'
 import { speicherStarten } from './speicher.ts'
+import { dauerhaftAnfragen } from './offline.ts'
 import { RechtOverlay } from './recht/Recht.tsx'
 import { ErsterStart } from './recht/ErsterStart.tsx'
 import { LETZTE_KARTE, KARTEN_ID } from './daten.ts'
@@ -33,3 +34,5 @@ createRoot(document.getElementById('root')!).render(
 )
 
 if (import.meta.env.PROD && 'serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js')
+// 7s: nach dem Start den Browser bitten, Gerätespeicher (Karte, App-Hülle) nicht von selbst zu räumen
+if (p.has('karte')) window.setTimeout(() => { void dauerhaftAnfragen() }, 4000)

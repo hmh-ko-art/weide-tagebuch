@@ -277,6 +277,7 @@ export function useKarte() {
   const pachtVersion = useRef<number | null>(null)
   const pachtHolenRef = useRef<() => void>(() => {})
   const [status, setStatus] = useState<SyncStatus>(karteId ? (navigator.onLine === false ? 'offline' : 'verbinde') : 'lokal')
+  const [serverStartet, setServerStartet] = useState(false) // 7s: Verbindung braucht länger (Render-Kaltstart) – Karte kommt vom Gerät
   // Name/Rolle vom letzten Kontakt mit dem Server: so kann man auch nach einem Neustart ohne Netz weiterarbeiten
   const [ich, setIch] = useState<Ich | null>(zugang ? meta0.ich ?? null : null)
   const [hinweis, setHinweis] = useState('')
@@ -306,12 +307,13 @@ export function useKarte() {
   const headers = { 'Content-Type': 'application/json', ...(zugang ? { 'x-zugang': zugang } : {}) }
 
   // Wer bin ich auf dieser Karte? (bei Rollen-/Nutzeränderungen neu laden)
-  const ichLaden = useCallback(async (mitEintraegen = false) => {
-    if (!karteId) return
+  const ichLaden = useCallback(async (mitEintraegen = false): Promise<boolean> => {
+    if (!karteId) return true
     try {
       const r = await mitZeitlimit(`/api/karten/${karteId}`, { headers })
-      if (r.status === 410) { const j = await r.json().catch(() => ({})); setGeloescht(j.geloescht ?? { am: '', bis: '' }); setDarfLoeschen(false); return }
-      if (!r.ok) return
+      if (r.status === 410) { const j = await r.json().catch(() => ({})); setGeloescht(j.geloescht ?? { am: '', bis: '' }); setDarfLoeschen(false); return true }
+      if (r.status >= 500) return false // Server startet noch (Render: 502/503) -> später erneut
+      if (!r.ok) return true
       const k = await r.json()
       setGeloescht(k.geloescht ?? null)
       setDarfLoeschen(!!k.darfLoeschen)
@@ -339,7 +341,8 @@ export function useKarte() {
         for (const a of queue.current) pa = pachtAnwenden(pa, a, eintraegeRef.current)
         setPacht(pa)
       } else { pachtVersion.current = null; setPacht({}) }
-    } catch { /* offline */ }
+      return true
+    } catch { return false /* offline oder Zeitlimit (Server wacht noch auf) */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [karteId, zugang])
 
@@ -415,7 +418,8 @@ export function useKarte() {
         await senden(queue.current[0])
       } catch (e) {
         const f = e as { endgueltig?: boolean; konflikt?: Konflikt; meldung?: string }
-        if (!f.endgueltig) { setStatus('offline'); break }
+        // 7s: während die Verbindung noch aufgebaut wird (Server startet) bleibt es bei „Verbinde …“
+        if (!f.endgueltig) { setStatus((st) => (st === 'verbinde' && navigator.onLine !== false ? st : 'offline')); break }
         if (f.konflikt) konfliktMelden(f.konflikt)
         // Vom Server abgelehnt (keine Berechtigung): Hinweis + Serverstand wiederherstellen
         else setHinweis(f.meldung ?? 'Eine Änderung wurde vom Server abgelehnt (keine Berechtigung mehr) und verworfen.')
@@ -447,39 +451,71 @@ export function useKarte() {
   useEffect(() => { pachtHolenRef.current = pachtHolen }, [pachtHolen])
 
   // Live-Verbindung (SSE) zum Server
+  // 7s: Render Free schläft – der erste Aufruf kann ~1 min dauern. Bis dahin zeigt die App die Karte vom Gerät,
+  // Status „Verbinde …“ (nicht „Offline“, solange das Handy Netz hat) und versucht es mit wachsendem Abstand erneut.
   useEffect(() => {
     if (!karteId) return
-    ichLaden()
-    const es = new EventSource(`/api/karten/${karteId}/live`)
-    es.addEventListener('karte', (ev) => {
-      const k = JSON.parse((ev as MessageEvent).data)
-      setKartenName(k.name)
-      setHof((alt) => (k.hof ? { ...alt, ...k.hof } : null))
-      setStatus('verbunden')
-      if (!queue.current.length) synchronisiert()
-      // Nutzerliste geändert (z. B. Rolle geändert oder Zugang entfernt) -> eigene Rechte neu holen
-      if (nutzerVersion.current !== null && k.nutzerVersion !== nutzerVersion.current) { ichLaden(); setNutzerStand(k.nutzerVersion) }
-      // Lokale, noch nicht gesendete Änderungen obenauf legen
-      let liste: Eintrag[] = namenAnwenden(k.eintraege.map(migrieren), k.namen)
-      let gl: Gruppe[] = k.gruppen ?? []
-      let plan: Weideplan | null = k.weideplan ?? null
-      for (const a of queue.current) { liste = anwenden(liste, a); gl = gruppenAnwenden(gl, a); ({ liste, plan } = planAnwenden(liste, plan, a, ichRef.current)) }
-      setEintraege(liste)
-      setGruppen(gl)
-      setWeideplan(plan)
-      // Pacht kommt nie über den (öffentlichen) Live-Stream – nur der Zähler; Admins holen den neuen Stand mit ihrem Zugang
-      if (pachtVersion.current !== null && (k.pachtVersion ?? 0) !== pachtVersion.current) pachtHolen()
-      if (queue.current.length) queueAbarbeiten()
-    })
-    // Verbindung endgültig abgelehnt (z. B. Karte gelöscht) -> Stand vom Server holen
-    es.onerror = () => { setStatus('offline'); if (es.readyState === EventSource.CLOSED) ichLaden() }
-    const online = () => { setStatus((s) => (s === 'offline' ? 'verbinde' : s)); queueAbarbeiten(); ichLaden() }
+    const STUFEN = [2000, 5000, 15000, 30000, 90000]
+    let weg = false, es: EventSource | null = null, esTimer = 0, ladeTimer = 0, esVersuch = 0, ladeVersuch = 0, ichOk = false
+    const langsam = window.setTimeout(() => setServerStartet(true), 2500)
+    const laden = async () => {
+      window.clearTimeout(ladeTimer)
+      if (weg) return
+      ichOk = await ichLaden()
+      if (!ichOk && !weg) ladeTimer = window.setTimeout(laden, STUFEN[Math.min(ladeVersuch++, STUFEN.length - 1)])
+      else ladeVersuch = 0
+    }
+    laden()
+    const aufbauen = () => {
+      window.clearTimeout(esTimer)
+      if (weg) return
+      es?.close()
+      es = new EventSource(`/api/karten/${karteId}/live`)
+      es.addEventListener('karte', (ev) => {
+        esVersuch = 0
+        window.clearTimeout(langsam); setServerStartet(false)
+        if (!ichOk) laden()
+        const k = JSON.parse((ev as MessageEvent).data)
+        setKartenName(k.name)
+        setHof((alt) => (k.hof ? { ...alt, ...k.hof } : null))
+        setStatus('verbunden')
+        if (!queue.current.length) synchronisiert()
+        // Nutzerliste geändert (z. B. Rolle geändert oder Zugang entfernt) -> eigene Rechte neu holen
+        if (nutzerVersion.current !== null && k.nutzerVersion !== nutzerVersion.current) { ichLaden(); setNutzerStand(k.nutzerVersion) }
+        // Lokale, noch nicht gesendete Änderungen obenauf legen
+        let liste: Eintrag[] = namenAnwenden(k.eintraege.map(migrieren), k.namen)
+        let gl: Gruppe[] = k.gruppen ?? []
+        let plan: Weideplan | null = k.weideplan ?? null
+        for (const a of queue.current) { liste = anwenden(liste, a); gl = gruppenAnwenden(gl, a); ({ liste, plan } = planAnwenden(liste, plan, a, ichRef.current)) }
+        setEintraege(liste)
+        setGruppen(gl)
+        setWeideplan(plan)
+        // Pacht kommt nie über den (öffentlichen) Live-Stream – nur der Zähler; Admins holen den neuen Stand mit ihrem Zugang
+        if (pachtVersion.current !== null && (k.pachtVersion ?? 0) !== pachtVersion.current) pachtHolen()
+        if (queue.current.length) queueAbarbeiten()
+      })
+      // Fehler: ohne Netz „Offline“; mit Netz „Verbinde … Server startet“ und neu aufbauen nach 2/5/15/30/90 s.
+      // Erst wenn alle Stufen durch sind (~2,5 min), gilt es als offline – weiterversucht wird trotzdem alle 90 s.
+      es.onerror = () => {
+        const zu = es?.readyState === EventSource.CLOSED
+        es?.close()
+        const n = esVersuch++
+        if (navigator.onLine === false) setStatus('offline')
+        else { setServerStartet(true); setStatus((st) => (n >= STUFEN.length ? 'offline' : st === 'verbunden' ? 'verbinde' : st)) }
+        // Verbindung endgültig abgelehnt (z. B. Karte gelöscht) -> Stand vom Server holen
+        if (zu) laden()
+        window.clearTimeout(esTimer)
+        esTimer = window.setTimeout(aufbauen, STUFEN[Math.min(n, STUFEN.length - 1)])
+      }
+    }
+    aufbauen()
+    const online = () => { setStatus((s) => (s === 'offline' ? 'verbinde' : s)); esVersuch = 0; ladeVersuch = 0; queueAbarbeiten(); laden(); aufbauen() }
     const offline = () => setStatus('offline')
     window.addEventListener('online', online)
     window.addEventListener('offline', offline)
     // Postausgang regelmäßig erneut versuchen (z. B. wenn der Empfang nur kurz da war)
     const t = setInterval(() => { if (queue.current.length && navigator.onLine !== false) queueAbarbeiten() }, 20000)
-    return () => { es.close(); clearInterval(t); window.removeEventListener('online', online); window.removeEventListener('offline', offline) }
+    return () => { weg = true; es?.close(); clearInterval(t); window.clearTimeout(esTimer); window.clearTimeout(ladeTimer); window.clearTimeout(langsam); window.removeEventListener('online', online); window.removeEventListener('offline', offline) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [karteId])
 
@@ -672,5 +708,5 @@ export function useKarte() {
   }
   const einladungVerwalten = { laden: () => einladungApi('GET'), erzeugen: () => einladungApi('POST'), deaktivieren: () => einladungApi('DELETE') }
 
-  return { geprueft, spannungMessen, fristErledigt, pacht, pachtSpeichern, weideplan, plan, geloescht, darfLoeschen, datenschutz, stapel, alsNeueKarte, jetztSenden: queueAbarbeiten, wartend, letzteSync, konflikte, hof, setHof, eintraege, gruppen, gruppeSpeichern, gruppeLoeschen, zuordnen, reihenfolge, speichern, loeschen, notizSpeichern, notizLoeschen, alleErsetzen, teilen, abmelden, nameAendern, einladung, einladungPruefen, beitreten, kartenNameAendern, einladungVerwalten, nutzerStand, status, darfBearbeiten, istAdmin, ich, ichLaden, hinweis, setHinweis, nutzer, karteId, zugang, kartenName }
+  return { geprueft, spannungMessen, fristErledigt, pacht, pachtSpeichern, weideplan, plan, geloescht, darfLoeschen, datenschutz, stapel, alsNeueKarte, jetztSenden: queueAbarbeiten, wartend, letzteSync, konflikte, hof, setHof, eintraege, gruppen, gruppeSpeichern, gruppeLoeschen, zuordnen, reihenfolge, speichern, loeschen, notizSpeichern, notizLoeschen, alleErsetzen, teilen, abmelden, nameAendern, einladung, einladungPruefen, beitreten, kartenNameAendern, einladungVerwalten, nutzerStand, status, serverStartet, darfBearbeiten, istAdmin, ich, ichLaden, hinweis, setHinweis, nutzer, karteId, zugang, kartenName }
 }

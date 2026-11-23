@@ -970,3 +970,10 @@ button.chip.gruppe-chip.leer { border-style: dashed; }
 .spannung-kurz .spannung-form.klein input { flex: 1; min-width: 0; padding: 6px 8px; font-size: 16px; }
 .spannung-kurz .spannung-form.klein button { padding: 6px 10px; white-space: nowrap; }
 .kreis-volt { font-size: 11px; }
+
+/* 7t: Namen / Tiere / Spannung getrennt schaltbar */
+.werkzeug-emoji { font-size: 17px; line-height: 1; }
+.werkzeug-knopf:not(.an) .werkzeug-emoji { opacity: .55; filter: grayscale(.6); }
+.linie-label.nur-volt { background: none; box-shadow: none; padding: 0; }
+.pin-label .label-name + .label-tiere, .pin-label .label-name + .tiere-knopf, .pin-label .label-name + .label-volt { margin-left: 5px; }
+.leaflet-tooltip.nur-volt { padding: 0; border: 0; box-shadow: none; background: none; }

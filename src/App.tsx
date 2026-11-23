@@ -140,6 +140,12 @@ export default function App() {
   useEffect(() => { localStorage.setItem('wt-rueckgaengig-s', String(rueckS)) }, [rueckS])
   const [beschriftung, setBeschriftung] = useState(() => localStorage.getItem('wt-beschriftung') !== 'aus')
   useEffect(() => { localStorage.setItem('wt-beschriftung', beschriftung ? 'an' : 'aus') }, [beschriftung])
+  // 7t: Tiere und Spannung im Schild getrennt vom Namen schaltbar (pro Gerät). Tiere folgen beim ersten Mal der bisherigen
+  // Beschriftung (wer Namen aus hatte, sieht keine Tierzahlen wie bisher); Spannung ist standardmäßig an
+  const [labelTiere, setLabelTiere] = useState(() => { const v = localStorage.getItem('wt-label-tiere'); return v ? v !== 'aus' : localStorage.getItem('wt-beschriftung') !== 'aus' })
+  useEffect(() => { localStorage.setItem('wt-label-tiere', labelTiere ? 'an' : 'aus') }, [labelTiere])
+  const [labelSpannung, setLabelSpannung] = useState(() => localStorage.getItem('wt-label-spannung') !== 'aus')
+  useEffect(() => { localStorage.setItem('wt-label-spannung', labelSpannung ? 'an' : 'aus') }, [labelSpannung])
   // Farbe der Kopfleiste (rein optisch, pro Gerät); Textfarbe automatisch hell/dunkel
   const [kopfFarbe, setKopfFarbe] = useState<string | null>(() => localStorage.getItem('wt-kopf-farbe'))
   useEffect(() => {
@@ -807,6 +813,8 @@ export default function App() {
           standort={standort}
           fokus={fokus}
           beschriftung={beschriftung}
+          labelTiere={labelTiere}
+          labelSpannung={labelSpannung}
           tiereZu={tiereZu}
           onTiereUmschalten={tiereUmschalten}
           hervor={hervor}
@@ -822,15 +830,22 @@ export default function App() {
         />
 
 
-        {/* Kartenwerkzeuge oben links: 7j ein kompakter Ansicht-Knopf, darunter (aufgeklappt) Beschriftung, Zäune, Farb-Schnellauswahl */}
+        {/* Kartenwerkzeuge oben links: 7j ein kompakter Ansicht-Knopf, darunter (aufgeklappt) Namen, Tiere, Spannung (7t), Zäune, Farb-Schnellauswahl */}
         <div className={`karten-werkzeug${ansichtAuf ? ' auf' : ''}`}>
-          <button className={`werkzeug-knopf ansicht-knopf${ansichtAuf ? ' an' : ''}`} aria-expanded={ansichtAuf} title={ansichtAuf ? 'Ansicht-Werkzeuge zuklappen' : 'Ansicht: Beschriftung, Zäune, Farben hervorheben'} aria-label="Ansicht-Werkzeuge" onClick={() => setAnsichtAuf((a) => !a)}>
+          <button className={`werkzeug-knopf ansicht-knopf${ansichtAuf ? ' an' : ''}`} aria-expanded={ansichtAuf} title={ansichtAuf ? 'Ansicht-Werkzeuge zuklappen' : 'Ansicht: Namen, Tiere, Spannung, Zäune, Farben hervorheben'} aria-label="Ansicht-Werkzeuge" onClick={() => setAnsichtAuf((a) => !a)}>
             <svg className="icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z" /><circle cx="12" cy="12" r="3" /></svg>
-            {!ansichtAuf && (hervor.length > 0 || !beschriftung || infraAus.aus.includes('__alle') || gruppenAus.some((g) => k.gruppen.some((x) => x.id === g))) && <span className="ansicht-punkt" style={hervor[0] ? { background: hervor[0] } : undefined} aria-hidden="true" />}
+            {!ansichtAuf && (hervor.length > 0 || !beschriftung || !labelTiere || !labelSpannung || infraAus.aus.includes('__alle') || gruppenAus.some((g) => k.gruppen.some((x) => x.id === g))) && <span className="ansicht-punkt" style={hervor[0] ? { background: hervor[0] } : undefined} aria-hidden="true" />}
           </button>
           {ansichtAuf && <>
-          <button className={`werkzeug-knopf${beschriftung ? ' an' : ''}`} aria-pressed={beschriftung} title={beschriftung ? 'Beschriftung ausblenden' : 'Beschriftung einblenden'} onClick={() => setBeschriftung((b) => !b)}>
-            <Icon name="etikett" /><small>{beschriftung ? 'an' : 'aus'}</small>
+          {/* 7t: Namen, Tiere und Spannung getrennt ein-/ausblenden */}
+          <button className={`werkzeug-knopf namen-knopf${beschriftung ? ' an' : ''}`} aria-pressed={beschriftung} aria-label="Namen auf der Karte" title={beschriftung ? 'Namen ausblenden' : 'Namen einblenden'} onClick={() => setBeschriftung((b) => !b)}>
+            <Icon name="etikett" /><small>{beschriftung ? 'Name' : 'aus'}</small>
+          </button>
+          <button className={`werkzeug-knopf tiere-schalter${labelTiere ? ' an' : ''}`} aria-pressed={labelTiere} aria-label="Tierzahlen auf der Karte" title={labelTiere ? 'Tierzahlen ausblenden' : 'Tierzahlen einblenden'} onClick={() => setLabelTiere((b) => !b)}>
+            <span className="werkzeug-emoji" aria-hidden="true">🐑</span><small>{labelTiere ? 'Tiere' : 'aus'}</small>
+          </button>
+          <button className={`werkzeug-knopf spannung-schalter${labelSpannung ? ' an' : ''}`} aria-pressed={labelSpannung} aria-label="Spannung auf der Karte" title={labelSpannung ? 'Spannung ausblenden' : 'Spannung einblenden'} onClick={() => setLabelSpannung((b) => !b)}>
+            <span className="werkzeug-emoji" aria-hidden="true">⚡</span><small>{labelSpannung ? 'kV' : 'aus'}</small>
           </button>
           {k.eintraege.some((e) => !istNormal(e) && !istFrei(e)) && (
             <button className={`werkzeug-knopf${!infraAus.aus.includes('__alle') ? ' an' : ''}`} aria-pressed={!infraAus.aus.includes('__alle')} title={infraAus.aus.includes('__alle') ? 'Zäune & Wasser einblenden' : 'Zäune & Wasser ausblenden'} aria-label="Zäune und Wasser auf der Karte" onClick={() => infraAus.umschalten('__alle')}>

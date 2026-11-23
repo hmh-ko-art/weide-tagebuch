@@ -8,7 +8,7 @@
 // /api wird nie vom Service Worker gecacht – Kartendaten liegen in IndexedDB (siehe src/speicher.ts).
 const VERSION = '__VERSION__'
 const PRECACHE = self.__PRECACHE__ || ['/', '/index.html']
-const SW_STAND = '7s' // erhöhen, wenn sich die Logik ändert (VERSION ändert sich ohnehin mit jedem Build)
+const SW_STAND = '7t' // erhöhen, wenn sich die Logik ändert (VERSION ändert sich ohnehin mit jedem Build)
 const SHELL = 'flockmap-shell-' + SW_STAND + '-' + VERSION
 const KACHELN = 'flockmap-kacheln'
 const GEBIETE = 'flockmap-gebiete'

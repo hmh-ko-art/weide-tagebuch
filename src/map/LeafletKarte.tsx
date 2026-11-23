@@ -16,27 +16,29 @@ const punktIcon = (sel: boolean) => L.divIcon({ className: 'eck-icon', html: `<s
 const griffIcon = L.divIcon({ className: 'eck-icon', html: '<span class="eck kreis-griff">↔</span>', iconSize: [34, 34], iconAnchor: [17, 17] })
 const mitteIcon = L.divIcon({ className: 'eck-icon', html: '<span class="eck mitte">+</span>', iconSize: [26, 26], iconAnchor: [13, 13] })
 
-// Beschriftung: Name und – falls gesetzt – dezent Symbol + Tierzahl
+// Beschriftung (7t): drei getrennt schaltbare Teile – Name, Tiere (Symbol + Zahl), Spannung (⚡-Schild, rot unter der Warnschwelle).
+// Jeder Teil erscheint auch ohne die anderen; die Spannung steht pro Eintrag genau einmal auf der Karte.
 // Tierliste 'ausblendbar': kleiner Knopf ▾/▸ im Schild klappt sie ein/aus (Zustand pro Gerät)
-// Zaunspannung: kleines ⚡-Schild (rot unter der Warnschwelle) – auch wenn die Beschriftung aus ist
 const voltHtml = (e: Eintrag, schwelle: number) => {
   const m = spannungLetzte(e)
   if (!m) return ''
   return `<span class="label-volt${m.kv < schwelle ? ' tief' : ''}" title="Zaunspannung ${m.datum.split('-').reverse().join('.')}">⚡${m.kv.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}</span>`
 }
-const labelHtml = (e: Eintrag, zu: boolean, schwelle: number, mitName = true) => {
-  const volt = voltHtml(e, schwelle)
-  if (!mitName) return volt ? `<div class="pin-label nur-volt">${volt}</div>` : ''
-  const name = e.titel.trim().replace(/[<>&"]/g, '')
-  const summen = tierSummen([e])
-  const liste = summen.map((x) => `<span class="label-tiere">${tierSymbolHtml(x.art)}${x.n}</span>`).join('')
-  const tiere = summen.length && istAusblendbar(e)
+export interface LabelTeile { namen: boolean; tiere: boolean; spannung: boolean }
+const tiereHtml = (e: Eintrag) => tierSummen([e]).map((x) => `<span class="label-tiere">${tierSymbolHtml(x.art)}${x.n}</span>`).join('')
+const nameHtml = (e: Eintrag) => `<span class="label-name">${e.titel.trim().replace(/[<>&"]/g, '')}</span>`
+const labelHtml = (e: Eintrag, zu: boolean, schwelle: number, t: LabelTeile) => {
+  const name = t.namen && e.titel.trim() ? nameHtml(e) : ''
+  const liste = t.tiere ? tiereHtml(e) : ''
+  const tiere = liste && istAusblendbar(e)
     ? `<span class="tiere-knopf" role="button" aria-expanded="${!zu}" title="Tiere ${zu ? 'einblenden' : 'ausblenden'}">${zu ? '▸ Tiere' : `▾${liste}`}</span>`
     : liste
-  return name || tiere || volt ? `<div class="pin-label">${name}${tiere}${volt}</div>` : ''
+  const volt = t.spannung ? voltHtml(e, schwelle) : ''
+  if (!name && !tiere) return volt ? `<div class="pin-label nur-volt">${volt}</div>` : ''
+  return `<div class="pin-label">${name}${tiere}${volt}</div>`
 }
-// 7q: Flächen und Zäune zeigen Tiere + Spannung wie Nadel/Kreis (Name · 🐑 n · ⚡ kV)
-const zusatzHtml = (e: Eintrag, schwelle: number) => `${tierSummen([e]).map((x) => `<span class="label-tiere">${tierSymbolHtml(x.art)}${x.n}</span>`).join('')}${voltHtml(e, schwelle)}`
+// 7q/7t: Flächen und Zäune zeigen Tiere + Spannung wie Nadel/Kreis (Name · 🐑 n · ⚡ kV), jeder Teil einzeln schaltbar
+const werteHtml = (e: Eintrag, schwelle: number, t: LabelTeile) => `${t.tiere ? tiereHtml(e) : ''}${t.spannung ? voltHtml(e, schwelle) : ''}`
 const pinIcon = (aktiv: boolean, label: string, farbe: string, hervor: boolean, nr?: number) =>
   L.divIcon({
     className: `pin-icon${nr ? ' mit-nummer' : ''}`,
@@ -147,6 +149,7 @@ export default function LeafletKarte(p: KartenProps) {
     const verschiebbar = new Set(p.verschiebbar)
     const tiereZu = new Set(p.tiereZu)
     const warn = new Set(p.warnIds ?? [])
+    const teile: LabelTeile = { namen: p.beschriftung, tiere: p.labelTiere ?? true, spannung: p.labelSpannung ?? true }
     for (const e of p.eintraege) {
       const aktiv = e.id === p.ausgewaehlt
       const klick = (ev: L.LeafletMouseEvent) => {
@@ -168,9 +171,7 @@ export default function LeafletKarte(p: KartenProps) {
             if (cb.current.onKreisKlick) cb.current.onKreisKlick(e.id, ak.stehenId, ev.originalEvent?.clientX ?? 0, ev.originalEvent?.clientY ?? 0)
             else cb.current.onAuswahl(e.id, { lat: ev.latlng.lat, lng: ev.latlng.lng }) // im Setz-Modus: Nadel genau hier
           }).addTo(g)
-        // 7s: ⚡ am unteren Kreisrand nur bei freien Kreisen (ohne Nadel); bei Kreisen an einer Nadel steht die Spannung im Namensschild der Nadel
-        const kvHtml = alt || !e.frei ? '' : voltHtml(e, p.spannungSchwelle ?? 4)
-        if (kvHtml) L.tooltip({ permanent: true, direction: 'center', className: 'flaeche-label nur-volt kreis-volt', interactive: false }).setLatLng([mi.lat - kr.radius / 111320, mi.lng]).setContent(kvHtml).addTo(g)
+        // 7t: Kreise zeigen kein eigenes ⚡ am Rand mehr – Kreis an Nadel: Spannung im Schild der Nadel; freier Kreis: im eigenen Schild (Mitte)
         // Fester Kreis und Nadel woanders: dünne Verbindungslinie, damit man sieht, wozu er gehört
         if (!alt && kr.gebunden === false && abstand(mi, e.position) > 2) L.polyline([ll(e.position), ll(mi)], { color: f, weight: 1.5, dashArray: '2 6', opacity: 0.9, interactive: false }).addTo(g)
       }
@@ -201,9 +202,13 @@ export default function LeafletKarte(p: KartenProps) {
           for (const d of [-t.breite / 2, t.breite / 2]) L.circleMarker(ll(punktBei(e, t.pos + d)), { radius: 4, color: '#3e2723', weight: 2, fillColor: '#fff', fillOpacity: 1, interactive: false }).addTo(g)
           L.circleMarker(ll(punktBei(e, t.pos)), { radius: 11, opacity: 0, fillOpacity: 0 }).on('click', (ev) => { L.DomEvent.stopPropagation(ev); cb.current.onAuswahl(e.id, punktBei(e, t.pos)) }).addTo(g)
         }
-        if (p.beschriftung || aktiv) {
-          const txt = `${e.titel.trim().replace(/[<>&"]/g, '')}${e.titel.trim() ? ' · ' : ''}${laengeText(linienLaenge(e))}${zusatzHtml(e, p.spannungSchwelle ?? 4)}`
-          L.tooltip({ permanent: true, direction: 'center', className: 'linie-label', interactive: false }).setLatLng(ll(punktBei(e, gesamtLaenge(e) / 2))).setContent(txt).addTo(g)
+        {
+          // 7t: Name + Länge mit dem Namen-Schalter (ausgewählt immer), Tiere/Spannung mit ihren eigenen Schaltern
+          const mitName = p.beschriftung || aktiv
+          const kopf = mitName ? `<span class="label-name">${e.titel.trim().replace(/[<>&"]/g, '')}${e.titel.trim() ? ' · ' : ''}${laengeText(linienLaenge(e))}</span>` : ''
+          const werte = werteHtml(e, p.spannungSchwelle ?? 4, teile)
+          const nurVolt = !kopf && !(teile.tiere && tiereHtml(e))
+          if (kopf || werte) L.tooltip({ permanent: true, direction: 'center', className: `linie-label${nurVolt ? ' nur-volt' : ''}`, interactive: false }).setLatLng(ll(punktBei(e, gesamtLaenge(e) / 2))).setContent(`${kopf}${werte}`).addTo(g)
         }
       } else if (e.typ === 'pin' && e.frei) {
         // Freier Kreis (ohne Nadel): nur kleiner Mittelpunkt + Name in der Mitte; antippen über den Ring/langes Drücken
@@ -211,10 +216,12 @@ export default function LeafletKarte(p: KartenProps) {
         const f = e.kreis?.farbe || pinFarbe(e)
         L.circleMarker(ll(e.position), { radius: aktiv ? 5 : 3.5, color: '#fff', weight: 1.5, fillColor: f, fillOpacity: 1, interactive: false }).addTo(g)
         const name = e.titel.trim().replace(/[<>&"]/g, '')
-        if ((p.beschriftung || aktiv) && name) L.tooltip({ permanent: true, direction: 'center', className: 'flaeche-label frei-kreis-label', interactive: false, offset: [0, 14] }).setLatLng(ll(e.position)).setContent(name).addTo(g)
+        // 7t: Name und Spannung getrennt schaltbar, beide im selben Schild (keine Überlappung mit einem Rand-Schild)
+        const zeigName = (p.beschriftung || aktiv) && !!name, fv = teile.spannung ? voltHtml(e, p.spannungSchwelle ?? 4) : ''
+        if (zeigName || fv) L.tooltip({ permanent: true, direction: 'center', className: `flaeche-label frei-kreis-label${zeigName ? '' : ' nur-volt'}`, interactive: false, offset: [0, 14] }).setLatLng(ll(e.position)).setContent(`${zeigName ? nameHtml(e) : ''}${fv}`).addTo(g)
       } else if (e.typ === 'pin') {
         const ziehbar = verschiebbar.has(e.id)
-        const m = L.marker([e.position.lat, e.position.lng], { icon: pinIcon(aktiv, labelHtml(e, tiereZu.has(e.id), p.spannungSchwelle ?? 4, p.beschriftung), pinFarbe(e), hervor.has(pinFarbe(e)), p.nummern[e.id]), zIndexOffset: aktiv ? 1000 : hervor.has(pinFarbe(e)) ? 500 : 0, draggable: ziehbar, autoPan: true })
+        const m = L.marker([e.position.lat, e.position.lng], { icon: pinIcon(aktiv, labelHtml(e, tiereZu.has(e.id), p.spannungSchwelle ?? 4, teile), pinFarbe(e), hervor.has(pinFarbe(e)), p.nummern[e.id]), zIndexOffset: aktiv ? 1000 : hervor.has(pinFarbe(e)) ? 500 : 0, draggable: ziehbar, autoPan: true })
         m.on('click', klick)
         if (ziehbar) {
           // Finger runter, ziehen, loslassen -> neue Position (kurzes Antippen bleibt ein Klick)
@@ -232,15 +239,16 @@ export default function LeafletKarte(p: KartenProps) {
         const f = pinFarbe(e), h = hervor.has(f) && !aktiv
         const poly = L.polygon(e.punkte.map((q) => [q.lat, q.lng] as [number, number]), { color: aktiv ? '#fff' : f, fillColor: f, weight: aktiv ? 4 : h ? 3.5 : 2, opacity: 1, fillOpacity: aktiv ? 0.35 : h ? 0.38 : 0.25 })
         // Nur beschriften, wenn die Fläche einen Namen hat
-        const zusatz = zusatzHtml(e, p.spannungSchwelle ?? 4), fname = e.titel.trim().replace(/[<>&"]/g, '')
-        if (p.beschriftung && (fname || zusatz)) poly.bindTooltip(`${fname}${zusatz}`, { permanent: true, direction: 'center', className: 'flaeche-label' })
-        else if (voltHtml(e, p.spannungSchwelle ?? 4)) poly.bindTooltip(voltHtml(e, p.spannungSchwelle ?? 4), { permanent: true, direction: 'center', className: 'flaeche-label nur-volt' })
+        // 7t: Name, Tiere und Spannung je nach Schalter; nur die Spannung -> schlichtes ⚡-Schild ohne Hintergrund
+        const fname = teile.namen && e.titel.trim() ? nameHtml(e) : '', ftiere = teile.tiere ? tiereHtml(e) : '', fvolt = teile.spannung ? voltHtml(e, p.spannungSchwelle ?? 4) : ''
+        if (fname || ftiere) poly.bindTooltip(`${fname}${ftiere}${fvolt}`, { permanent: true, direction: 'center', className: 'flaeche-label' })
+        else if (fvolt) poly.bindTooltip(fvolt, { permanent: true, direction: 'center', className: 'flaeche-label nur-volt' })
         // Tipp auf eine Fläche: Stelle mitgeben (im Setz-Modus kommt die Nadel genau dorthin, z. B. eine Tränke in der Weide)
         poly.on('click', (ev: L.LeafletMouseEvent) => { L.DomEvent.stopPropagation(ev); cb.current.onAuswahl(e.id, { lat: ev.latlng.lat, lng: ev.latlng.lng }) }).addTo(g)
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [p.kreisBearbeiten?.id, p.eintraege, p.ausgewaehlt, p.beschriftung, p.hervor.join(), p.verschiebbar.join(), p.tiereZu.join(), p.nummern, (p.warnIds ?? []).join(), p.spannungSchwelle])
+  }, [p.kreisBearbeiten?.id, p.eintraege, p.ausgewaehlt, p.beschriftung, p.labelTiere, p.labelSpannung, p.hervor.join(), p.verschiebbar.join(), p.tiereZu.join(), p.nummern, (p.warnIds ?? []).join(), p.spannungSchwelle])
 
   // Zeichnen einer Fläche oder Linie
   useEffect(() => {

@@ -24,6 +24,8 @@ export interface KartenProps {
   standort: LatLng | null
   fokus: Fokus | null
   beschriftung: boolean // Namen unter Nadeln / auf Flächen anzeigen
+  labelTiere?: boolean // 7t: Tiere (🐑 Zahl) im Schild – eigener Schalter (Standard an)
+  labelSpannung?: boolean // 7t: Spannung (⚡ kV) im Schild – eigener Schalter (Standard an), unabhängig vom Namen
   nummern: Record<string, number> // laufende Nummer der Nadel in ihrer Gruppe (1..n)
   hervor: string[] // hervorgehobene Nadelfarben (Kleinbuchstaben-Hex)
   tiereZu: string[] // IDs ausblendbarer Einträge, deren Tierliste auf diesem Gerät eingeklappt ist

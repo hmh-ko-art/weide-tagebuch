@@ -36,6 +36,8 @@ export function Verbinden() {
         <hr />
         <button type="button" className="verbinden-lokal" onClick={() => { localStorage.setItem(NUR_HANDY, '1'); location.href = '/?lokal' }}>📱 Handy-Karte ohne Konto</button>
         <p className="hinweis klein">Nur auf diesem Gerät, ohne Teilen. Verbinden geht später über Einstellungen oder einen Link.</p>
+        <button type="button" className="verbinden-lokal" onClick={() => { location.href = '/?freischalten' }}>🔑 Hof freischalten (Lizenzcode)</button>
+        <p className="hinweis klein">Du hast die FlockMap Hof-Lizenz gekauft? Hier den Code aus der Kauf-E-Mail einlösen.</p>
       </div>
     </main>
   )

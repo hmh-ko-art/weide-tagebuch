@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Einmalige Einrichtung eines frischen Hetzner-Servers (Ubuntu 24.04) für FlockMap.
 # Als root ausführen:
-#   curl -fsSL https://raw.githubusercontent.com/hmh-ko-art/weide-tagebuch/main/deploy/setup.sh | DOMAIN=karte.heckernatur.de bash
+#   curl -fsSL https://raw.githubusercontent.com/hmh-ko-art/weide-tagebuch/main/deploy/setup.sh | DOMAIN=flockmap.de bash
 # oder nach dem Klonen:  DOMAIN=... bash /opt/flockmap/deploy/setup.sh
 # Idempotent: kann gefahrlos erneut laufen.
 set -euo pipefail

@@ -977,3 +977,22 @@ button.chip.gruppe-chip.leer { border-style: dashed; }
 .linie-label.nur-volt { background: none; box-shadow: none; padding: 0; }
 .pin-label .label-name + .label-tiere, .pin-label .label-name + .tiere-knopf, .pin-label .label-name + .label-volt { margin-left: 5px; }
 .leaflet-tooltip.nur-volt { padding: 0; border: 0; box-shadow: none; background: none; }
+
+/* 7s-1: Freischalten (Lizenzcode) */
+.freischalten .einstieg-karte { box-sizing: border-box; }
+.freischalten .einstieg-karte input:not([type=checkbox]) { box-sizing: border-box; width: 100%; }
+.lizenz-box { display: flex; flex-direction: column; gap: 2px; background: #f4ecd8; border: 1.5px solid #d8d2c2; border-radius: 12px; padding: 10px 12px; font-size: .9rem; line-height: 1.35; margin-bottom: 6px; }
+.lizenz-box strong { color: #1e4d2b; font-size: 1rem; }
+.lizenz-b2b { font-weight: 700; color: #5d4300; }
+.einstieg-karte label.haken { display: flex; flex-direction: row; align-items: flex-start; gap: 8px; font-weight: 500; line-height: 1.35; margin-top: 6px; }
+.einstieg-karte label.haken input { width: 22px; height: 22px; min-height: 0; flex: none; margin: 0; }
+.freischalten-fertig { display: flex; flex-direction: column; gap: 8px; }
+.freischalten-fertig .admin-link { font-size: 14px; width: 100%; box-sizing: border-box; }
+.freischalten-fertig .knoepfe { display: flex; gap: 8px; }
+.freischalten-fertig .knoepfe button { flex: 1; min-height: 44px; }
+.freischalten-fertig .btn.primaer { text-align: center; min-height: 44px; display: flex; align-items: center; justify-content: center; }
+.gefahr-hinweis { color: #c62828; font-weight: 700; margin: 0; }
+.lizenz-zeile { font-size: .9rem; }
+.code-liste { list-style: none; padding: 0; margin: 6px 0; display: flex; flex-direction: column; gap: 4px; }
+.code-liste li { background: #f7f4ec; border-radius: 8px; padding: 6px 8px; font-size: .88rem; overflow-wrap: anywhere; }
+.code-liste code { font-size: 1rem; font-weight: 700; letter-spacing: .5px; }

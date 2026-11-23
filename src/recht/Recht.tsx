@@ -129,7 +129,9 @@ function Datenschutz() {
           <dt>Flächen-Steckbrief, Fristen &amp; Pacht (falls genutzt)</dt>
           <dd>Je Fläche: Flächenart, Eigentum oder Pacht, Feldblock-/FLIK- und Schlag-Nummer, Förderprogramme/Auflagen und Fristen (z. B. „frühestens beweiden ab“, „Schnitt bis“, „Antrag bis“). Wird eine Frist als erledigt markiert, speichern wir Datum sowie <b>wer sie erledigt hat</b> (Personen-ID und Name). Bei Pachtflächen können Inhaber/Admins zusätzlich den <b>Namen des Verpächters</b> (Angabe über eine dritte Person), Pachtpreis, Pachtfläche, Laufzeit, Kündigungsfrist und ein Erinnerungsdatum eintragen. Diese Pachtdaten sind <b>nur für Inhaber/Admins</b> sichtbar: Sie werden Mitarbeitern und „Nur ansehen“-Zugängen weder angezeigt noch an deren Geräte übertragen und fehlen in deren Exporten. Zweck: Flächenverwaltung, Einhaltung von Förderauflagen und rechtzeitige Pachtkündigung bzw. -verlängerung. Erinnerungen nur in der App (keine Push-Benachrichtigungen). Bitte trage beim Verpächter nur den Namen ein – keine Anschrift, Telefonnummer oder Bankdaten.</dd>
           <dt>Dein Standort</dt>
-          <dd>Den Gerätestandort fragt die App nur ab, wenn du ausdrücklich „Mein Standort“, „An meinem Standort setzen“ oder eine Route nutzt. Er wird im Browser verwendet und nicht laufend gespeichert. Auf dem Server landet er nur, wenn du an dieser Stelle eine Nadel setzt (als deren Koordinate). Für eine Route wird er an den Routendienst übermittelt (Abschnitt 5).</dd>
+          <dd>Den Gerätestandort fragt die App nur ab, wenn du ausdrücklich „Mein Standort“, „An meinem Standort setzen“ nutzt. Er wird im Browser verwendet und nicht laufend gespeichert. Auf dem Server landet er nur, wenn du an dieser Stelle eine Nadel setzt (als deren Koordinate). „🧭 Navigieren“ übergibt nur das Ziel an Google Maps; den Startpunkt ermittelt Google Maps selbst (Abschnitt 5).</dd>
+          <dt>Hof-Lizenz</dt>
+          <dd>Beim Freischalten speichern wir zur Lizenz: Art, Zeitpunkt der Einlösung, den zugehörigen Hof sowie nur einen nicht umkehrbaren Prüfwert (Hash) und die letzten vier Zeichen des Codes – nicht den Code selbst. Rechtsgrundlage: Art. 6 Abs. 1 lit. b DSGVO (Vertrag).</dd>
           <dt>Schutz vor Missbrauch</dt>
           <dd>Um das Durchprobieren von Einladungscodes und PINs zu verhindern, zählt der Server Fehlversuche je IP-Adresse – nur im Arbeitsspeicher und höchstens eine Stunde lang. FlockMap selbst schreibt keine Zugriffsprotokolle.</dd>
         </dl>
@@ -145,17 +147,15 @@ function Datenschutz() {
         <p>Vor technischen Änderungen legen wir Sicherungskopien der Datenbank an, damit keine Hofdaten verloren gehen. Diese werden nur für die Wiederherstellung genutzt und nach spätestens 90 Tagen gelöscht.</p>
       </A>
 
-      <A titel="5. Kartendienste und Routen (Drittanbieter)">
+      <A titel="5. Kartendienste und Navigation (Drittanbieter)">
         <p>Damit Satellitenbild und Karte angezeigt werden, lädt dein Browser Kartenbilder („Kacheln“) direkt von den folgenden Anbietern. Dabei werden deine <b>IP-Adresse</b>, die Browser-Kennung und der angezeigte Kartenausschnitt an den Anbieter übertragen. Rechtsgrundlage: Art. 6 Abs. 1 lit. f DSGVO – ohne Kartenbilder ist die App nicht nutzbar.</p>
         <dl className="recht-liste">
           <dt>Esri (Satellitenbild, Beschriftungen)</dt>
           <dd>Environmental Systems Research Institute, Inc. (Esri), 380 New York Street, Redlands, CA 92373, USA. Übermittlung in die USA. <Ext href="https://www.esri.com/en-us/privacy/overview">Datenschutz bei Esri</Ext></dd>
           <dt>OpenStreetMap (Straßenkarte)</dt>
           <dd>Nur wenn du die Ansicht „Karte“ wählst: OpenStreetMap Foundation, Cambridge, Vereinigtes Königreich (Angemessenheitsbeschluss der EU). <Ext href="https://osmfoundation.org/wiki/Privacy_Policy">Datenschutz der OSMF</Ext></dd>
-          <dt>Routen (OSRM)</dt>
-          <dd>Nur wenn du eine Route berechnen lässt: Start- und Zielkoordinaten (also dein Standort und die Weide) gehen an den Routendienst „project-osrm.org“, betrieben vom FOSSGIS e.V. in Deutschland. <Ext href="https://www.fossgis.de/datenschutzerklaerung/">Datenschutz FOSSGIS</Ext></dd>
           <dt>Google Maps (Navigation)</dt>
-          <dd>Nur wenn du auf „Navigation starten“ tippst, öffnet sich Google Maps mit dem Ziel. Ab dann gelten die Bestimmungen von Google (Google Ireland Limited, Dublin).{HAT_GOOGLE_KEY ? ' In dieser Version wird außerdem die Google-Karte selbst angezeigt; dabei werden IP-Adresse und Kartenausschnitt an Google übertragen.' : ''}</dd>
+          <dd>Nur wenn du auf „🧭 Navigieren“ tippst, öffnet sich Google Maps mit dem Ziel. Ab dann gelten die Bestimmungen von Google (Google Ireland Limited, Dublin).{HAT_GOOGLE_KEY ? ' In dieser Version wird außerdem die Google-Karte selbst angezeigt; dabei werden IP-Adresse und Kartenausschnitt an Google übertragen.' : ''}</dd>
         </dl>
         <p>Offline gespeicherte Kartenbereiche werden einmalig bei diesen Anbietern geladen und danach von deinem Gerät angezeigt.</p>
       </A>
@@ -204,11 +204,12 @@ function Nutzung() {
         <p>Diese Bedingungen gelten für die Nutzung der Web-App FlockMap und für den Erwerb einer Hof-Lizenz. Anbieter ist die {B.firma}, {B.strasse}, {B.ort} (siehe Impressum). Abweichende Bedingungen des Kunden gelten nicht, es sei denn, wir stimmen ihnen ausdrücklich in Textform zu.</p>
       </A>
       <A titel="§ 2 Leistung">
-        <p>FlockMap ist eine Web-App zur Planung und Dokumentation der Weidehaltung (Weiden und Flächen auf einer Satellitenkarte, Tierzahlen, Notizen, Teilen im Team, Offline-Nutzung, Export). Die Hof-Lizenz umfasst: die Nutzung für einen landwirtschaftlichen Betrieb mit beliebig vielen Karten und bis zu [100] Personen sowie den Betrieb auf unseren Servern für [Laufzeit, z. B. 3 Jahre ab Kauf / unbefristet, solange FlockMap angeboten wird].</p>
-        <p>Satellitenbilder, Straßenkarten und Routen stammen von Drittanbietern (siehe „Kartenquellen“). Wir haben auf deren Verfügbarkeit, Aktualität und Genauigkeit keinen Einfluss. Routen sind unverbindliche Vorschläge – maßgeblich sind die tatsächlichen Verhältnisse vor Ort und die Straßenverkehrsordnung.</p>
+        <p>FlockMap ist eine Web-App zur Planung und Dokumentation der Weidehaltung (Weiden und Flächen auf einer Satellitenkarte, Tierzahlen, Notizen, Teilen im Team, Offline-Nutzung, Export). Die Hof-Lizenz umfasst: die Nutzung für einen landwirtschaftlichen Betrieb mit beliebig vielen Karten und bis zu [100] Personen sowie den Betrieb auf unseren Servern für mindestens 3 Jahre ab Kauf (garantierte Mindestlaufzeit). Die Handy-Karte (nur auf einem Gerät, ohne Konto und ohne Teilen) bleibt kostenlos.</p>
+        <p>Satellitenbilder und Straßenkarten stammen von Drittanbietern (siehe „Kartenquellen“). Wir haben auf deren Verfügbarkeit, Aktualität und Genauigkeit keinen Einfluss. Die Navigation übergibt nur das Ziel an Google Maps; für die Route ist Google verantwortlich – maßgeblich sind die tatsächlichen Verhältnisse vor Ort und die Straßenverkehrsordnung.</p>
       </A>
-      <A titel="§ 3 Vertragsschluss, Preis">
-        <p>Die Hof-Lizenz kostet einmalig [Preis] € [inkl. 19 % USt. / zzgl. USt.]. Der Vertrag kommt zustande, wenn wir die Bestellung bestätigen [Bestellweg/Zahlungsart ergänzen]. Danach richten wir den Hof ein und senden dem Inhaber den Zugangslink.</p>
+      <A titel="§ 3 Nur für Betriebe, Vertragsschluss, Preis">
+        <p>Die Hof-Lizenz wird ausschließlich an Unternehmer im Sinne von § 14 BGB (z. B. landwirtschaftliche Betriebe, Schäfereien, Verbände) verkauft, nicht an Verbraucher. Der Käufer bestätigt das bei der Bestellung und beim Freischalten.</p>
+        <p>Die Hof-Lizenz kostet einmalig 149 € brutto (inkl. 19 % USt.; Pilotpreis), kein Abo. Der Vertrag kommt zustande, wenn wir die Bestellung bestätigen [Bestellweg/Zahlungsart ergänzen]. Nach Zahlungseingang erhält der Käufer einen Lizenzcode, mit dem er seinen Hof unter „Hof freischalten“ selbst anlegt und seinen persönlichen Admin-Link bekommt. Ein Code gilt für einen Hof und kann nur einmal eingelöst werden.</p>
       </A>
       <A titel="§ 4 Verfügbarkeit, Updates">
         <p>Wir bemühen uns um eine hohe Verfügbarkeit, schulden aber keine bestimmte Verfügbarkeit [ggf. Zusage ergänzen]. Wartungsarbeiten kündigen wir nach Möglichkeit an. Die App funktioniert in gesicherten Bereichen auch offline; Änderungen werden übertragen, sobald wieder Netz besteht. Wir dürfen FlockMap weiterentwickeln, solange die wesentlichen Funktionen erhalten bleiben.</p>
@@ -222,8 +223,8 @@ function Nutzung() {
       <A titel="§ 7 Laufzeitende">
         <p>Endet der Betrieb (z. B. nach Ablauf der Laufzeit oder wenn wir FlockMap einstellen), informieren wir den Inhaber mindestens [3 Monate] vorher, damit er seine Daten exportieren kann. Danach werden die Daten gelöscht.</p>
       </A>
-      <A titel="§ 8 Widerrufsrecht für Verbraucher">
-        <p>Die Hof-Lizenz richtet sich an landwirtschaftliche Betriebe (Unternehmer). Ist der Käufer ausnahmsweise Verbraucher, steht ihm ein gesetzliches Widerrufsrecht von 14 Tagen zu. [Vollständige Widerrufsbelehrung und Muster-Widerrufsformular einfügen.] Bei digitalen Inhalten und Diensten erlischt das Widerrufsrecht vorzeitig, wenn wir mit der Leistung begonnen haben, nachdem der Verbraucher ausdrücklich zugestimmt hat, dass wir vor Ablauf der Widerrufsfrist beginnen, und seine Kenntnis bestätigt hat, dass er dadurch sein Widerrufsrecht verliert (§ 356 Abs. 5 BGB) [genaue Formulierung prüfen lassen].</p>
+      <A titel="§ 8 Kein Verbrauchergeschäft">
+        <p>Da wir nur an Unternehmer verkaufen, besteht kein gesetzliches Widerrufsrecht für Verbraucher. Bestellungen, die erkennbar von Verbrauchern stammen, nehmen wir nicht an [Formulierung und Prüfung der Unternehmereigenschaft anwaltlich klären].</p>
       </A>
       <A titel="§ 9 Gewährleistung und Haftung">
         <p>Es gelten die gesetzlichen Gewährleistungsrechte. Wir haften unbeschränkt bei Vorsatz und grober Fahrlässigkeit, bei Verletzung von Leben, Körper oder Gesundheit sowie nach dem Produkthaftungsgesetz. Bei leichter Fahrlässigkeit haften wir nur bei Verletzung wesentlicher Vertragspflichten und begrenzt auf den vertragstypischen, vorhersehbaren Schaden. Für Datenverluste haften wir nur in dem Umfang, der bei regelmäßiger Datensicherung durch den Kunden (Export) entstanden wäre. [Haftungsklauseln prüfen lassen.]</p>
@@ -245,8 +246,8 @@ function Quellen() {
       <A titel="Straßenkarte">
         <p>© <Ext href="https://www.openstreetmap.org/copyright">OpenStreetMap</Ext>-Mitwirkende. Kartendaten unter der Open Database License (ODbL), Kartendarstellung © OpenStreetMap Foundation.</p>
       </A>
-      <A titel="Routen">
-        <p>Routenberechnung mit <Ext href="https://project-osrm.org">OSRM</Ext> (Open Source Routing Machine) auf Grundlage von OpenStreetMap-Daten; Server betrieben vom FOSSGIS e.V.{HAT_GOOGLE_KEY ? ' Mit Google-Schlüssel: Google Maps Platform.' : ''}</p>
+      <A titel="Navigation">
+        <p>FlockMap berechnet selbst keine Routen. „🧭 Navigieren“ öffnet Google Maps mit dem Ziel; dort gelten die Bedingungen von Google.</p>
       </A>
       <A titel="Software">
         <p>FlockMap verwendet Open-Source-Software, unter anderem: Leaflet (BSD-2-Clause), React (MIT), jsPDF und jspdf-autotable (MIT), fflate (MIT), Express (MIT), node-postgres (MIT). Schrift: Barlow (SIL Open Font License 1.1), lokal eingebunden – es werden keine Schriften von fremden Servern geladen.</p>

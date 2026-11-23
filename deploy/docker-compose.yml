@@ -24,6 +24,7 @@ services:
       args:
         VITE_GOOGLE_MAPS_API_KEY: ${VITE_GOOGLE_MAPS_API_KEY:-}
         VITE_HOSTER: ${VITE_HOSTER:-hetzner}
+        VITE_APP_BASIS: ${APP_BASIS:-}
     image: flockmap-app:latest
     restart: unless-stopped
     depends_on:
@@ -34,6 +35,8 @@ services:
       DATABASE_URL: postgres://flockmap:${POSTGRES_PASSWORD}@db:5432/flockmap
       DATABASE_SSL: "off"
       FLOCKMAP_ADMIN_TOKEN: ${FLOCKMAP_ADMIN_TOKEN:-}
+      FLOCKMAP_LIZENZ_PEPPER: ${FLOCKMAP_LIZENZ_PEPPER:-}
+      APP_BASIS: ${APP_BASIS:-}
 
   caddy:
     image: caddy:2-alpine

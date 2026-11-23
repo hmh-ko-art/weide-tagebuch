@@ -24,8 +24,10 @@ import * as FL from '../server/flaechen.js'
 import type { Pacht } from '../server/flaechen.js'
 import { InfraDetail, InfraFormular, InfraListe, InfraSymbol, LinienSymbol, useInfraAus, type PruefNeu } from './infra/Infra'
 import { geraeteFaellig, istFrei, istInfra, istLinie, istNormal, istZaun, zaunVonFlaeche, laengeText, linienArt, linienLaenge, naechsteStelle, netzAnzahl, pruefungEintragen, zaunUmFlaeche, TOR_BREITE, gesamtLaenge } from '../server/infrastruktur.js'
-import { KarteLoeschenAbschnitt, GeloeschtHinweis } from './recht/Loeschen'
-import { googleNaviLink, routeBerechnen, routeText } from './route'
+import { KarteLoeschenAbschnitt, GeloeschtHinweis, datumText } from './recht/Loeschen'
+import { APP_BASIS } from './basis'
+import { LIZENZ, LIZENZ_ART } from './lizenzText'
+import { googleNaviLink } from './route'
 import { eintragDatum, tagText, monatText, istAusblendbar, TIERARTEN, tierText, tierSymbolHtml, tierSummen, type Einheit, type Tierart, FARBEN, FLAECHEN_FARBEN, FLAECHE_STANDARD, START, STANDARD_FARBE, datum, farbName, hektar, mitte, neueId, notizenSortiert, pinFarbe, gruppenVorschlag, gruppenFarbe, gruppenOrdnung, naechsteGruppenFarbe, tierKurz, GRUPPEN_FARBEN, type Gruppe, type Eintrag, type Notiz, type Fokus, type LatLng, type Route, type Pin } from './types'
 
 type Modus = 'ansicht' | 'pin' | 'flaeche' | 'linie' | 'punkte' | 'tor' | 'kreis' | 'freikreis'
@@ -129,7 +131,6 @@ export default function App() {
   const [panel, setPanel] = useState<Panel>(null)
   const [exportFilter, setExportFilter] = useState<ExportFilter>(null)
   const [route, setRoute] = useState<Route | null>(null)
-  const [routeInfo, setRouteInfo] = useState<string>('')
   const [standort, setStandort] = useState<LatLng | null>(null)
   // Beschriftung (Namen auf der Karte) an/aus – pro Gerät gespeichert
   const [schwelle, setSchwelleRoh] = useState(() => schwelleLesen(k.karteId || 'lokal'))
@@ -434,22 +435,7 @@ export default function App() {
     if (!istHandy()) setNameFokus({ id: e.id, n: Date.now() })
   }
 
-  const routeZu = useCallback(async (e: Eintrag) => {
-    const nr = ++routeNr.current
-    setRoute(null)
-    setRouteInfo('Route wird berechnet …')
-    const von = standort ?? (await meinStandort(false))
-    if (nr !== routeNr.current) return
-    if (!von) { setRouteInfo('Für die Route wird dein Standort benötigt.'); return }
-    try {
-      const r = await routeBerechnen(von, mitte(e))
-      if (nr !== routeNr.current) return
-      setRoute(r)
-      setRouteInfo(routeText(r))
-    } catch (err) {
-      if (nr === routeNr.current) setRouteInfo('Route nicht möglich: ' + (err as Error).message)
-    }
-  }, [standort, meinStandort])
+  // 7s-1: keine Routenberechnung in der App mehr (OSRM-Demo-Server ist nicht für kommerzielle Nutzung freigegeben) – nur „🧭 Navigieren“ in Google Maps
 
   // Nadel per Drag-and-drop verschoben: Position speichern (Server prüft das Recht), Rückgängig anbieten.
   // Kreise ändern sich dabei NICHT sofort: ein fester Kreis, aus dem die Nadel heraus versetzt wurde, wird erst nach dem
@@ -500,13 +486,13 @@ export default function App() {
     setTippPunkt(pos ?? null)
     setLoeschFrage(null)
     setPanel(null)
-    // Antippen zeigt nur die Details – eine Route gibt es nur über den Knopf „Route anzeigen“
+    // Antippen zeigt nur die Details – navigiert wird nur über „🧭 Navigieren“ (Google Maps)
     routeAus()
   }
 
-  const routeAus = () => { routeNr.current++; setRoute(null); setRouteInfo('') }
+  const routeAus = () => { routeNr.current++; setRoute(null) }
 
-  const abwaehlen = () => { setAusgewaehlt(null); setRoute(null); setRouteInfo(''); routeNr.current++ }
+  const abwaehlen = () => { setAusgewaehlt(null); setRoute(null); routeNr.current++ }
 
   // Werkzeuge (Handy: Speed-Dial, Tablet: Knopfstapel, Desktop: rechte Seitenleiste)
   const listeZuHandy = () => { if (panel === 'liste' && !desktop) setPanel(null) }
@@ -1061,7 +1047,6 @@ export default function App() {
         {auswahl && !formular && modus === 'ansicht' && (
           <Detail
             e={auswahl}
-            routeInfo={routeInfo}
             darfBearbeiten={k.darfBearbeiten}
             kannBearbeiten={kannEintrag(auswahl)}
             kannNotiz={kannNotiz}
@@ -1070,8 +1055,6 @@ export default function App() {
             onName={(t) => nameSpeichern(auswahl, t)}
             nameFokus={nameFokus?.id === auswahl.id ? nameFokus.n : undefined}
             onLoeschen={() => loeschen(auswahl)}
-            onRoute={() => routeZu(auswahl)}
-            onRouteAus={routeAus}
             onNotizSpeichern={(n) => k.notizSpeichern(auswahl.id, n)}
             onNotizLoeschen={(id) => k.notizLoeschen(auswahl.id, id)}
             tiereZu={tiereZu.includes(auswahl.id)}
@@ -1203,7 +1186,7 @@ function TierAnzeige(p: { summen: { art: Tierart; n: number }[] }) {
   return <>{p.summen.map((x, i) => <Fragment key={x.art}>{i > 0 && ' · '}<span className="tierzahl"><TierSymbol art={x.art} /> {tierText(x.n, x.art)}</span></Fragment>)}</>
 }
 
-function Detail(p: { e: Eintrag; routeInfo: string; darfBearbeiten: boolean; kannBearbeiten: boolean; kannNotiz: (n: Notiz) => boolean; onSchliessen: () => void; onBearbeiten: () => void; onLoeschen: () => void; onRoute: () => void; onRouteAus: () => void; onNotizSpeichern: (n: Notiz) => void; onNotizLoeschen: (id: string) => void; tiereZu: boolean; onTiereUmschalten: () => void; gruppen: Gruppe[]; nummer?: number; kannGruppieren: boolean; onGruppe: (v: string) => void; planZeile?: React.ReactNode; onName: (t: string) => void; nameFokus?: number }) {
+function Detail(p: { e: Eintrag; darfBearbeiten: boolean; kannBearbeiten: boolean; kannNotiz: (n: Notiz) => boolean; onSchliessen: () => void; onBearbeiten: () => void; onLoeschen: () => void; onNotizSpeichern: (n: Notiz) => void; onNotizLoeschen: (id: string) => void; tiereZu: boolean; onTiereUmschalten: () => void; gruppen: Gruppe[]; nummer?: number; kannGruppieren: boolean; onGruppe: (v: string) => void; planZeile?: React.ReactNode; onName: (t: string) => void; nameFokus?: number }) {
   const { e } = p
   const gruppe = e.gruppe ? p.gruppen.find((g) => g.id === e.gruppe) : undefined
   const gf = gruppe ? gruppenFarbe(gruppe, p.gruppen) : null
@@ -1247,12 +1230,10 @@ function Detail(p: { e: Eintrag; routeInfo: string; darfBearbeiten: boolean; kan
         </div>
         <div className="knoepfe">
           <a className="btn" href={googleNaviLink(ziel)} target="_blank" rel="noreferrer" title="In Google Maps navigieren">🧭 Navigieren</a>
-          {p.routeInfo ? <button onClick={p.onRouteAus}>Route ausblenden</button> : <button onClick={p.onRoute}>Route anzeigen</button>}
           {p.kannBearbeiten && <button className="gefahr" onClick={p.onLoeschen}>Löschen</button>}
         </div>
         {e.erstelltVon && !p.kannBearbeiten && p.darfBearbeiten && <p className="hinweis klein">Diesen Eintrag kann nur die Person, die ihn angelegt hat, oder ein Admin ändern. Notizen kannst du trotzdem hinzufügen.</p>}
       </>}>
-      {p.routeInfo && <p className="route-info">🚗 {p.routeInfo} <button className="link-knopf" onClick={p.onRouteAus}>ausblenden</button></p>}
       {p.kannBearbeiten && <div className="knoepfe haupt-knoepfe">
         <button onClick={p.onBearbeiten}>✏️ Bearbeiten</button>
       </div>}
@@ -1843,11 +1824,10 @@ function Liste(p: ListeProps) {
 
 function Einstellungen(p: { k: ReturnType<typeof useKarte>; onMeineDaten: () => void; onAustausch: () => void; onSchliessen: () => void; meldung: (s: string) => void; onNutzer: () => void; onHof: () => void; onProfil: () => void; kopfFarbe: string | null; setKopfFarbe: (f: string | null) => void; kartenAnsicht: KartenAnsicht; setKartenAnsicht: (v: KartenAnsicht) => void; startStandort: boolean; setStartStandort: (v: boolean) => void; rueckS: number; setRueckS: (n: number) => void; schwelle: number; setSchwelle: (n: number) => void }) {
   const { k } = p
-  const [name, setName] = useState('Weidekarte Deichschäferei')
   const [kartenName, setKartenName] = useState(k.kartenName)
   useEffect(() => setKartenName(k.kartenName), [k.kartenName])
   const kartenNameSauber = kartenName.replace(/\s+/g, ' ').trim()
-  const basis = `${location.origin}${location.pathname}?karte=${k.karteId}`
+  const basis = `${APP_BASIS}/?karte=${k.karteId}`
   const kopieren = async (t: string) => {
     try { await navigator.clipboard.writeText(t); p.meldung('Link kopiert') } catch { prompt('Link kopieren:', t) }
   }
@@ -1861,9 +1841,10 @@ function Einstellungen(p: { k: ReturnType<typeof useKarte>; onMeineDaten: () => 
       <h3>Karte teilen</h3>
       {!k.karteId ? (
         <>
-          <p className="hinweis">Diese Karte liegt nur auf diesem Gerät. Teile sie, damit Mitarbeiter, Familie oder Deichverband Nadeln sehen und bearbeiten können.</p>
-          <label>Name der Karte<input value={name} onChange={(e) => setName(e.target.value)} /></label>
-          <button className="primaer" onClick={() => k.teilen(name).catch((e) => p.meldung(e.message))}>Geteilte Karte erstellen</button>
+          <p className="hinweis">Diese Karte liegt nur auf diesem Gerät – kostenlos und ohne Konto. Geteilte Karten (Team, Live-Sync, Hof mit Rollen) gibt es mit der <strong>{LIZENZ.produkt}</strong>.</p>
+          <p className="hinweis klein lizenz-zeile">{LIZENZ.preis}. {LIZENZ.b2b} {LIZENZ.laufzeit}</p>
+          <a className="btn primaer" href="/?freischalten">🔑 Hof freischalten (Lizenzcode)</a>
+          <p className="hinweis klein">Deine Einträge auf dieser Handy-Karte kannst du beim Freischalten übernehmen.</p>
           {localStorage.getItem(LETZTE_KARTE) && <button onClick={() => { location.href = `${location.pathname}?karte=${encodeURIComponent(localStorage.getItem(LETZTE_KARTE)!)}` }}>↩ Zurück zur zuletzt geöffneten geteilten Karte</button>}
         </>
       ) : (
@@ -1875,6 +1856,7 @@ function Einstellungen(p: { k: ReturnType<typeof useKarte>; onMeineDaten: () => 
           {k.istAdmin && <button className="primaer" onClick={p.onNutzer}>👥 {k.hof ? 'Leute einladen / Personen verwalten' : 'Nutzer verwalten / Leute einladen'}</button>}
 
           <h3>Hof</h3>
+          {k.istAdmin && <p className="hinweis klein lizenz-zeile">Lizenz: {k.lizenz ? `${LIZENZ_ART[k.lizenz.art] ?? k.lizenz.art}${k.lizenz.seit ? ` seit ${datumText(k.lizenz.seit)}` : ''}` : 'keine – diese Karte ist ohne Hof-Lizenz'}</p>}
           {k.hof ? (
             <>
               <p className="hinweis">Diese Karte gehört zum Hof <strong>„{k.hof.name}“</strong>.{k.hof.rolle ? ` Deine Rolle: ${ROLLEN[k.hof.rolle].name}.` : ''}</p>
@@ -1959,7 +1941,7 @@ function Einstellungen(p: { k: ReturnType<typeof useKarte>; onMeineDaten: () => 
       <KarteLoeschenAbschnitt k={k} meldung={p.meldung} onExport={p.onAustausch} />
 
       <h3>Karte</h3>
-      <p className="hinweis">Kartendienst: {HAT_GOOGLE_KEY ? 'Google Maps (Satellit)' : 'Esri-Satellit / OpenStreetMap (kostenlos) – für Google Maps einen API-Key in VITE_GOOGLE_MAPS_API_KEY eintragen'}.<br />Routen: {HAT_GOOGLE_KEY ? 'Google Directions' : 'OSRM (kostenloser Demo-Server)'}.</p>
+      <p className="hinweis">Kartendienst: {HAT_GOOGLE_KEY ? 'Google Maps (Satellit)' : 'Esri-Satellit / OpenStreetMap (kostenlos) – für Google Maps einen API-Key in VITE_GOOGLE_MAPS_API_KEY eintragen'}.<br />Navigation: „🧭 Navigieren“ öffnet Google Maps mit dem Ziel.</p>
       <p className="hinweis klein">FlockMap · Prototyp v0.1</p>
     </section>
   )

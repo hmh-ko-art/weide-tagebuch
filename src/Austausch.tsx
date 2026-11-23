@@ -228,7 +228,7 @@ function Wiederherstellen(p: { k: K; meldung: (s: string) => void }) {
               k.stapel(s.eintraege.filter((e) => !k.eintraege.some((x) => x.id === e.id)), s.gruppen, planNeu ? s.weideplan : undefined, k.istAdmin ? s.pacht : undefined)
               p.meldung(`${fehlend} Einträge übernommen${k.karteId ? ' – werden gesendet' : ''}`); setS(null)
             }}>{k.eintraege.length ? `Fehlende ${fehlend} in diese Karte übernehmen` : `In diese (leere) Karte übernehmen`}</button>
-            {k.karteId && <button disabled={laeuft} onClick={async () => {
+            {k.karteId && k.lizenz && <button disabled={laeuft} onClick={async () => {
               const n = prompt('Name der neuen Karte:', `${s.name || 'Weidekarte'} (wiederhergestellt)`)
               if (!n) return
               setLaeuft(true)
@@ -236,7 +236,7 @@ function Wiederherstellen(p: { k: K; meldung: (s: string) => void }) {
             }}>{laeuft ? 'Lege an …' : 'Als neue Karte anlegen'}</button>}
             <button onClick={() => setS(null)}>Abbrechen</button>
           </div>
-          {k.karteId && <p className="hinweis klein">„Als neue Karte“: Du wirst Admin der neuen Karte und bekommst einen eigenen Link; andere Personen musst du dort neu einladen.{k.hof ? ' Die neue Karte gehört nicht automatisch zum Hof.' : ''}</p>}
+          {k.karteId && k.lizenz && <p className="hinweis klein">„Als neue Karte“: Du wirst Admin der neuen Karte und bekommst einen eigenen Link; andere Personen musst du dort neu einladen.{k.hof ? ' Die neue Karte gehört nicht automatisch zum Hof.' : ''}</p>}
         </div>
       )}
     </div>

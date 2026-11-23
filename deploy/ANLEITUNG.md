@@ -16,13 +16,14 @@
 
 ## Adresse (Domain)
 
-- Empfohlen: **karte.heckernatur.de**. Beim Webhoster von heckernatur.de (oder dort, wo die DNS-Einstellungen liegen) einen **A-Eintrag** anlegen:
-  `karte` → `<Server-IPv4>` (TTL 3600 oder Standard). Die Hauptseite heckernatur.de bleibt unverändert.
-- Ohne DNS-Zugriff geht es sofort auch mit `<IP-mit-Bindestrichen>.sslip.io` (z. B. `203-0-113-10.sslip.io`) – auch mit HTTPS. Später kann man auf die eigene Subdomain wechseln.
+- Empfohlen (ab 7s-1): **flockmap.de**. Beim Domain-Anbieter (dort, wo die DNS-Einstellungen liegen) zwei **A-Einträge** anlegen:
+  `@` → `<Server-IPv4>` und `www` → `<Server-IPv4>` (TTL 3600 oder Standard). Dann `DOMAIN="flockmap.de, www.flockmap.de"` und `APP_BASIS=https://flockmap.de` in `deploy/.env`.
+- Die Render-Adresse (…onrender.com) bleibt bis zum Umzug erreichbar; alte Links funktionieren dort weiter. `APP_BASIS` steuert nur, welche Adresse in **neuen** Links steht.
+- Ohne DNS-Zugriff geht es sofort auch mit `<IP-mit-Bindestrichen>.sslip.io` (z. B. `203-0-113-10.sslip.io`) – auch mit HTTPS. Später kann man auf die eigene Domain wechseln.
 
 ## Was danach passiert (macht Jürgen Appi)
 
-`DOMAIN=karte.heckernatur.de bash deploy/setup.sh` auf dem Server (Updates, Firewall, nur SSH-Schlüssel, Docker, nächtliches Backup 03:15 mit 14 Tages- + 8 Wochensicherungen), dann frisches Backup von Render mit `deploy/restore.sh` einspielen, prüfen, umstellen.
+`DOMAIN=flockmap.de bash deploy/setup.sh` auf dem Server (Updates, Firewall, nur SSH-Schlüssel, Docker, nächtliches Backup 03:15 mit 14 Tages- + 8 Wochensicherungen), dann frisches Backup von Render mit `deploy/restore.sh` einspielen, prüfen, umstellen.
 
 - Alte Links bleiben gültig: `?karte=…&schluessel=…` bzw. `&zugang=…` funktionieren auf der neuen Adresse genauso – nur der Anfang der Adresse ändert sich.
 - Jedes Handy muss **einmal** seinen persönlichen Link auf der neuen Adresse öffnen (der gespeicherte Zugang hängt an der alten Adresse) und die App neu zum Startbildschirm hinzufügen.

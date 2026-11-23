@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { zugangKey, zugangsLink, NAME_MAX, type HofRolle, type useKarte } from './daten'
 import { RechtLinks } from './recht/Recht'
+import { APP_BASIS } from './basis'
+import { LIZENZ, LIZENZ_ART } from './lizenzText'
 import { LoeschBestaetigung, datumText } from './recht/Loeschen'
 
 type K = ReturnType<typeof useKarte>
@@ -17,7 +19,7 @@ interface HofKarte { id: string; name: string; eintraege: number }
 interface HofDaten { id: string; name: string; karten: HofKarte[]; geloescht?: { bis: string }; ich: { id: string; name: string; rolle: HofRolle; hatPin: boolean } | null }
 interface Einladung { code: string; rolle: HofRolle; name: string | null; bis: string }
 
-const basis = () => `${location.origin}${location.pathname}`
+const basis = () => `${APP_BASIS}/`
 export const hofEinladungsLink = (hid: string, code: string) => `${basis()}?hof=${hid}&einladung=${code}`
 export const hofAnmeldeLink = (hid: string) => `${basis()}?hof=${hid}`
 
@@ -234,16 +236,25 @@ export function HofEinrichten(p: { k: K; meldung: (s: string) => void; onHof: ()
   const { k } = p
   const [offen, setOffen] = useState(false)
   const [name, setName] = useState(k.kartenName)
+  // 7s-1: Bestandskarten (z. B. Hennings Karte) brauchen keinen Code; neuere Karten einen Lizenzcode (nur Betriebe)
+  const brauchtCode = !k.lizenz
+  const [code, setCode] = useState('')
+  const [b2b, setB2b] = useState(false)
   if (!offen) return <button onClick={() => setOffen(true)}>🏡 Hof einrichten (mehrere Karten, ein Team)</button>
   return (
     <form className="neu-link" onSubmit={(ev) => {
       ev.preventDefault()
-      anfrage(`/api/karten/${k.karteId}/hof`, 'POST', { name: sauber(name) }, k.zugang ? { 'x-zugang': k.zugang } : {})
+      anfrage(`/api/karten/${k.karteId}/hof`, 'POST', { name: sauber(name), ...(brauchtCode ? { code, b2b } : {}) }, k.zugang ? { 'x-zugang': k.zugang } : {})
         .then(async () => { await k.ichLaden(); p.meldung('Hof eingerichtet'); p.onHof() }).catch((e) => p.meldung(e.message))
     }}>
       <p>Aus dieser Karte wird dein <strong>Hof</strong>. Alle bisherigen Personen gehören dann zum Hof, ihre Links funktionieren weiter. Du wirst <strong>Inhaber</strong>. Danach kannst du weitere Karten anlegen und Leute mit Rolle einladen.</p>
       <label>Name des Hofs<input value={name} maxLength={60} onChange={(e) => setName(e.target.value)} placeholder="z. B. Deichschäferei Hecker" /></label>
-      <div className="knoepfe"><button type="button" onClick={() => setOffen(false)}>Abbrechen</button><button type="submit" className="primaer" disabled={!sauber(name)}>Hof einrichten</button></div>
+      {brauchtCode && <>
+        <p className="hinweis klein">Für einen Hof brauchst du die <strong>{LIZENZ.produkt}</strong> ({LIZENZ.preis}). {LIZENZ.b2b} {LIZENZ.laufzeit}</p>
+        <label>Lizenzcode<input value={code} onChange={(e) => setCode(e.target.value)} placeholder="FM-XXXX-XXXX-XXXX" autoCapitalize="characters" autoCorrect="off" spellCheck={false} autoComplete="off" /></label>
+        <label className="haken"><input type="checkbox" checked={b2b} onChange={(e) => setB2b(e.target.checked)} /><span>Ich nutze FlockMap für meinen Betrieb (Unternehmer, nicht Verbraucher).</span></label>
+      </>}
+      <div className="knoepfe"><button type="button" onClick={() => setOffen(false)}>Abbrechen</button><button type="submit" className="primaer" disabled={!sauber(name) || (brauchtCode && (!code.trim() || !b2b))}>Hof einrichten</button></div>
     </form>
   )
 }
@@ -308,7 +319,61 @@ export function HofEinstieg(p: { hofId: string; einladung: string | null }) {
 // ---------------------------------------------------------------------------------------
 // Betreiber-Seite (?betreiber): neuen Hof anlegen – später an die Bezahlung gekoppelt
 // ---------------------------------------------------------------------------------------
-interface HofZeile { id: string; name: string; erstellt: string; karten: number; mitglieder: number; inhaber: string[]; geloescht?: { bis: string } }
+interface HofZeile { id: string; name: string; erstellt: string; karten: number; mitglieder: number; inhaber: string[]; geloescht?: { bis: string }; lizenz?: { art: string } | null }
+// 7s-1: Lizenzcodes (manuell, bis der Shop-Webhook kommt). Der Klartext-Code wird nur einmal angezeigt – gespeichert ist nur ein Hash.
+interface LizenzZeile { id: string; ende: string; art: string; status: 'offen' | 'eingeloest' | 'gesperrt'; erstellt: string; eingeloest: string | null; hof: { id: string; name: string | null } | null; notiz: string | null }
+function LizenzCodes(p: { kopf: Record<string, string> }) {
+  const [liste, setListe] = useState<LizenzZeile[]>([])
+  const [form, setForm] = useState({ art: 'pilot', anzahl: 1, notiz: '' })
+  const [neu, setNeu] = useState<{ code: string; link: string }[]>([])
+  const [fehler, setFehler] = useState('')
+  const laden = useCallback(() => { anfrage<LizenzZeile[]>('/api/betreiber/lizenzen', 'GET', undefined, p.kopf).then(setListe).catch((e) => setFehler(e.message)) }, [p.kopf['x-betreiber']]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(laden, [laden])
+  const kopieren = (t: string) => navigator.clipboard.writeText(t).catch(() => prompt('Kopieren:', t))
+  const statusText = (l: LizenzZeile) => l.status === 'eingeloest' ? `eingelöst ${datumText(l.eingeloest!)}${l.hof?.name ? ` · ${l.hof.name}` : ''}` : l.status === 'gesperrt' ? 'gesperrt' : 'offen'
+  return (
+    <section className="lizenz-codes">
+      <h1>Lizenzcodes</h1>
+      <p className="hinweis klein">{LIZENZ.produkt}: {LIZENZ.preis}. {LIZENZ.b2b} Code nach Zahlungseingang an den Käufer schicken – er löst ihn unter „/?freischalten“ ein.</p>
+      <form onSubmit={(ev) => {
+        ev.preventDefault(); setFehler('')
+        anfrage<{ code: string; link: string }[]>('/api/betreiber/lizenzen', 'POST', { art: form.art, anzahl: form.anzahl, notiz: form.notiz }, p.kopf)
+          .then((r) => { setNeu(r); setForm({ ...form, notiz: '' }); laden() }).catch((e) => setFehler(e.message))
+      }}>
+        <label>Art<select value={form.art} onChange={(e) => setForm({ ...form, art: e.target.value })}>
+          <option value="pilot">{LIZENZ_ART.pilot}</option><option value="hof">{LIZENZ_ART.hof}</option><option value="test">{LIZENZ_ART.test}</option>
+        </select></label>
+        <label>Anzahl<input type="number" min={1} max={20} value={form.anzahl} onChange={(e) => setForm({ ...form, anzahl: Math.max(1, Math.min(20, Number(e.target.value) || 1)) })} /></label>
+        <label>Notiz (Käufer, Bestellnummer)<input value={form.notiz} maxLength={120} onChange={(e) => setForm({ ...form, notiz: e.target.value })} placeholder="z. B. Bestellung 1001 · Schäferei Petersen" /></label>
+        {fehler && <p className="fehler gefahr">{fehler}</p>}
+        <button type="submit" className="primaer">Code erstellen</button>
+      </form>
+      {neu.length > 0 && (
+        <div className="neu-link">
+          <p><strong>Nur jetzt sichtbar</strong> – Code bzw. Link jetzt kopieren und dem Käufer schicken:</p>
+          <ul className="code-liste">
+            {neu.map((n) => <li key={n.code}><code>{n.code}</code><div className="knoepfe"><button type="button" onClick={() => kopieren(n.code)}>Code kopieren</button><button type="button" onClick={() => kopieren(n.link)}>Link kopieren</button></div></li>)}
+          </ul>
+          <button type="button" onClick={() => setNeu([])}>Ausblenden</button>
+        </div>
+      )}
+      <h3>Alle Codes ({liste.length})</h3>
+      <ul className="code-liste">
+        {liste.map((l) => (
+          <li key={l.id}>
+            <strong>…{l.ende}</strong> · {LIZENZ_ART[l.art] ?? l.art} · {statusText(l)} · erstellt {datumText(l.erstellt)}{l.notiz ? ` · ${l.notiz}` : ''}
+            <div className="knoepfe">
+              {l.status === 'offen' && <button type="button" onClick={() => anfrage(`/api/betreiber/lizenzen/${l.id}`, 'PATCH', { status: 'gesperrt' }, p.kopf).then(laden).catch((e) => setFehler(e.message))}>Sperren</button>}
+              {l.status === 'gesperrt' && !l.eingeloest && <button type="button" onClick={() => anfrage(`/api/betreiber/lizenzen/${l.id}`, 'PATCH', { status: 'offen' }, p.kopf).then(laden).catch((e) => setFehler(e.message))}>Entsperren</button>}
+              {!l.eingeloest && <button type="button" className="gefahr" onClick={() => confirm(`Code …${l.ende} löschen?`) && anfrage(`/api/betreiber/lizenzen/${l.id}`, 'DELETE', undefined, p.kopf).then(laden).catch((e) => setFehler(e.message))}>Löschen</button>}
+            </div>
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
+}
+
 export function Betreiber() {
   const [schluessel, setSchluessel] = useState(() => sessionStorage.getItem('wt-betreiber') ?? '')
   const [eingabe, setEingabe] = useState('')
@@ -338,7 +403,7 @@ export function Betreiber() {
         ) : (
           <>
             <h1>Neuen Hof anlegen</h1>
-            <p className="hinweis klein">Später passiert das automatisch nach dem Kauf. Der Inhaber bekommt einen persönlichen Link.</p>
+            <p className="hinweis klein">Direkt anlegen (ohne Code, z. B. für Bestandskunden). Normal: Lizenzcode unten erstellen und dem Käufer schicken. Der Inhaber bekommt einen persönlichen Link.</p>
             <form onSubmit={(ev) => {
               ev.preventDefault()
               anfrage<{ hof: { name: string }; karte: string; zugang: string }>('/api/betreiber/hoefe', 'POST', form, kopf)
@@ -358,9 +423,10 @@ export function Betreiber() {
                 <div className="knoepfe"><button onClick={() => navigator.clipboard.writeText(neu.link).catch(() => prompt('Link kopieren:', neu.link))}>Kopieren</button></div>
               </div>
             )}
+            <LizenzCodes kopf={kopf} />
             <h3>Alle Höfe ({liste.length})</h3>
             <ul className="nutzer-liste">
-              {liste.map((h) => <li key={h.id}><strong>{h.name}</strong> <span className="hinweis">· {h.inhaber.join(', ') || '–'} · {h.karten} Karte{h.karten === 1 ? '' : 'n'} · {h.mitglieder} Person{h.mitglieder === 1 ? '' : 'en'} · seit {new Date(h.erstellt).toLocaleDateString('de-DE')}{h.geloescht ? ` · im Papierkorb bis ${datumText(h.geloescht.bis)}` : ''}</span></li>)}
+              {liste.map((h) => <li key={h.id}><strong>{h.name}</strong> <span className="hinweis">· {h.inhaber.join(', ') || '–'} · {h.karten} Karte{h.karten === 1 ? '' : 'n'} · {h.mitglieder} Person{h.mitglieder === 1 ? '' : 'en'} · seit {new Date(h.erstellt).toLocaleDateString('de-DE')}{h.lizenz ? ` · ${LIZENZ_ART[h.lizenz.art] ?? h.lizenz.art}` : ''}{h.geloescht ? ` · im Papierkorb bis ${datumText(h.geloescht.bis)}` : ''}</span></li>)}
             </ul>
             <button onClick={() => { sessionStorage.removeItem('wt-betreiber'); setSchluessel(''); setListe(null) }}>Abmelden</button>
           </>

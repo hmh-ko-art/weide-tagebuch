@@ -7,6 +7,7 @@ import * as WP from './weideplan.js'
 import * as FL from './flaechen.js'
 import * as IS from './infrastruktur.js'
 import * as SP from './spannung.js'
+import * as LZ from './lizenz.js'
 import crypto from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 
@@ -25,7 +26,8 @@ async function ablageStarten() {
     for (const f of fs.readdirSync(DATA_DIR).filter((x) => /^hof-[a-z0-9]+\.json$/i.test(x))) {
       try { const h = JSON.parse(fs.readFileSync(path.join(DATA_DIR, f), 'utf8')); hofCache.set(h.id, h) } catch { /* kaputte Datei überspringen */ }
     }
-    return console.log('Ablage: JSON-Dateien in', DATA_DIR, `(${hofCache.size} Höfe)`)
+    try { for (const l of JSON.parse(fs.readFileSync(lizenzDatei, 'utf8'))) lizenzCache.set(l.id, l) } catch { /* noch keine Lizenzen */ }
+    return console.log('Ablage: JSON-Dateien in', DATA_DIR, `(${hofCache.size} Höfe, ${lizenzCache.size} Lizenzen)`)
   }
   const { default: pgMod } = await import('pg')
   // Ohne SSL: lokale DB oder eigener Server (Docker-Netz, DATABASE_SSL=off). Render bleibt bei SSL.
@@ -38,7 +40,14 @@ async function ablageStarten() {
   await pg.query('CREATE TABLE IF NOT EXISTS hoefe (id text PRIMARY KEY, daten jsonb NOT NULL, geaendert timestamptz NOT NULL DEFAULT now())')
   const h = await pg.query('SELECT id, daten FROM hoefe')
   for (const row of h.rows) hofCache.set(row.id, row.daten)
-  console.log(`Ablage: Postgres (${rows.length} Karten, ${h.rows.length} Höfe geladen)`)
+  // 7s-1: Hof-Lizenzen (Einmalkauf) – Codes nur als HMAC-Hash, rein additiv
+  await pg.query(`CREATE TABLE IF NOT EXISTS lizenzen (
+    id text PRIMARY KEY, code_hash text UNIQUE NOT NULL, code_ende text NOT NULL, art text NOT NULL,
+    status text NOT NULL DEFAULT 'offen', quelle text NOT NULL, bestellung text UNIQUE, max_personen int NOT NULL DEFAULT 100,
+    erstellt timestamptz NOT NULL DEFAULT now(), eingeloest timestamptz, hof_id text, notiz text)`)
+  const l = await pg.query('SELECT * FROM lizenzen')
+  for (const row of l.rows) lizenzCache.set(row.id, lizenzAusZeile(row))
+  console.log(`Ablage: Postgres (${rows.length} Karten, ${h.rows.length} Höfe, ${l.rows.length} Lizenzen geladen)`)
 }
 // Schreibvorgänge pro Karte nacheinander ausführen
 let pgKette = Promise.resolve()
@@ -55,10 +64,14 @@ app.use(express.json({ limit: '5mb' }))
 
 const cache = new Map() // id -> karte
 const hofCache = new Map() // id -> hof
+const lizenzCache = new Map() // id -> lizenz (7s-1)
+const lizenzDatei = path.join(DATA_DIR, 'lizenzen.json')
 const clients = new Map() // id -> Set<res>
 
 const idOk = (id) => /^[a-z0-9]{6,32}$/i.test(id)
 const datei = (id) => path.join(DATA_DIR, `${id}.json`)
+// 7s-1: öffentliche Adresse der App (z. B. https://flockmap.de, sobald die Domain registriert ist). Ohne APP_BASIS: die Adresse der Anfrage
+const appBasis = (req) => (process.env.APP_BASIS || `${req.protocol}://${req.get('host')}`).replace(/\/$/, '')
 const zufall = (n) => crypto.randomBytes(n).toString('base64url').replace(/[^a-zA-Z0-9]/g, '').slice(0, n)
 
 // Altes Einzelfeld `notiz` -> `notizen: [...]` (gleiche Logik wie im Client, deterministische ID)
@@ -223,27 +236,44 @@ function mitKarte(rolle, papierkorb = false) {
   }
 }
 
-// Neue geteilte Karte anlegen (optional mit Startdaten)
-app.post('/api/karten', (req, res) => {
-  const id = zufall(10)
+// Neue geteilte Karte aus Startdaten bauen (optional mit Einträgen/Gruppen/Weideplan/Pacht einer bisher lokalen Karte)
+function karteAusDaten(body, admin, extra = {}) {
   const jetzt = new Date().toISOString()
-  const admin = { id: 'u' + zufall(8), name: (namePruefen(req.body?.adminName).name ?? 'Admin'), rolle: 'admin', zugang: zufall(20), erstellt: jetzt }
   const k = {
-    id,
-    name: String(req.body?.name || 'Meine Weidekarte').slice(0, 100),
+    id: zufall(10),
+    name: String(body?.name || 'Meine Weidekarte').slice(0, 100),
     version: 0,
     nutzerVersion: 1,
     nutzer: [admin],
-    eintraege: Array.isArray(req.body?.eintraege) ? IS.zaeuneEinzeln(req.body.eintraege.map((e) => ({ ...migrieren(e), erstelltVon: admin.id }))) : [],
+    eintraege: Array.isArray(body?.eintraege) ? IS.zaeuneEinzeln(body.eintraege.map((e) => ({ ...migrieren(e), erstelltVon: admin.id }))) : [],
     // Gruppen einer bisher lokalen Karte mitnehmen
-    gruppen: gruppenPruefen(req.body?.gruppen).map((g) => ({ id: g.id, name: gruppenNamePruefen(g.name).name ?? 'Gruppe', ...(g.farbe ? { farbe: g.farbe } : {}), reihenfolge: g.reihenfolge, von: admin.id, erstellt: jetzt })),
+    gruppen: gruppenPruefen(body?.gruppen).map((g) => ({ id: g.id, name: gruppenNamePruefen(g.name).name ?? 'Gruppe', ...(g.farbe ? { farbe: g.farbe } : {}), reihenfolge: g.reihenfolge, von: admin.id, erstellt: jetzt })),
     erstellt: jetzt,
+    ...extra,
   }
   k.eintraege.forEach((e) => gruppeGueltig(k, e))
-  if (req.body?.weideplan) WP.planErgaenzen(k, req.body.weideplan, new Set([admin.id]), jetzt)
+  if (body?.weideplan) WP.planErgaenzen(k, body.weideplan, new Set([admin.id]), jetzt)
   k.eintraege.forEach((e) => FL.flaecheSauber(e))
-  pachtErgaenzen(k, req.body?.pacht, jetzt)
-  cache.set(id, k)
+  pachtErgaenzen(k, body?.pacht, jetzt)
+  return k
+}
+// 7s-1: Geteilte Karten gibt es nur noch mit Hof-Lizenz (Einlösen unter /?freischalten). Kostenlos bleibt die Handy-Karte.
+// Ausnahmen: Betreiber-Schlüssel (Support) oder FLOCKMAP_KARTEN_FREI=1 (lokale Entwicklung/Tests). Bestehende Karten bleiben unberührt.
+const kartenFrei = () => process.env.FLOCKMAP_KARTEN_FREI === '1'
+const betreiberOk = (req) => { const t = process.env.FLOCKMAP_ADMIN_TOKEN; return !!t && t.length >= 16 && gleich(req.get('x-betreiber') || '', t) }
+const LIZENZ_NOETIG = { fehler: 'Geteilte Karten und Höfe gibt es mit der FlockMap Hof-Lizenz (Einmalkauf für Betriebe). Mit deinem Lizenzcode schaltest du sie unter „Hof freischalten“ frei. Die Handy-Karte bleibt kostenlos.', freischalten: true }
+// Wer schon eine freigeschaltete Karte verwaltet (Bestand oder Hof mit Lizenz), darf weitere Karten anlegen,
+// z. B. „Sicherung als neue Karte“: Header x-von-karte (ID) + x-zugang eines Admins dieser Karte
+function darfNeueKarte(req) {
+  if (kartenFrei() || betreiberOk(req)) return true
+  const q = laden(String(req.get('x-von-karte') || ''))
+  return !!q && !q.geloescht && istAdmin(wer(req, q)) && !!karteLizenz(q)
+}
+app.post('/api/karten', (req, res) => {
+  if (!darfNeueKarte(req)) return res.status(402).json(LIZENZ_NOETIG)
+  const admin = { id: 'u' + zufall(8), name: (namePruefen(req.body?.adminName).name ?? 'Admin'), rolle: 'admin', zugang: zufall(20), erstellt: new Date().toISOString() }
+  const k = karteAusDaten(req.body, admin)
+  cache.set(k.id, k)
   speichern(k)
   res.status(201).json({ ...oeffentlich(k), zugang: admin.zugang, ich: ichInfo(admin) })
 })
@@ -253,7 +283,7 @@ app.get('/api/karten/:id', mitKarte(undefined, true), (req, res) => {
   if (k.geloescht && !darfLoeschen(k, n)) return res.status(410).json(GELOESCHT(k))
   const h = k.hof ? hofCache.get(k.hof) : null
   const m = h && n ? h.mitglieder.find((x) => x.id === n.id) : null
-  res.json({ ...oeffentlich(k), ...(istAdmin(n) && k.pacht ? { pacht: k.pacht } : {}), ich: ichInfo(n), darfBearbeiten: !!n && n.rolle !== 'ansehen' && !k.geloescht, ...(k.geloescht ? { geloescht: geloeschtInfo(k) } : {}), ...(n ? { darfLoeschen: darfLoeschen(k, n) } : {}), ...(h ? { hof: { id: h.id, name: h.name, ...(m ? { rolle: m.rolle } : {}) } } : {}) })
+  res.json({ ...oeffentlich(k), ...(istAdmin(n) && k.pacht ? { pacht: k.pacht } : {}), ich: ichInfo(n), darfBearbeiten: !!n && n.rolle !== 'ansehen' && !k.geloescht, ...(k.geloescht ? { geloescht: geloeschtInfo(k) } : {}), ...(n ? { darfLoeschen: darfLoeschen(k, n) } : {}), ...(h ? { hof: { id: h.id, name: h.name, ...(m ? { rolle: m.rolle } : {}) } } : {}), ...(istAdmin(n) ? { lizenz: karteLizenz(k) } : {}) })
 })
 
 // ---- Gleichzeitige Änderungen (Offline-Modus) ----
@@ -934,7 +964,7 @@ function mitHof(stufe, papierkorb = false) {
 }
 const kartenInfo = (h) => h.karten.map((id) => cache.get(id)).filter(Boolean).map((k) => ({ id: k.id, name: k.name, eintraege: k.eintraege.length, geaendert: k.geaendert }))
 const mitgliedInfo = (m) => ({ id: m.id, name: m.name, rolle: m.rolle, erstellt: m.erstellt })
-const hofInfo = (h, m) => ({ id: h.id, name: h.name, erstellt: h.erstellt, karten: kartenInfo(h), ich: m ? { ...mitgliedInfo(m), hatPin: !!m.pin } : null, ...(h.geloescht ? { geloescht: geloeschtInfo(h) } : {}) })
+const hofInfo = (h, m) => ({ id: h.id, name: h.name, erstellt: h.erstellt, karten: kartenInfo(h), lizenz: h.lizenz ? { art: h.lizenz.art, seit: h.lizenz.seit } : null, ich: m ? { ...mitgliedInfo(m), hatPin: !!m.pin } : null, ...(h.geloescht ? { geloescht: geloeschtInfo(h) } : {}) })
 const einladungOffen = (e) => e && !e.eingeloest && Date.parse(e.bis) > Date.now()
 const pinHash = (pin, salz) => crypto.scryptSync(String(pin), salz, 32).toString('base64')
 
@@ -964,7 +994,7 @@ function betreiber(req, res, next) {
   next()
 }
 app.get('/api/betreiber/hoefe', betreiber, (_req, res) => {
-  res.json([...hofCache.values()].map((h) => ({ id: h.id, name: h.name, erstellt: h.erstellt, karten: h.karten.length, mitglieder: h.mitglieder.length, inhaber: h.mitglieder.filter((m) => m.rolle === 'inhaber').map((m) => m.name), ...(h.geloescht ? { geloescht: geloeschtInfo(h) } : {}) })))
+  res.json([...hofCache.values()].map((h) => ({ id: h.id, name: h.name, erstellt: h.erstellt, karten: h.karten.length, mitglieder: h.mitglieder.length, inhaber: h.mitglieder.filter((m) => m.rolle === 'inhaber').map((m) => m.name), lizenz: h.lizenz ? { art: h.lizenz.art, seit: h.lizenz.seit } : null, ...(h.geloescht ? { geloescht: geloeschtInfo(h) } : {}) })))
 })
 app.post('/api/betreiber/hoefe', betreiber, (req, res) => {
   const hn = hofNameOk(req.body?.name)
@@ -976,6 +1006,7 @@ app.post('/api/betreiber/hoefe', betreiber, (req, res) => {
   const jetzt = new Date().toISOString()
   const inhaber = { id: 'u' + zufall(8), name: inh.name, rolle: 'inhaber', zugang: zufall(20), erstellt: jetzt }
   const h = hofAnlegen({ name: hn.name, inhaber, karten: [] })
+  h.lizenz = { art: 'betreiber', seit: jetzt }
   const k = karteAnlegen({ name: kn.name, hof: h.id })
   h.karten.push(k.id)
   hofSpeichern(h)
@@ -1009,6 +1040,120 @@ app.delete('/api/betreiber/hoefe/:hid', betreiber, async (req, res) => {
   res.json({ ok: true, karten: loeschen ? 'geloescht' : 'behalten' })
 })
 
+// ===== 7s-1: Hof-Lizenzen (Einmalkauf, nur für Betriebe) =====
+// Bestand: alle Karten, die vor dem Stichtag angelegt wurden, gelten als freigeschaltet (nur berechnet, nichts wird an ihnen geändert).
+const LIZENZ_STICHTAG = Date.parse(process.env.FLOCKMAP_LIZENZ_STICHTAG || '2026-11-23T12:00:00Z')
+const karteBestand = (k) => !!k && Date.parse(k.erstellt || '') < LIZENZ_STICHTAG
+// Lizenz einer Karte (für Admins in den Einstellungen): Hof-Lizenz, Bestand oder keine
+function karteLizenz(k) {
+  const h = k.hof ? hofCache.get(k.hof) : null
+  if (h?.lizenz) return { art: h.lizenz.art, seit: h.lizenz.seit }
+  return karteBestand(k) ? { art: 'bestand', seit: k.erstellt } : null
+}
+const lizenzAusZeile = (r) => ({ id: r.id, codeHash: r.code_hash, codeEnde: r.code_ende, art: r.art, status: r.status, quelle: r.quelle, bestellung: r.bestellung ?? null, maxPersonen: r.max_personen, erstellt: new Date(r.erstellt).toISOString(), eingeloest: r.eingeloest ? new Date(r.eingeloest).toISOString() : null, hofId: r.hof_id ?? null, notiz: r.notiz ?? null })
+let lizenzKette = Promise.resolve()
+function lizenzenDateiSchreiben() {
+  fs.writeFileSync(lizenzDatei + '.tmp', JSON.stringify([...lizenzCache.values()], null, 2))
+  fs.renameSync(lizenzDatei + '.tmp', lizenzDatei)
+}
+function lizenzSpeichern(l) {
+  lizenzCache.set(l.id, l)
+  if (!pg) return lizenzenDateiSchreiben()
+  lizenzKette = lizenzKette.then(() => pg.query(`INSERT INTO lizenzen (id, code_hash, code_ende, art, status, quelle, bestellung, max_personen, erstellt, eingeloest, hof_id, notiz)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) ON CONFLICT (id) DO UPDATE SET status = EXCLUDED.status, eingeloest = EXCLUDED.eingeloest, hof_id = EXCLUDED.hof_id, notiz = EXCLUDED.notiz`,
+  [l.id, l.codeHash, l.codeEnde, l.art, l.status, l.quelle, l.bestellung, l.maxPersonen, l.erstellt, l.eingeloest, l.hofId, l.notiz])).catch((e) => console.error('Postgres-Schreibfehler (Lizenz):', e.message))
+}
+const lizenzInfo = (l) => ({ id: l.id, ende: l.codeEnde, art: l.art, status: l.status, quelle: l.quelle, erstellt: l.erstellt, eingeloest: l.eingeloest, hof: l.hofId ? { id: l.hofId, name: hofCache.get(l.hofId)?.name ?? null } : null, notiz: l.notiz })
+// Fehlversuche: 10 je IP und Stunde, global 200 je Stunde (dann 429 + Log)
+const LZ_FEHL_IP = 10, LZ_FEHL_ALLE = 200
+function lizenzGebremst(req) {
+  const jetzt = Date.now(), n = (k) => (beitritte.get(k) ?? []).filter((t) => jetzt - t < 3600_000).length
+  if (n('lizenz-fehl:alle') >= LZ_FEHL_ALLE) { console.warn('Lizenz: globale Bremse aktiv (zu viele Fehlversuche)'); return true }
+  return n('lizenz-fehl:' + req.ip) >= LZ_FEHL_IP
+}
+const lizenzFehl = (req) => { zuOft('lizenz-fehl:' + req.ip, 1e9); zuOft('lizenz-fehl:alle', 1e9) }
+const CODE_UNGUELTIG = { fehler: 'Code ungültig oder schon verwendet.' }
+// Code prüfen (ohne einzulösen). Antwortet selbst mit Fehler und gibt dann null zurück.
+function lizenzPruefen(req, res, roh) {
+  const p = LZ.pepper()
+  if (!p) { res.status(503).json({ fehler: 'Freischalten ist auf diesem Server noch nicht eingerichtet.' }); return null }
+  if (lizenzGebremst(req)) { res.status(429).json({ fehler: 'Zu viele Versuche – bitte in einer Stunde erneut.' }); return null }
+  const n = LZ.normal(roh)
+  const h = n ? LZ.codeHash(n, p) : null
+  const l = h ? [...lizenzCache.values()].find((x) => x.codeHash === h) : null
+  if (!l || l.status !== 'offen') { lizenzFehl(req); res.status(l ? 409 : 404).json(CODE_UNGUELTIG); return null }
+  return l
+}
+// Einlösen: synchron im Speicher (kein zweites Einlösen möglich), dann dauerhaft schreiben
+function lizenzEinloesen(l, hofId) {
+  const jetzt = new Date().toISOString()
+  Object.assign(l, { status: 'eingeloest', eingeloest: jetzt, hofId })
+  lizenzSpeichern(l)
+  return { id: l.id, art: l.art, seit: jetzt, maxPersonen: l.maxPersonen }
+}
+// Betreiber: Codes erzeugen (Klartext nur in dieser Antwort), auflisten, sperren/entsperren, löschen
+app.post('/api/betreiber/lizenzen', betreiber, (req, res) => {
+  const p = LZ.pepper()
+  if (!p) return res.status(503).json({ fehler: 'Kein Pepper/Betreiber-Schlüssel gesetzt' })
+  const art = LZ.ARTEN.includes(req.body?.art) ? req.body.art : 'pilot'
+  const anzahl = Math.max(1, Math.min(20, Math.round(Number(req.body?.anzahl) || 1)))
+  const notiz = typeof req.body?.notiz === 'string' ? req.body.notiz.replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 120) || null : null
+  const neu = []
+  for (let i = 0; i < anzahl; i++) {
+    let code, h
+    do { code = LZ.codeErzeugen(); h = LZ.codeHash(LZ.normal(code), p) } while ([...lizenzCache.values()].some((x) => x.codeHash === h))
+    const l = { id: 'L' + zufall(10), codeHash: h, codeEnde: LZ.codeEnde(code), art, status: 'offen', quelle: 'betreiber', bestellung: null, maxPersonen: 100, erstellt: new Date().toISOString(), eingeloest: null, hofId: null, notiz }
+    lizenzSpeichern(l)
+    neu.push({ ...lizenzInfo(l), code, link: `${appBasis(req)}/?freischalten&code=${code}` })
+  }
+  res.status(201).json(neu)
+})
+app.get('/api/betreiber/lizenzen', betreiber, (_req, res) => res.json([...lizenzCache.values()].sort((a, b) => b.erstellt.localeCompare(a.erstellt)).map(lizenzInfo)))
+app.patch('/api/betreiber/lizenzen/:id', betreiber, (req, res) => {
+  const l = lizenzCache.get(req.params.id)
+  if (!l) return res.status(404).json({ fehler: 'Lizenz nicht gefunden' })
+  const st = req.body?.status
+  if (!['gesperrt', 'offen'].includes(st)) return res.status(400).json({ fehler: 'Status: gesperrt oder offen' })
+  if (st === 'offen' && l.eingeloest) return res.status(409).json({ fehler: 'Schon eingelöst – kann nicht wieder geöffnet werden' })
+  // Sperren eines eingelösten Codes löscht den Hof NICHT (Rückerstattung: Betreiber entscheidet separat)
+  if (!l.eingeloest || st === 'gesperrt') { l.status = st; lizenzSpeichern(l) }
+  res.json(lizenzInfo(l))
+})
+app.delete('/api/betreiber/lizenzen/:id', betreiber, async (req, res) => {
+  if (!lizenzCache.delete(req.params.id)) return res.status(404).json({ fehler: 'Lizenz nicht gefunden' })
+  if (pg) await lizenzKette.then(() => pg.query('DELETE FROM lizenzen WHERE id = $1', [req.params.id]))
+  else lizenzenDateiSchreiben()
+  res.json({ ok: true })
+})
+// Öffentlich: Code prüfen (für die Einlöse-Seite) und einlösen
+app.get('/api/lizenz/pruefen', (req, res) => {
+  const l = lizenzPruefen(req, res, String(req.query.code ?? ''))
+  if (l) res.json({ gueltig: true, art: l.art })
+})
+app.post('/api/lizenz/einloesen', (req, res) => {
+  const b = req.body ?? {}
+  if (b.b2b !== true) return res.status(400).json({ fehler: 'Bitte bestätigen, dass du FlockMap für deinen Betrieb nutzt (nur für Unternehmer).' })
+  const hn = hofNameOk(b.hofName)
+  if (hn.fehler) return res.status(400).json({ fehler: 'Hof-Name: ' + hn.fehler })
+  const inh = namePruefen(b.inhaberName)
+  if (inh.fehler) return res.status(400).json({ fehler: 'Dein Name: ' + inh.fehler })
+  const kn = hofNameOk(b.kartenName || 'Weidekarte')
+  if (kn.fehler) return res.status(400).json({ fehler: 'Kartenname: ' + kn.fehler })
+  const l = lizenzPruefen(req, res, b.code)
+  if (!l) return
+  const jetzt = new Date().toISOString()
+  const inhaber = { id: 'u' + zufall(8), name: inh.name, rolle: 'inhaber', zugang: zufall(20), erstellt: jetzt }
+  const h = hofAnlegen({ name: hn.name, inhaber, karten: [] })
+  h.lizenz = lizenzEinloesen(l, h.id)
+  // Karte des Hofs – auf Wunsch mit den Einträgen der bisherigen Handy-Karte
+  const k = karteAusDaten({ ...b, name: kn.name }, { ...inhaber, rolle: 'admin' }, { hof: h.id })
+  cache.set(k.id, k)
+  speichern(k)
+  h.karten.push(k.id)
+  hofSpeichern(h) // spiegelt den Inhaber als Hof-Person in die Karte
+  res.status(201).json({ hof: hofInfo(h, inhaber), karte: k.id, zugang: inhaber.zugang, eintraege: k.eintraege.length })
+})
+
 // -- Bestehende Karte zum Hof machen (Admin der Karte). Alle bisherigen Personen werden Hof-Mitglieder
 //    mit demselben Zugang (ihre Links bleiben gültig): Admin -> Admin (wer klickt: Inhaber), Nutzer -> Mitarbeiter.
 app.post('/api/karten/:id/hof', mitKarte('admin'), (req, res) => {
@@ -1016,10 +1161,19 @@ app.post('/api/karten/:id/hof', mitKarte('admin'), (req, res) => {
   if (k.hof && hofCache.has(k.hof)) return res.status(409).json({ fehler: 'Diese Karte gehört schon zu einem Hof' })
   const hn = hofNameOk(req.body?.name || k.name)
   if (hn.fehler) return res.status(400).json({ fehler: hn.fehler })
+  // 7s-1: Bestandskarten (vor dem Lizenz-Stichtag angelegt, z. B. Hennings Karte) dürfen ohne Code; sonst braucht es einen Lizenzcode
+  let lz = null
+  if (!karteBestand(k) && !kartenFrei()) {
+    if (req.body?.b2b !== true) return res.status(400).json({ fehler: 'Bitte bestätigen, dass du FlockMap für deinen Betrieb nutzt (nur für Unternehmer).' })
+    const p = lizenzPruefen(req, res, req.body?.code)
+    if (!p) return
+    lz = p
+  }
   const jetzt = new Date().toISOString()
   const mitglieder = k.nutzer.map((n) => ({ id: n.id, name: n.name, rolle: n.id === ich.id ? 'inhaber' : n.rolle === 'admin' ? 'admin' : n.rolle === 'ansehen' ? 'ansehen' : 'mitarbeiter', zugang: n.zugang, erstellt: n.erstellt || jetzt }))
   const h = hofAnlegen({ name: hn.name, inhaber: mitglieder.find((m) => m.id === ich.id), karten: [k.id] })
   h.mitglieder = mitglieder
+  h.lizenz = lz ? lizenzEinloesen(lz, h.id) : karteBestand(k) ? { art: 'bestand', seit: k.erstellt } : { art: 'frei', seit: jetzt }
   k.hof = h.id
   hofSpeichern(h) // spiegelt -> alle Karten-Nutzer bekommen hof: true, speichert die Karte
   res.status(201).json(hofInfo(h, h.mitglieder.find((m) => m.id === ich.id)))
@@ -1406,7 +1560,7 @@ if (fs.existsSync(DIST_DIR)) {
   }
   app.get('/', (req, res) => {
     const q = req.query
-    if (!('karte' in q) && !('hof' in q) && !('betreiber' in q) && !('lokal' in q)) {
+    if (!('karte' in q) && !('hof' in q) && !('betreiber' in q) && !('lokal' in q) && !('freischalten' in q)) {
       const c = cookieLesen(req)
       if (c) { res.set('Cache-Control', 'no-store'); return res.redirect(302, `/?karte=${c.id}&zugang=${c.zugang}`) }
     }

@@ -10,6 +10,8 @@ ARG VITE_GOOGLE_MAPS_API_KEY=
 ARG VITE_GOOGLE_MAP_ID=
 # Hoster für Impressum/Datenschutz (src/recht/betreiber.ts): eigener Server = hetzner
 ARG VITE_HOSTER=hetzner
+# Öffentliche Adresse für Links (z. B. https://flockmap.de); leer = Adresse, unter der die App läuft
+ARG VITE_APP_BASIS=
 RUN npm run build && npm prune --omit=dev
 
 FROM node:24-alpine

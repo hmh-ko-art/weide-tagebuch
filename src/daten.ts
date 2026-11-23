@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { migrieren, type Einheit, type Eintrag, type Gruppe, type Notiz } from './types'
 import { lesen, schreiben, schreibenJetzt, entfernen } from './speicher'
+import { APP_BASIS } from './basis'
 import * as WP from '../server/weideplan.js'
 import * as IS from '../server/infrastruktur.js'
 import type { Pruefung } from '../server/infrastruktur.js'
@@ -47,8 +48,10 @@ export interface Nutzer extends Ich { zugang: string; erstellt: string; hof?: bo
 // Hof, zu dem die Karte gehört (rolle = meine Rolle im Hof, falls ich Mitglied bin)
 export type HofRolle = 'inhaber' | 'admin' | 'mitarbeiter' | 'ansehen'
 export interface HofKurz { id: string; name: string; rolle?: HofRolle }
-export const zugangsLink = (karteId: string, zugang: string) => `${location.origin}${location.pathname}?karte=${karteId}&zugang=${zugang}`
-export const einladungsLink = (karteId: string, code: string) => `${location.origin}${location.pathname}?karte=${karteId}&einladung=${code}`
+export const zugangsLink = (karteId: string, zugang: string) => `${APP_BASIS}/?karte=${karteId}&zugang=${zugang}`
+export const einladungsLink = (karteId: string, code: string) => `${APP_BASIS}/?karte=${karteId}&einladung=${code}`
+// 7s-1: Lizenz der Karte (nur für Admins): Hof-Lizenz, Bestand (vor dem Stichtag angelegt) oder keine
+export interface KartenLizenz { art: string; seit?: string }
 
 type Ausstehend =
   // basis: Tiereinheiten, von denen die Änderung ausging (Server führt damit gleichzeitige Änderungen zusammen)
@@ -277,6 +280,7 @@ export function useKarte() {
   const pachtVersion = useRef<number | null>(null)
   const pachtHolenRef = useRef<() => void>(() => {})
   const [status, setStatus] = useState<SyncStatus>(karteId ? (navigator.onLine === false ? 'offline' : 'verbinde') : 'lokal')
+  const [lizenz, setLizenz] = useState<KartenLizenz | null>(null)
   const [serverStartet, setServerStartet] = useState(false) // 7s: Verbindung braucht länger (Render-Kaltstart) – Karte kommt vom Gerät
   // Name/Rolle vom letzten Kontakt mit dem Server: so kann man auch nach einem Neustart ohne Netz weiterarbeiten
   const [ich, setIch] = useState<Ich | null>(zugang ? meta0.ich ?? null : null)
@@ -317,6 +321,7 @@ export function useKarte() {
       const k = await r.json()
       setGeloescht(k.geloescht ?? null)
       setDarfLoeschen(!!k.darfLoeschen)
+      setLizenz(k.lizenz ?? null)
       setKartenName(k.name)
       setHof(k.hof ?? null)
       schreiben(metaKey(karteId), { ...lesen<Meta>(metaKey(karteId), {}), name: k.name, ich: k.ich ?? null, hof: k.hof ?? null })
@@ -580,13 +585,15 @@ export function useKarte() {
   const stapel = useCallback((eintraege: Eintrag[], gruppen: Gruppe[], plan?: Weideplan, pa?: PachtListe) => { const mitPacht = pa && Object.keys(pa).length ? pa : undefined; if (eintraege.length || gruppen.length || plan || mitPacht) ausfuehren({ art: 'stapel', eintraege, gruppen, ...(plan ? { weideplan: plan } : {}), ...(mitPacht ? { pacht: mitPacht } : {}) }) }, [ausfuehren])
   // Sicherung als NEUE geteilte Karte anlegen (braucht Netz); danach wird die neue Karte geöffnet
   const alsNeueKarte = useCallback(async (name: string, eintraege: Eintrag[], gruppen: Gruppe[], plan?: Weideplan, pa?: PachtListe) => {
-    const r = await fetch('/api/karten', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, eintraege, gruppen, ...(plan ? { weideplan: plan } : {}), ...(pa && Object.keys(pa).length ? { pacht: pa } : {}), ...(ich?.name ? { adminName: ich.name } : {}) }) })
-    if (!r.ok) throw new Error('Server nicht erreichbar – zum Anlegen einer neuen Karte wird Netz gebraucht')
+    // 7s-1: neue Karten nur mit Freischaltung – die aktuelle Karte (Bestand oder Hof mit Lizenz) weist das aus
+    const r = await fetch('/api/karten', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(karteId && zugang ? { 'x-von-karte': karteId, 'x-zugang': zugang } : {}) }, body: JSON.stringify({ name, eintraege, gruppen, ...(plan ? { weideplan: plan } : {}), ...(pa && Object.keys(pa).length ? { pacht: pa } : {}), ...(ich?.name ? { adminName: ich.name } : {}) }) }).catch(() => null)
+    if (!r) throw new Error('Server nicht erreichbar – zum Anlegen einer neuen Karte wird Netz gebraucht')
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).fehler || 'Server nicht erreichbar – zum Anlegen einer neuen Karte wird Netz gebraucht')
     const k = await r.json()
     localStorage.setItem(zugangKey(k.id), k.zugang)
     schreibenJetzt()
     return { id: k.id as string, zugang: k.zugang as string }
-  }, [ich])
+  }, [ich, karteId, zugang])
 
   const alleErsetzen = useCallback(async (roh: Eintrag[]) => {
     const liste = roh.map(migrieren)
@@ -598,7 +605,7 @@ export function useKarte() {
   // Lokale Karte in eine geteilte Server-Karte umwandeln
   const teilen = useCallback(async (name: string) => {
     const r = await fetch('/api/karten', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, eintraege, gruppen, ...(weideplan ? { weideplan } : {}), ...(Object.keys(pacht).length ? { pacht } : {}) }) })
-    if (!r.ok) throw new Error('Server nicht erreichbar')
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).fehler || 'Server nicht erreichbar')
     const k = await r.json()
     schreiben(cacheKey(k.id), eintraege)
     schreiben(gruppenKey(k.id), gruppen)
@@ -708,5 +715,5 @@ export function useKarte() {
   }
   const einladungVerwalten = { laden: () => einladungApi('GET'), erzeugen: () => einladungApi('POST'), deaktivieren: () => einladungApi('DELETE') }
 
-  return { geprueft, spannungMessen, fristErledigt, pacht, pachtSpeichern, weideplan, plan, geloescht, darfLoeschen, datenschutz, stapel, alsNeueKarte, jetztSenden: queueAbarbeiten, wartend, letzteSync, konflikte, hof, setHof, eintraege, gruppen, gruppeSpeichern, gruppeLoeschen, zuordnen, reihenfolge, speichern, loeschen, notizSpeichern, notizLoeschen, alleErsetzen, teilen, abmelden, nameAendern, einladung, einladungPruefen, beitreten, kartenNameAendern, einladungVerwalten, nutzerStand, status, serverStartet, darfBearbeiten, istAdmin, ich, ichLaden, hinweis, setHinweis, nutzer, karteId, zugang, kartenName }
+  return { geprueft, spannungMessen, fristErledigt, pacht, pachtSpeichern, weideplan, plan, geloescht, darfLoeschen, datenschutz, stapel, alsNeueKarte, jetztSenden: queueAbarbeiten, wartend, letzteSync, konflikte, hof, setHof, eintraege, gruppen, gruppeSpeichern, gruppeLoeschen, zuordnen, reihenfolge, speichern, loeschen, notizSpeichern, notizLoeschen, alleErsetzen, teilen, abmelden, nameAendern, einladung, einladungPruefen, beitreten, kartenNameAendern, einladungVerwalten, nutzerStand, status, serverStartet, lizenz, darfBearbeiten, istAdmin, ich, ichLaden, hinweis, setHinweis, nutzer, karteId, zugang, kartenName }
 }

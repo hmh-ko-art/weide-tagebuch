@@ -8,7 +8,7 @@
 // /api wird nie vom Service Worker gecacht – Kartendaten liegen in IndexedDB (siehe src/speicher.ts).
 const VERSION = '__VERSION__'
 const PRECACHE = self.__PRECACHE__ || ['/', '/index.html']
-const SW_STAND = '7t' // erhöhen, wenn sich die Logik ändert (VERSION ändert sich ohnehin mit jedem Build)
+const SW_STAND = '7s-1' // erhöhen, wenn sich die Logik ändert (VERSION ändert sich ohnehin mit jedem Build)
 const SHELL = 'flockmap-shell-' + SW_STAND + '-' + VERSION
 const KACHELN = 'flockmap-kacheln'
 const GEBIETE = 'flockmap-gebiete'
@@ -104,7 +104,7 @@ async function seite(e) {
     } catch { return (await caches.match('/')) || Response.error() }
   }
   const q = url.searchParams
-  const blank = url.pathname === '/' && !q.has('karte') && !q.has('hof') && !q.has('betreiber') && !q.has('lokal')
+  const blank = url.pathname === '/' && !q.has('karte') && !q.has('hof') && !q.has('betreiber') && !q.has('lokal') && !q.has('freischalten')
   if (blank) {
     // „/“ ohne Karte: das Cookie (7p) darf kurz (0,8 s) gewinnen (302 -> gemerkte Karte); sonst sofort die Hülle,
     // main.tsx springt dann zur zuletzt geöffneten Karte auf dem Gerät (wt-letzte-karte)
